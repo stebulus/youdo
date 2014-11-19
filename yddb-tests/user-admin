@@ -1,0 +1,36 @@
+\i yddb-create.sql
+
+select 'create';
+with trans as (
+    insert into transaction (yd_userid, yd_ipaddr, yd_useragent)
+        values (0, '127.0.0.1', 'yddb-tests/user-admin')
+        returning id
+) insert into yd_userV (transid, obj)
+select trans.id, row('Alice')::yd_user_t
+from trans;
+select * from yd_userV;
+select * from yd_user;
+
+select 'update';
+with trans as (
+    insert into transaction (yd_userid, yd_ipaddr, yd_useragent)
+        values (0, '127.0.0.1', 'yddb-tests/user-admin')
+        returning id
+) insert into yd_userV (transid, id, obj)
+select trans.id, u.id, row('Bob')::yd_user_t
+from trans,
+    (select id from yd_user where (obj).name='Alice') AS u;
+select * from yd_userV;
+select * from yd_user;
+
+select 'delete';
+with trans as (
+    insert into transaction (yd_userid, yd_ipaddr, yd_useragent)
+        values (0, '127.0.0.1', 'yddb-tests/user-admin')
+        returning id
+) insert into yd_userV (transid, id, obj)
+select trans.id, u.id, null
+from trans,
+    (select id from yd_user where (obj).name='Bob') AS u;
+select * from yd_userV;
+select * from yd_user;
