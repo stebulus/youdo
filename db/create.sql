@@ -2,9 +2,6 @@
 
 \set ON_ERROR_STOP
 
-CREATE TABLE metadata (key varchar, value varchar);
-INSERT INTO metadata VALUES ('yddb version', '0.1');
-
 CREATE TABLE transaction (
     id SERIAL PRIMARY KEY,
     tstamp TIMESTAMP WITH TIME ZONE NOT NULL,  -- (set by transaction_auto)
@@ -46,6 +43,51 @@ $$ LANGUAGE PLPGSQL;
 CREATE TRIGGER transaction_auto_trigger
     BEFORE INSERT ON transaction
     FOR EACH ROW EXECUTE PROCEDURE transaction_auto();
+
+CREATE TYPE db_t AS (version VARCHAR);
+CREATE TABLE dbV
+( txnid INTEGER REFERENCES transaction
+, id INTEGER
+, PRIMARY KEY (txnid,id)
+, obj db_t
+);
+CREATE TABLE db
+( id INTEGER PRIMARY KEY
+, txnid INTEGER
+, FOREIGN KEY (txnid,id) REFERENCES dbV
+, obj db_t NOT NULL
+);
+
+CREATE SEQUENCE db_id_seq;
+CREATE FUNCTION db_new_id() RETURNS TRIGGER AS $$
+    BEGIN
+        IF NEW.id IS NULL THEN
+            NEW.id = nextval('db_id_seq');
+        END IF;
+        RETURN NEW;
+    END;
+$$ LANGUAGE PLPGSQL;
+CREATE TRIGGER db_new_id_trigger
+    BEFORE INSERT ON dbV
+    FOR EACH ROW EXECUTE PROCEDURE db_new_id();
+CREATE FUNCTION db_new_version() RETURNS TRIGGER AS $$
+    BEGIN
+        IF NEW.obj IS NULL THEN
+            DELETE FROM db WHERE id = NEW.id;
+        ELSIF EXISTS(SELECT id FROM db WHERE id = NEW.id) THEN
+            UPDATE db
+            SET txnid = NEW.txnid, obj = NEW.obj
+            WHERE id = NEW.id;
+        ELSE
+            INSERT INTO db (id, txnid, obj)
+            VALUES (NEW.id, NEW.txnid, NEW.obj);
+        END IF;
+        RETURN NULL;
+    END;
+$$ LANGUAGE PLPGSQL;
+CREATE TRIGGER db_new_version_trigger
+    AFTER INSERT ON dbV
+    FOR EACH ROW EXECUTE PROCEDURE db_new_version();
 
 CREATE TYPE yd_user_t AS (name VARCHAR);
 
@@ -94,13 +136,23 @@ CREATE TRIGGER yd_user_new_version_trigger
     AFTER INSERT ON yd_userV
     FOR EACH ROW EXECUTE PROCEDURE yd_user_new_version();
 
-WITH txn AS (
-    INSERT INTO transaction (yd_userid, yd_ipaddr, yd_useragent)
-    VALUES (0, '127.0.0.1', 'youdo/db/create.sql')
-    RETURNING id
-) INSERT INTO yd_userV (txnid, id, obj)
-    SELECT txn.id, 0, ROW('yddb')::yd_user_t
-    FROM txn;
+CREATE FUNCTION yddb_init() RETURNS VOID AS $$
+DECLARE
+    txnid INTEGER;
+BEGIN
+    WITH txn AS (
+        INSERT INTO transaction (yd_userid, yd_ipaddr, yd_useragent)
+        VALUES (0, '127.0.0.1', 'youdo/db/create.sql')
+        RETURNING id
+    ) SELECT txn.id FROM txn INTO txnid;
+    INSERT INTO yd_userV (txnid, id, obj)
+    VALUES (txnid, 0, ROW('yddb')::yd_user_t);
+    INSERT INTO dbV (txnid, id, obj)
+    VALUES (txnid, null, ROW('0.1')::db_t);
+END;
+$$ LANGUAGE PLPGSQL;
+SELECT yddb_init() OFFSET 1;  -- "offset 1": yddb_init is called, but no output
+DROP FUNCTION yddb_init();
 
 CREATE FUNCTION transaction_check_yd_userid() RETURNS TRIGGER AS $$
     BEGIN
