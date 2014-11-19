@@ -50,15 +50,15 @@ CREATE TRIGGER transaction_auto_trigger
 CREATE TYPE yd_user_t AS (name VARCHAR);
 
 CREATE TABLE yd_userV
-( transid INTEGER REFERENCES transaction
+( txnid INTEGER REFERENCES transaction
 , id INTEGER
-, PRIMARY KEY (transid,id)
+, PRIMARY KEY (txnid,id)
 , obj yd_user_t
 );
 CREATE TABLE yd_user
 ( id INTEGER PRIMARY KEY
-, transid INTEGER
-, FOREIGN KEY (transid,id) REFERENCES yd_userV
+, txnid INTEGER
+, FOREIGN KEY (txnid,id) REFERENCES yd_userV
 , obj yd_user_t NOT NULL
 );
 
@@ -81,11 +81,11 @@ CREATE FUNCTION yd_user_new_version() RETURNS TRIGGER AS $$
             DELETE FROM yd_user WHERE id = NEW.id;
         ELSIF EXISTS(SELECT id FROM yd_user WHERE id = NEW.id) THEN
             UPDATE yd_user
-            SET transid = NEW.transid, obj = NEW.obj
+            SET txnid = NEW.txnid, obj = NEW.obj
             WHERE id = NEW.id;
         ELSE
-            INSERT INTO yd_user (id, transid, obj)
-            VALUES (NEW.id, NEW.transid, NEW.obj);
+            INSERT INTO yd_user (id, txnid, obj)
+            VALUES (NEW.id, NEW.txnid, NEW.obj);
         END IF;
         RETURN NULL;
     END;
@@ -94,13 +94,13 @@ CREATE TRIGGER yd_user_new_version_trigger
     AFTER INSERT ON yd_userV
     FOR EACH ROW EXECUTE PROCEDURE yd_user_new_version();
 
-WITH trans AS (
+WITH txn AS (
     INSERT INTO transaction (yd_userid, yd_ipaddr, yd_useragent)
     VALUES (0, '127.0.0.1', 'yddb-create.sql')
     RETURNING id
-) INSERT INTO yd_userV (transid, id, obj)
-    SELECT trans.id, 0, ROW('yddb')::yd_user_t
-    FROM trans;
+) INSERT INTO yd_userV (txnid, id, obj)
+    SELECT txn.id, 0, ROW('yddb')::yd_user_t
+    FROM txn;
 
 CREATE FUNCTION transaction_check_yd_userid() RETURNS TRIGGER AS $$
     BEGIN
