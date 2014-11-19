@@ -1,4 +1,3 @@
-\set script 'db/tests/user-admin'
 \i create.sql
 
 \echo create

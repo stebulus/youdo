@@ -5,7 +5,7 @@ psql <<EOF
 drop schema if exists yddb_test_test_test cascade;
 create schema yddb_test_test_test;
 EOF
-psql -Aqt <<EOF 2>&1 |diff -u "${1%%.sql}.expected" -
+psql -Aqt -v "script=$1" <<EOF 2>&1 |diff -u "${1%%.sql}.expected" -
 set search_path=yddb_test_test_test;
 \i $1
 EOF
