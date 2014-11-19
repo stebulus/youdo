@@ -44,97 +44,77 @@ CREATE TRIGGER transaction_auto_trigger
     BEFORE INSERT ON transaction
     FOR EACH ROW EXECUTE PROCEDURE transaction_auto();
 
-CREATE TYPE db_t AS (version VARCHAR);
-CREATE TABLE db_v
-( txnid INTEGER REFERENCES transaction
-, id INTEGER
-, PRIMARY KEY (txnid,id)
-, obj db_t
-);
-CREATE TABLE db
-( id INTEGER PRIMARY KEY
-, txnid INTEGER
-, FOREIGN KEY (txnid,id) REFERENCES db_v
-, obj db_t NOT NULL
-);
+CREATE FUNCTION versioned_table(typ REGTYPE) RETURNS VOID AS $$
+    DECLARE
+        basename VARCHAR;
+    BEGIN
+        IF right(typ::TEXT, 2) <> '_t' THEN
+            RAISE EXCEPTION 'Type name % does not end with _t', typ;
+        END IF;
+        basename := left(typ::TEXT, -2);
+        EXECUTE format('
+            CREATE TABLE %I
+            ( txnid INTEGER REFERENCES transaction
+            , id INTEGER
+            , PRIMARY KEY (txnid,id)
+            , obj %I
+            );
+            ', basename||'_v', typ);
+        EXECUTE format('
+            CREATE TABLE %I
+            ( txnid INTEGER
+            , id INTEGER PRIMARY KEY
+            , FOREIGN KEY (txnid,id) REFERENCES %I
+            , obj %I NOT NULL
+            );
+            ', basename, basename||'_v', typ);
+        EXECUTE format('CREATE SEQUENCE %I;', basename||'_id_seq');
+        EXECUTE format('
+            CREATE FUNCTION %I() RETURNS TRIGGER AS $TRIG$
+            BEGIN
+                IF NEW.id IS NULL THEN
+                    NEW.id = nextval(%L);
+                END IF;
+                RETURN NEW;
+            END;
+            $TRIG$ LANGUAGE PLPGSQL;
+            ', basename||'_new_id', basename||'_id_seq');
+        EXECUTE format('
+            CREATE TRIGGER %I
+            BEFORE INSERT ON %I
+            FOR EACH ROW EXECUTE PROCEDURE %I();
+            ', basename||'_new_id_trigger',
+               basename||'_v',
+               basename||'_new_id');
+        EXECUTE format('
+            CREATE FUNCTION %I() RETURNS TRIGGER AS $NEWVER$
+                BEGIN
+                    IF NEW.obj IS NULL THEN
+                        DELETE FROM %I WHERE id = NEW.id;
+                    ELSIF EXISTS(SELECT id FROM %I WHERE id = NEW.id) THEN
+                        UPDATE %I
+                        SET txnid = NEW.txnid, obj = NEW.obj
+                        WHERE id = NEW.id;
+                    ELSE
+                        INSERT INTO %I (id, txnid, obj)
+                        VALUES (NEW.id, NEW.txnid, NEW.obj);
+                    END IF;
+                    RETURN NULL;
+                END
+            $NEWVER$ LANGUAGE PLPGSQL;
+            ', basename||'_new_version', basename, basename, basename, basename);
+        EXECUTE format('
+            CREATE TRIGGER %I AFTER INSERT ON %I
+            FOR EACH ROW EXECUTE PROCEDURE %I();
+            ', basename||'_new_version_trigger', basename||'_v', basename||'_new_version');
+    END;
+$$ LANGUAGE PLPGSQL;
 
-CREATE SEQUENCE db_id_seq;
-CREATE FUNCTION db_new_id() RETURNS TRIGGER AS $$
-    BEGIN
-        IF NEW.id IS NULL THEN
-            NEW.id = nextval('db_id_seq');
-        END IF;
-        RETURN NEW;
-    END;
-$$ LANGUAGE PLPGSQL;
-CREATE TRIGGER db_new_id_trigger
-    BEFORE INSERT ON db_v
-    FOR EACH ROW EXECUTE PROCEDURE db_new_id();
-CREATE FUNCTION db_new_version() RETURNS TRIGGER AS $$
-    BEGIN
-        IF NEW.obj IS NULL THEN
-            DELETE FROM db WHERE id = NEW.id;
-        ELSIF EXISTS(SELECT id FROM db WHERE id = NEW.id) THEN
-            UPDATE db
-            SET txnid = NEW.txnid, obj = NEW.obj
-            WHERE id = NEW.id;
-        ELSE
-            INSERT INTO db (id, txnid, obj)
-            VALUES (NEW.id, NEW.txnid, NEW.obj);
-        END IF;
-        RETURN NULL;
-    END;
-$$ LANGUAGE PLPGSQL;
-CREATE TRIGGER db_new_version_trigger
-    AFTER INSERT ON db_v
-    FOR EACH ROW EXECUTE PROCEDURE db_new_version();
+CREATE TYPE db_t AS (version VARCHAR);
+SELECT versioned_table('db_t') OFFSET 1;  -- offset 1 to suppress output
 
 CREATE TYPE yd_user_t AS (name VARCHAR);
-
-CREATE TABLE yd_user_v
-( txnid INTEGER REFERENCES transaction
-, id INTEGER
-, PRIMARY KEY (txnid,id)
-, obj yd_user_t
-);
-CREATE TABLE yd_user
-( id INTEGER PRIMARY KEY
-, txnid INTEGER
-, FOREIGN KEY (txnid,id) REFERENCES yd_user_v
-, obj yd_user_t NOT NULL
-);
-
-CREATE SEQUENCE yd_user_id_seq;
-CREATE FUNCTION yd_user_new_id() RETURNS TRIGGER AS $$
-    BEGIN
-        IF NEW.id IS NULL THEN
-            NEW.id = nextval('yd_user_id_seq');
-        END IF;
-        RETURN NEW;
-    END;
-$$ LANGUAGE PLPGSQL;
-CREATE TRIGGER yd_user_new_id_trigger
-    BEFORE INSERT ON yd_user_v
-    FOR EACH ROW EXECUTE PROCEDURE yd_user_new_id();
-
-CREATE FUNCTION yd_user_new_version() RETURNS TRIGGER AS $$
-    BEGIN
-        IF NEW.obj IS NULL THEN
-            DELETE FROM yd_user WHERE id = NEW.id;
-        ELSIF EXISTS(SELECT id FROM yd_user WHERE id = NEW.id) THEN
-            UPDATE yd_user
-            SET txnid = NEW.txnid, obj = NEW.obj
-            WHERE id = NEW.id;
-        ELSE
-            INSERT INTO yd_user (id, txnid, obj)
-            VALUES (NEW.id, NEW.txnid, NEW.obj);
-        END IF;
-        RETURN NULL;
-    END;
-$$ LANGUAGE PLPGSQL;
-CREATE TRIGGER yd_user_new_version_trigger
-    AFTER INSERT ON yd_user_v
-    FOR EACH ROW EXECUTE PROCEDURE yd_user_new_version();
+SELECT versioned_table('yd_user_t') OFFSET 1;
 
 CREATE FUNCTION yddb_init() RETURNS VOID AS $$
 DECLARE
