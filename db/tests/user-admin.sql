@@ -1,9 +1,10 @@
+\set script 'db/tests/user-admin'
 \i create.sql
 
 \echo create
 begin;
 insert into transaction (yd_userid, yd_ipaddr, yd_useragent)
-values (0, '127.0.0.1', 'yddb-tests/user-admin')
+values (0, '127.0.0.1', :'script')
 returning id
     \gset txn
 insert into yd_userV (txnid, obj)
@@ -17,7 +18,7 @@ select * from yd_user;
 \echo update
 begin;
 insert into transaction (yd_userid, yd_ipaddr, yd_useragent)
-values (0, '127.0.0.1', 'yddb-tests/user-admin')
+values (0, '127.0.0.1', :'script')
 returning id
     \gset txn
 insert into yd_userV (txnid, id, obj)
@@ -29,7 +30,7 @@ select * from yd_user;
 \echo delete
 begin;
 insert into transaction (yd_userid, yd_ipaddr, yd_useragent)
-values (0, '127.0.0.1', 'yddb-tests/user-admin')
+values (0, '127.0.0.1', :'script')
 returning id
     \gset txn
 insert into yd_userV (txnid, id, obj)
