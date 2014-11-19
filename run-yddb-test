@@ -1,9 +1,11 @@
 #!/bin/sh
 while [ $# -gt 0 ]; do
 echo "T $1"  # T to prevent switch interpretations  :(
-psql -At <<EOF |sed 1,3d |diff -u "$1.expected" -
-drop schema if exists yddb_test_test_test;
+psql <<EOF
+drop schema if exists yddb_test_test_test cascade;
 create schema yddb_test_test_test;
+EOF
+psql -Aqt <<EOF 2>&1 |diff -u "$1.expected" -
 set search_path=yddb_test_test_test;
 \i $1
 EOF
