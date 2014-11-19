@@ -45,7 +45,7 @@ CREATE TRIGGER transaction_auto_trigger
     FOR EACH ROW EXECUTE PROCEDURE transaction_auto();
 
 CREATE TYPE db_t AS (version VARCHAR);
-CREATE TABLE dbV
+CREATE TABLE db_v
 ( txnid INTEGER REFERENCES transaction
 , id INTEGER
 , PRIMARY KEY (txnid,id)
@@ -54,7 +54,7 @@ CREATE TABLE dbV
 CREATE TABLE db
 ( id INTEGER PRIMARY KEY
 , txnid INTEGER
-, FOREIGN KEY (txnid,id) REFERENCES dbV
+, FOREIGN KEY (txnid,id) REFERENCES db_v
 , obj db_t NOT NULL
 );
 
@@ -68,7 +68,7 @@ CREATE FUNCTION db_new_id() RETURNS TRIGGER AS $$
     END;
 $$ LANGUAGE PLPGSQL;
 CREATE TRIGGER db_new_id_trigger
-    BEFORE INSERT ON dbV
+    BEFORE INSERT ON db_v
     FOR EACH ROW EXECUTE PROCEDURE db_new_id();
 CREATE FUNCTION db_new_version() RETURNS TRIGGER AS $$
     BEGIN
@@ -86,12 +86,12 @@ CREATE FUNCTION db_new_version() RETURNS TRIGGER AS $$
     END;
 $$ LANGUAGE PLPGSQL;
 CREATE TRIGGER db_new_version_trigger
-    AFTER INSERT ON dbV
+    AFTER INSERT ON db_v
     FOR EACH ROW EXECUTE PROCEDURE db_new_version();
 
 CREATE TYPE yd_user_t AS (name VARCHAR);
 
-CREATE TABLE yd_userV
+CREATE TABLE yd_user_v
 ( txnid INTEGER REFERENCES transaction
 , id INTEGER
 , PRIMARY KEY (txnid,id)
@@ -100,7 +100,7 @@ CREATE TABLE yd_userV
 CREATE TABLE yd_user
 ( id INTEGER PRIMARY KEY
 , txnid INTEGER
-, FOREIGN KEY (txnid,id) REFERENCES yd_userV
+, FOREIGN KEY (txnid,id) REFERENCES yd_user_v
 , obj yd_user_t NOT NULL
 );
 
@@ -114,7 +114,7 @@ CREATE FUNCTION yd_user_new_id() RETURNS TRIGGER AS $$
     END;
 $$ LANGUAGE PLPGSQL;
 CREATE TRIGGER yd_user_new_id_trigger
-    BEFORE INSERT ON yd_userV
+    BEFORE INSERT ON yd_user_v
     FOR EACH ROW EXECUTE PROCEDURE yd_user_new_id();
 
 CREATE FUNCTION yd_user_new_version() RETURNS TRIGGER AS $$
@@ -133,7 +133,7 @@ CREATE FUNCTION yd_user_new_version() RETURNS TRIGGER AS $$
     END;
 $$ LANGUAGE PLPGSQL;
 CREATE TRIGGER yd_user_new_version_trigger
-    AFTER INSERT ON yd_userV
+    AFTER INSERT ON yd_user_v
     FOR EACH ROW EXECUTE PROCEDURE yd_user_new_version();
 
 CREATE FUNCTION yddb_init() RETURNS VOID AS $$
@@ -145,9 +145,9 @@ BEGIN
         VALUES (0, '127.0.0.1', 'youdo/db/create.sql')
         RETURNING id
     ) SELECT txn.id FROM txn INTO txnid;
-    INSERT INTO yd_userV (txnid, id, obj)
+    INSERT INTO yd_user_v (txnid, id, obj)
     VALUES (txnid, 0, ROW('yddb')::yd_user_t);
-    INSERT INTO dbV (txnid, id, obj)
+    INSERT INTO db_v (txnid, id, obj)
     VALUES (txnid, null, ROW('0.1')::db_t);
 END;
 $$ LANGUAGE PLPGSQL;
