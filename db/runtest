@@ -1,7 +1,7 @@
 #!/bin/sh
 while [ $# -gt 0 ]; do
 echo "T $1"  # T to prevent switch interpretations  :(
-psql <<EOF
+psql >/dev/null 2>&1 <<EOF
 drop schema if exists yddb_test_test_test cascade;
 create schema yddb_test_test_test;
 EOF
