@@ -1,4 +1,4 @@
-\i yddb-create.sql
+\i create.sql
 
 \echo create
 begin;
