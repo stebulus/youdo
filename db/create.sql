@@ -116,6 +116,7 @@ SELECT versioned_table('db_t') OFFSET 1;  -- offset 1 to suppress output
 CREATE TYPE yd_user_t AS (name VARCHAR);
 SELECT versioned_table('yd_user_t') OFFSET 1;
 
+-- Initialize the database with metadata and a single user (yddb, user 0).
 CREATE FUNCTION yddb_init() RETURNS VOID AS $$
 DECLARE
     txnid INTEGER;
@@ -131,9 +132,11 @@ BEGIN
     VALUES (txnid, null, ROW('0.1')::db_t);
 END;
 $$ LANGUAGE PLPGSQL;
-SELECT yddb_init() OFFSET 1;  -- "offset 1": yddb_init is called, but no output
+SELECT yddb_init() OFFSET 1;  -- offset 1 to suppress output
 DROP FUNCTION yddb_init();
 
+-- Note that this trigger must be installed after yddb_init(), since
+-- otherwise the first transaction and user are mutually dependent.
 CREATE FUNCTION transaction_check_yd_userid() RETURNS TRIGGER AS $$
     BEGIN
         IF NOT EXISTS(SELECT id FROM yd_user WHERE id = NEW.yd_userid) THEN
