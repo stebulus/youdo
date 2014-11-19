@@ -96,7 +96,7 @@ CREATE TRIGGER yd_user_new_version_trigger
 
 WITH txn AS (
     INSERT INTO transaction (yd_userid, yd_ipaddr, yd_useragent)
-    VALUES (0, '127.0.0.1', 'yddb-create.sql')
+    VALUES (0, '127.0.0.1', 'youdo/db/create.sql')
     RETURNING id
 ) INSERT INTO yd_userV (txnid, id, obj)
     SELECT txn.id, 0, ROW('yddb')::yd_user_t
