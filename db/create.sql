@@ -60,8 +60,15 @@
 
 -- To delete a record from foo, insert a record into foo_v with the
 -- current transaction number, the id of the object being deleted,
--- and a NULL object.  A trigger will delete the record from foo
--- accordingly.
+-- and a NULL object.  For example,
+--      BEGIN;
+--      INSERT INTO transaction (yd_userid, yd_ipaddr, yd_useragent)
+--      VALUES (...) RETURNING id
+--          \gset txn
+--      INSERT INTO foo_v (txnid, id, obj)
+--      VALUES (txn.id, id_being_deleted, NULL);
+--      END;
+-- A trigger will delete the record from foo accordingly.
 
 -- To insert, update, and delete records in foo, users need the
 -- corresponding privilege to foo; they also need insert privilege
