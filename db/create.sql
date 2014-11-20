@@ -25,9 +25,13 @@
 --      SELECT foo_v.id, foo_v.(obj).*
 --      FROM foo_v
 --      NATURAL JOIN
---      (SELECT max(txnid) as txnid, id FROM foo_v
---       GROUP BY id WHERE txnid <= N)
---      WHERE foo_v.obj IS NOT NULL;
+--      (SELECT max(txnid) as txnid,  -- latest txn w/ a version of object
+--              id
+--       FROM foo_v
+--       GROUP BY id
+--       WHERE txnid <= N  -- version in effect may be from any previous txn
+--      )
+--      WHERE foo_v.obj IS NOT NULL;  -- exclude deleted objects
 
 -- To update an existing record in foo, insert a record into foo_v
 -- with the current transaction number, the id of the object being
