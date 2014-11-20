@@ -15,10 +15,9 @@
 --      txnid integer    (the transaction that created this version)
 --      id integer       (the id of the object)
 --      obj foo_t        (the object itself)
--- The differences are in constraints, as described in the
--- implementation of versioned_table() below.  Note that,
--- since the actual data is in a column with composite type,
--- we must frequently use the (obj).field and ROW(...) syntax.
+-- The differences are in constraints; see versioned_table() below for
+-- details.  Note that, since the actual data is in a column with composite
+-- type, we must frequently use the (obj).field and ROW(...) syntax.
 -- See http://www.postgresql.org/docs/9.3/interactive/rowtypes.html
 
 -- To query the current data, select from foo as usual.  To query
