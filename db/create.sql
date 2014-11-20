@@ -43,10 +43,17 @@
 --      END;
 -- Triggers will update foo accordingly.
 
--- To add a new record to foo, insert a record into foo_v with
--- the current transaction number, a NULL id, and the new object;
--- a trigger will obtain a new id value from the foo_id_seq sequence
--- and insert it into foo accordingly.
+-- To add a new record to foo, insert a record into foo_v with the
+-- current transaction number, the new object, and no specified id.
+-- For example,
+--      BEGIN;
+--      INSERT INTO transaction (yd_userid, yd_ipaddr, yd_useragent)
+--      VALUES (...) RETURNING id
+--          \gset txn
+--      INSERT INTO foo_v (txnid, obj)
+--      VALUES (txn.id, ROW(...));
+--      END;
+-- A trigger will update foo accordingly.
 
 -- To delete a record from foo, insert a record into foo_v with the
 -- current transaction number, the id of the object being deleted,
@@ -129,7 +136,7 @@ BEGIN
     EXECUTE format('
         CREATE TABLE %I
         ( txnid INTEGER REFERENCES transaction
-        , id INTEGER
+        , id SERIAL
         , PRIMARY KEY (txnid,id)
         , obj %I
         );
@@ -144,26 +151,6 @@ BEGIN
         , obj %I NOT NULL
         );
         ', basename, basename||'_v', typ);
-
-    -- New records have their id automatically assigned.
-    -- [Can we do this with a SERIAL decl in foo_v?]
-    EXECUTE format('CREATE SEQUENCE %I;', basename||'_id_seq');
-    EXECUTE format('
-        CREATE FUNCTION %I() RETURNS TRIGGER
-        AS $TRIG$ BEGIN
-            IF NEW.id IS NULL THEN
-                NEW.id = nextval(%L);
-            END IF;
-            RETURN NEW;
-        END; $TRIG$ LANGUAGE PLPGSQL;
-        ', basename||'_new_id', basename||'_id_seq');
-    EXECUTE format('
-        CREATE TRIGGER %I
-        BEFORE INSERT ON %I
-        FOR EACH ROW EXECUTE PROCEDURE %I();
-        ', basename||'_new_id_trigger',
-           basename||'_v',
-           basename||'_new_id');
 
     -- New versions inserted into foo_v cause foo to be updated.
     EXECUTE format('
@@ -208,8 +195,8 @@ BEGIN
     ) SELECT txn.id FROM txn INTO txnid;
     INSERT INTO yd_user_v (txnid, id, obj)
     VALUES (txnid, 0, ROW('yddb')::yd_user_t);
-    INSERT INTO db_v (txnid, id, obj)
-    VALUES (txnid, null, ROW('0.1')::db_t);
+    INSERT INTO db_v (txnid, obj)
+    VALUES (txnid, ROW('0.1')::db_t);
 END; $$ LANGUAGE PLPGSQL;
 SELECT yddb_init() OFFSET 1;  -- offset 1 to suppress output
 DROP FUNCTION yddb_init();
