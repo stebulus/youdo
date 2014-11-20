@@ -1,6 +1,76 @@
 -- psql script to create a YouDo database.
-
 \set ON_ERROR_STOP
+
+-- Data is immutable; "altered" data consists of new versions of that
+-- data, and the old data is retained for reference.  Transactions are
+-- reifed in the 'transaction' table, and versions are distinguished
+-- by the id of the transaction which introduced them.
+
+-- To create a versioned table:
+--      CREATE TYPE foo_t AS (...);
+--      SELECT versioned_table('foo_t');
+-- The type's name must end with '_t'.  The function versioned_table()
+-- will create two tables, foo_v (holding all versions) and foo
+-- (holding the current version), which have the same fields:
+--      txnid integer    (the transaction that created this version)
+--      id integer       (the id of the object)
+--      obj foo_t        (the object itself)
+-- The differences are in constraints, as described in the
+-- implementation of versioned_table() below.  Note that,
+-- since the actual data is in a column with composite type,
+-- we must frequently use the (obj).field and ROW(...) syntax.
+-- See http://www.postgresql.org/docs/9.3/interactive/rowtypes.html
+
+-- To query the current data, select from foo as usual.  To query
+-- historical data as of a particular transaction N, use something like
+--      SELECT foo_v.id, foo_v.(obj).*
+--      FROM foo_v
+--      NATURAL JOIN
+--      (SELECT max(txnid) as txnid, id FROM foo_v
+--       GROUP BY id WHERE txnid <= N)
+--      WHERE foo_v.obj IS NOT NULL;
+
+-- To update an existing record in foo, insert a record into foo_v
+-- with the current transaction number, the id of the object being
+-- updated, and the new version of the object.  For example, in a
+-- psql script,
+--      BEGIN;
+--      INSERT INTO transaction (yd_userid, yd_ipaddr, yd_useragent)
+--      VALUES (...) RETURNING id
+--          \gset txn
+--      INSERT INTO foo_v (txnid, id, obj)
+--      VALUES (txn.id, id_being_modified, ROW(...));
+--      END;
+-- Triggers will update foo accordingly.
+
+-- To add a new record to foo, insert a record into foo_v with
+-- the current transaction number, a NULL id, and the new object;
+-- a trigger will obtain a new id value from the foo_id_seq sequence
+-- and insert it into foo accordingly.
+
+-- To delete a record from foo, insert a record into foo_v with the
+-- current transaction number, the id of the object being deleted,
+-- and a NULL object.  A trigger will delete the record from foo
+-- accordingly.
+
+-- To insert, update, and delete records in foo, users need the
+-- corresponding privilege to foo; they also need insert privilege
+-- to foo_v and insert privilege to transaction.
+
+-- Constraints for objects in foo_v/foo should be imposed on the foo
+-- table, NOT on the foo_v table.  Rationale: for example, foreign
+-- key constraints cannot be satisfied by historical data because the
+-- referred-to record may itself have been deleted.  (And it's awkward
+-- to refer to the appropriate historical version of the referred-to
+-- record because the transactions which introduced the referring and
+-- the referred-to records may not be the same.)  Moreover, when the
+-- database design changes, historical data will not comply with any
+-- new constraints and should not be made to; data is only required
+-- to comply with the constraints in effect when it is produced.
+
+-- It is possible to reconstruct foo from foo_v, but foo's role is
+-- not merely to cache the current version of data for performance,
+-- since it is also the locus of data integrity constraints.
 
 CREATE TABLE transaction (
     id SERIAL PRIMARY KEY,
@@ -43,6 +113,7 @@ CREATE TRIGGER transaction_auto_trigger
 BEFORE INSERT ON transaction
 FOR EACH ROW EXECUTE PROCEDURE transaction_auto();
 
+-- Create tables to hold versioned data of the given type.
 CREATE FUNCTION versioned_table(typ REGTYPE) RETURNS VOID
 AS $$
 DECLARE
@@ -52,6 +123,9 @@ BEGIN
         RAISE EXCEPTION 'Type name % does not end with _t', typ;
     END IF;
     basename := left(typ::TEXT, -2);
+
+    -- foo_v holds versions of objects of type foo_t, distinguished
+    -- by the transaction that produced them.
     EXECUTE format('
         CREATE TABLE %I
         ( txnid INTEGER REFERENCES transaction
@@ -60,6 +134,8 @@ BEGIN
         , obj %I
         );
         ', basename||'_v', typ);
+
+    -- foo holds the current version from foo_v (of nondeleted objects).
     EXECUTE format('
         CREATE TABLE %I
         ( txnid INTEGER
@@ -68,6 +144,9 @@ BEGIN
         , obj %I NOT NULL
         );
         ', basename, basename||'_v', typ);
+
+    -- New records have their id automatically assigned.
+    -- [Can we do this with a SERIAL decl in foo_v?]
     EXECUTE format('CREATE SEQUENCE %I;', basename||'_id_seq');
     EXECUTE format('
         CREATE FUNCTION %I() RETURNS TRIGGER
@@ -85,6 +164,8 @@ BEGIN
         ', basename||'_new_id_trigger',
            basename||'_v',
            basename||'_new_id');
+
+    -- New versions inserted into foo_v cause foo to be updated.
     EXECUTE format('
         CREATE FUNCTION %I() RETURNS TRIGGER AS $NEWVER$
             BEGIN
