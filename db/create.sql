@@ -192,6 +192,15 @@ SELECT versionize('db') OFFSET 1;  -- offset 1 to suppress output
 CREATE TABLE yd_user (name VARCHAR NOT NULL);
 SELECT versionize('yd_user') OFFSET 1;
 
+CREATE TABLE youdo
+( assignerid INTEGER NOT NULL REFERENCES yd_user
+, assigneeid INTEGER NOT NULL REFERENCES yd_user
+, description VARCHAR NOT NULL
+, duedate TIMESTAMP WITH TIME ZONE
+, completed BOOLEAN NOT NULL DEFAULT FALSE
+);
+SELECT versionize('youdo') OFFSET 1;
+
 -- Initialize the database with metadata and a single user (yddb, user 0).
 CREATE FUNCTION yddb_init() RETURNS VOID
 AS $$
