@@ -7,22 +7,24 @@
 -- by the id of the transaction which introduced them.
 
 -- To create a versioned table:
---      CREATE TYPE foo_t AS (...);
---      SELECT versioned_table('foo_t');
--- The type's name must end with '_t'.  The function versioned_table()
--- will create two tables, foo_v (holding all versions) and foo
--- (holding the current version), which have the same fields:
+--      CREATE TABLE foo AS (...);
+--      SELECT versionize('foo');
+-- The function versionize() will create a table foo_v to hold
+-- all versions, and augment table foo with version information.
+-- Both tables have the following columns:
 --      txnid integer    (the transaction that created this version)
 --      id integer       (the id of the object)
---      obj foo_t        (the object itself)
--- The differences are in constraints; see versioned_table() below for
--- details.  Note that, since the actual data is in a column with composite
--- type, we must frequently use the (obj).field and ROW(...) syntax.
--- See http://www.postgresql.org/docs/9.3/interactive/rowtypes.html
+--      ... + the fields that foo had initially ...
+-- The fields txnid and id in foo are created by versionize(); do
+-- not create them yourself.  The table foo_v also has a field
+--      deleted boolean
+-- indicating whether the transaction deleted the record.  The tables
+-- foo and foo_v have different constraints; see versionize()
+-- for details.
 
 -- To query the current data, select from foo as usual.  To query
 -- historical data as of a particular transaction N, use something like
---      SELECT foo_v.id, foo_v.(obj).*
+--      SELECT foo_v.*
 --      FROM foo_v
 --      NATURAL JOIN
 --      (SELECT max(txnid) as txnid,  -- latest txn w/ a version of object
@@ -31,44 +33,21 @@
 --       GROUP BY id
 --       WHERE txnid <= N  -- version in effect may be from any previous txn
 --      )
---      WHERE foo_v.obj IS NOT NULL;  -- exclude deleted objects
+--      WHERE NOT foo_v.deleted;  -- exclude deleted objects
 
--- To update an existing record in foo, insert a record into foo_v
--- with the current transaction number, the id of the object being
--- updated, and the new version of the object.  For example, in a
--- psql script,
---      BEGIN;
+-- To make any change to the data, first create a new transaction,
+-- then insert, update, and delete as usual, ignoring the txnid field.
+-- For example:
+--      BEGIN
 --      INSERT INTO transaction (yd_userid, yd_ipaddr, yd_useragent)
---      VALUES (...) RETURNING id
---          \gset txn
---      INSERT INTO foo_v (txnid, id, obj)
---      VALUES (txn.id, id_being_modified, ROW(...));
+--      VALUES (...);
+--      INSERT INTO foo (... fields of foo other than txnid, id...)
+--      VALUES (...);
 --      END;
--- Triggers will update foo accordingly.
-
--- To add a new record to foo, insert a record into foo_v with the
--- current transaction number, the new object, and no specified id.
--- For example,
---      BEGIN;
---      INSERT INTO transaction (yd_userid, yd_ipaddr, yd_useragent)
---      VALUES (...) RETURNING id
---          \gset txn
---      INSERT INTO foo_v (txnid, obj)
---      VALUES (txn.id, ROW(...));
---      END;
--- A trigger will update foo accordingly.
-
--- To delete a record from foo, insert a record into foo_v with the
--- current transaction number, the id of the object being deleted,
--- and a NULL object.  For example,
---      BEGIN;
---      INSERT INTO transaction (yd_userid, yd_ipaddr, yd_useragent)
---      VALUES (...) RETURNING id
---          \gset txn
---      INSERT INTO foo_v (txnid, id, obj)
---      VALUES (txn.id, id_being_deleted, NULL);
---      END;
--- A trigger will delete the record from foo accordingly.
+-- On insert, id will be set as usual; it is a SERIAL field.
+-- On insert and update, txnid will be set to the id of the most
+-- recently created transaction.  On insert, update, and delete,
+-- an appropriate record will be added to foo_v.
 
 -- To insert, update, and delete records in foo, users need the
 -- corresponding privilege to foo; they also need insert privilege
@@ -130,67 +109,68 @@ CREATE TRIGGER transaction_auto_trigger
 BEFORE INSERT ON transaction
 FOR EACH ROW EXECUTE PROCEDURE transaction_auto();
 
--- Create tables to hold versioned data of the given type.
-CREATE FUNCTION versioned_table(typ REGTYPE) RETURNS VOID
-AS $$
-DECLARE
-    basename VARCHAR;
+-- Create a secondary table 'foo_v' to hold (current and historical)
+-- versions of the data in the given table 'foo', and augment 'foo'
+-- with version-tracking fields.
+CREATE FUNCTION versionize(tab REGCLASS) RETURNS VOID AS $$
 BEGIN
-    IF right(typ::TEXT, 2) <> '_t' THEN
-        RAISE EXCEPTION 'Type name % does not end with _t', typ;
-    END IF;
-    basename := left(typ::TEXT, -2);
+    -- Augment the table with unique IDs and with transaction IDs.
+    EXECUTE format('
+        ALTER TABLE %I ADD txnid INTEGER NOT NULL;
+        ALTER TABLE %I ADD id SERIAL PRIMARY KEY;
+        ', tab, tab);
 
-    -- foo_v holds versions of objects of type foo_t, distinguished
+    -- foo_v holds versions of objects from table foo, distinguished
     -- by the transaction that produced them.
     EXECUTE format('
-        CREATE TABLE %I
-        ( txnid INTEGER REFERENCES transaction
-        , id SERIAL
-        , PRIMARY KEY (txnid,id)
-        , obj %I
-        );
-        ', basename||'_v', typ);
+        CREATE TABLE %I (LIKE %I);
+        ALTER TABLE %I ADD deleted BOOLEAN NOT NULL DEFAULT FALSE;
+        ', tab||'_v', tab, tab||'_v');
 
-    -- foo holds the current version from foo_v (of nondeleted objects).
+    -- Every object has at most one version from each transaction.
     EXECUTE format('
-        CREATE TABLE %I
-        ( txnid INTEGER
-        , id INTEGER PRIMARY KEY
-        , FOREIGN KEY (txnid,id) REFERENCES %I
-        , obj %I NOT NULL
-        );
-        ', basename, basename||'_v', typ);
+        ALTER TABLE %I ADD PRIMARY KEY (txnid, id);
+        ', tab||'_v');
 
-    -- New versions inserted into foo_v cause foo to be updated.
+    -- The current version of an object is one of its versions.
     EXECUTE format('
-        CREATE FUNCTION %I() RETURNS TRIGGER AS $NEWVER$
-            BEGIN
-                IF NEW.obj IS NULL THEN
-                    DELETE FROM %I WHERE id = NEW.id;
-                ELSIF EXISTS(SELECT id FROM %I WHERE id = NEW.id) THEN
-                    UPDATE %I
-                    SET txnid = NEW.txnid, obj = NEW.obj
-                    WHERE id = NEW.id;
-                ELSE
-                    INSERT INTO %I (id, txnid, obj)
-                    VALUES (NEW.id, NEW.txnid, NEW.obj);
-                END IF;
-                RETURN NULL;
-            END
-        $NEWVER$ LANGUAGE PLPGSQL;
-        ', basename||'_new_version', basename, basename, basename, basename);
+        ALTER TABLE %I ADD FOREIGN KEY (txnid, id) REFERENCES %I;
+        ', tab, tab||'_v');
+
+    -- Log new and updated records.
     EXECUTE format('
-        CREATE TRIGGER %I AFTER INSERT ON %I
+        CREATE FUNCTION %I() RETURNS TRIGGER AS $FUNC$ BEGIN
+            SELECT max(id) FROM transaction INTO NEW.txnid;
+            WITH x AS (SELECT NEW::%I AS y)
+            INSERT INTO %I SELECT (y).* FROM x;
+            RETURN NEW;
+        END; $FUNC$ LANGUAGE PLPGSQL;
+        ', tab||'_change', tab, tab||'_v');
+    EXECUTE FORMAT('
+        CREATE TRIGGER %I BEFORE INSERT OR UPDATE ON %I
         FOR EACH ROW EXECUTE PROCEDURE %I();
-        ', basename||'_new_version_trigger', basename||'_v', basename||'_new_version');
+        ', tab||'_change_trigger', tab, tab||'_change');
+
+    -- Log deleted records.
+    EXECUTE format('
+        CREATE FUNCTION %I() RETURNS TRIGGER AS $FUNC$ BEGIN
+            SELECT max(id) FROM transaction INTO OLD.txnid;
+            WITH x AS (SELECT OLD::%I AS y)
+            INSERT INTO %I SELECT (y).*, TRUE AS deleted FROM x;
+            RETURN OLD;
+        END; $FUNC$ LANGUAGE PLPGSQL;
+        ', tab||'_delete', tab, tab||'_v');
+    EXECUTE FORMAT('
+        CREATE TRIGGER %I BEFORE DELETE ON %I
+        FOR EACH ROW EXECUTE PROCEDURE %I();
+        ', tab||'_delete_trigger', tab, tab||'_delete');
 END; $$ LANGUAGE PLPGSQL;
 
-CREATE TYPE db_t AS (version VARCHAR);
-SELECT versioned_table('db_t') OFFSET 1;  -- offset 1 to suppress output
+CREATE TABLE db (version VARCHAR NOT NULL);
+SELECT versionize('db') OFFSET 1;  -- offset 1 to suppress output
 
-CREATE TYPE yd_user_t AS (name VARCHAR);
-SELECT versioned_table('yd_user_t') OFFSET 1;
+CREATE TABLE yd_user (name VARCHAR NOT NULL);
+SELECT versionize('yd_user') OFFSET 1;
 
 -- Initialize the database with metadata and a single user (yddb, user 0).
 CREATE FUNCTION yddb_init() RETURNS VOID
@@ -198,15 +178,10 @@ AS $$
 DECLARE
     txnid INTEGER;
 BEGIN
-    WITH txn AS (
-        INSERT INTO transaction (yd_userid, yd_ipaddr, yd_useragent)
-        VALUES (0, '127.0.0.1', 'youdo/db/create.sql')
-        RETURNING id
-    ) SELECT txn.id FROM txn INTO txnid;
-    INSERT INTO yd_user_v (txnid, id, obj)
-    VALUES (txnid, 0, ROW('yddb')::yd_user_t);
-    INSERT INTO db_v (txnid, obj)
-    VALUES (txnid, ROW('0.1')::db_t);
+    INSERT INTO transaction (yd_userid, yd_ipaddr, yd_useragent)
+    VALUES (0, '127.0.0.1', 'youdo/db/create.sql');
+    INSERT INTO yd_user (id, name) VALUES (0, 'yddb');
+    INSERT INTO db (version) VALUES ('0.1');
 END; $$ LANGUAGE PLPGSQL;
 SELECT yddb_init() OFFSET 1;  -- offset 1 to suppress output
 DROP FUNCTION yddb_init();

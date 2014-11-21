@@ -19,8 +19,7 @@ insert into transaction (yd_userid, yd_ipaddr, yd_useragent)
 values (0, '127.0.0.1', :'script')
 returning id
     \gset txn
-insert into yd_user_v (id, txnid, obj)
-values (0, :txnid, null);  -- delete user 0; don't do this for real!
+delete from yd_user where id=0;  -- delete user 0; don't do this for real!
 end;
 
 begin;
