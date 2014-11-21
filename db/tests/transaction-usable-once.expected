@@ -1,0 +1,10 @@
+insert without transaction
+psql:: ERROR:  No open transaction
+update without transaction
+psql:: ERROR:  No open transaction
+delete without transaction
+psql:: ERROR:  No open transaction
+insert with old transaction
+psql:: ERROR:  No open transaction
+update with old transaction
+psql:: ERROR:  No open transaction

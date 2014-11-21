@@ -51,7 +51,8 @@
 
 -- To insert, update, and delete records in foo, users need the
 -- corresponding privilege to foo; they also need insert privilege
--- to foo_v and insert privilege to transaction.
+-- to foo_v and insert privilege to transaction.  Users should not
+-- have update or delete privileges to foo_v or to transaction.
 
 -- Constraints for objects in foo_v/foo should be imposed on the foo
 -- table, NOT on the foo_v table.  Rationale: for example, foreign
@@ -94,6 +95,9 @@ CREATE TABLE transaction
 , pg_curruser NAME NOT NULL      -- Postgres current user (set by transaction_auto)
 , pg_ipaddr INET                 -- Postgres client's IP (set by transaction_auto)
                                  -- (Can be NULL; psql connects via Unix domain sockets.)
+
+-- Whether this transaction may still be used.  (See close_transaction_trigger.)
+, open BOOLEAN NOT NULL DEFAULT TRUE
 );
 
 CREATE FUNCTION transaction_auto() RETURNS TRIGGER
@@ -108,6 +112,16 @@ END; $$ LANGUAGE PLPGSQL;
 CREATE TRIGGER transaction_auto_trigger
 BEFORE INSERT ON transaction
 FOR EACH ROW EXECUTE PROCEDURE transaction_auto();
+
+CREATE FUNCTION transaction_close() RETURNS TRIGGER AS $$
+BEGIN
+    UPDATE transaction SET open = FALSE WHERE id = NEW.id;
+    RETURN NULL;
+END;
+$$ LANGUAGE PLPGSQL;
+CREATE CONSTRAINT TRIGGER transaction_close_trigger
+AFTER INSERT ON transaction INITIALLY DEFERRED  -- runs at end of txn!
+FOR EACH ROW EXECUTE PROCEDURE transaction_close();
 
 -- Create a secondary table 'foo_v' to hold (current and historical)
 -- versions of the data in the given table 'foo', and augment 'foo'
@@ -140,7 +154,10 @@ BEGIN
     -- Log new and updated records.
     EXECUTE format('
         CREATE FUNCTION %I() RETURNS TRIGGER AS $FUNC$ BEGIN
-            SELECT max(id) FROM transaction INTO NEW.txnid;
+            SELECT max(id) FROM transaction WHERE open INTO NEW.txnid;
+            IF NEW.txnid IS NULL THEN
+                RAISE EXCEPTION ''No open transaction'';
+            END IF;
             WITH x AS (SELECT NEW::%I AS y)
             INSERT INTO %I SELECT (y).* FROM x;
             RETURN NEW;
@@ -154,7 +171,10 @@ BEGIN
     -- Log deleted records.
     EXECUTE format('
         CREATE FUNCTION %I() RETURNS TRIGGER AS $FUNC$ BEGIN
-            SELECT max(id) FROM transaction INTO OLD.txnid;
+            SELECT max(id) FROM transaction WHERE open INTO OLD.txnid;
+            IF OLD.txnid IS NULL THEN
+                RAISE EXCEPTION ''No open transaction'';
+            END IF;
             WITH x AS (SELECT OLD::%I AS y)
             INSERT INTO %I SELECT (y).*, TRUE AS deleted FROM x;
             RETURN OLD;
