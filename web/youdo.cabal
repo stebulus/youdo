@@ -21,3 +21,5 @@ executable ydserver
                        , warp ==3.0.*
                        , scotty ==0.9.*
                        , data-default ==0.5.*
+                       , postgresql-simple ==0.4.*
+                       , bytestring ==0.10.*
