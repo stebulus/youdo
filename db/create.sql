@@ -68,32 +68,32 @@
 -- not merely to cache the current version of data for performance,
 -- since it is also the locus of data integrity constraints.
 
-CREATE TABLE transaction (
-    id SERIAL PRIMARY KEY,
-    tstamp TIMESTAMP WITH TIME ZONE NOT NULL,  -- (set by transaction_auto)
+CREATE TABLE transaction
+( id SERIAL PRIMARY KEY
+, tstamp TIMESTAMP WITH TIME ZONE NOT NULL  -- (set by transaction_auto)
 
-    -- The query that caused this transaction.
-    query TEXT NOT NULL,                       -- (set by transaction_auto)
+-- The query that caused this transaction.
+, query TEXT NOT NULL                       -- (set by transaction_auto)
 
-    -- Information about the user responsible for this transaction,
-    -- as supplied by ydserver.  Not the same as the PostgreSQL user
-    -- account under which the transaction was made, since that is
-    -- the ydserver's account.  Here in the database we cannot verify
-    -- this information.
-    yd_userid INTEGER NOT NULL,
-        -- Theoretically yd_userid should REFERENCE user.id, but
-        -- that would mean we couldn't delete user accounts if they
-        -- had ever made a transaction.  So, no REFERENCES constraint
-        -- here, but see transaction_check_yd_userid_trigger below.
-    yd_ipaddr INET NOT NULL,
-    yd_useragent VARCHAR NOT NULL,
+-- Information about the user responsible for this transaction,
+-- as supplied by ydserver.  Not the same as the PostgreSQL user
+-- account under which the transaction was made, since that is
+-- the ydserver's account.  Here in the database we cannot verify
+-- this information.
+, yd_userid INTEGER NOT NULL
+    -- Theoretically yd_userid should REFERENCE user.id, but
+    -- that would mean we couldn't delete user accounts if they
+    -- had ever made a transaction.  So, no REFERENCES constraint
+    -- here, but see transaction_check_yd_userid_trigger below.
+, yd_ipaddr INET NOT NULL
+, yd_useragent VARCHAR NOT NULL
 
-    -- Information about the Postgres user responsible for this transaction.
-    -- This should almost always be the ydserver's account.
-    pg_sessuser NAME NOT NULL,      -- Postgres session user (set by transaction_auto)
-    pg_curruser NAME NOT NULL,      -- Postgres current user (set by transaction_auto)
-    pg_ipaddr INET                  -- Postgres client's IP (set by transaction_auto)
-                                    -- (Can be NULL; psql connects via Unix domain sockets.)
+-- Information about the Postgres user responsible for this transaction.
+-- This should almost always be the ydserver's account.
+, pg_sessuser NAME NOT NULL      -- Postgres session user (set by transaction_auto)
+, pg_curruser NAME NOT NULL      -- Postgres current user (set by transaction_auto)
+, pg_ipaddr INET                 -- Postgres client's IP (set by transaction_auto)
+                                 -- (Can be NULL; psql connects via Unix domain sockets.)
 );
 
 CREATE FUNCTION transaction_auto() RETURNS TRIGGER
