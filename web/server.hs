@@ -43,7 +43,7 @@ main = do
                                       , uriAuthority = Just URIAuth
                                             { uriUserInfo = ""
                                             , uriRegName = "localhost"
-                                            , uriPort = show port
+                                            , uriPort = ":" ++ show port
                                             }
                                       , uriPath = "/"
                                       }
