@@ -11,6 +11,7 @@ database, create and populate a testing schema:
         \i db/create.sql
         \unset ON_ERROR_STOP  -- in case role ydserver already exists
         \i db/ydserver.sql
+        grant usage to schema ydserver to ydserver;
 
 2. Create a service description for the ydserver to use: from the shell,
 
