@@ -23,3 +23,5 @@ executable ydserver
                        , data-default ==0.5.*
                        , postgresql-simple ==0.4.*
                        , bytestring ==0.10.*
+                       , text ==0.11.*
+                       , transformers ==0.3.*
