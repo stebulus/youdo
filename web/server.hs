@@ -7,6 +7,7 @@ import Control.Monad.IO.Class (liftIO)
 import Data.ByteString.Char8 (pack)
 import Data.Default (def)
 import qualified Data.Text.Lazy as T
+import Data.Time (UTCTime)
 import Database.PostgreSQL.Simple (Connection, close)
 import Network.Wai.Handler.Warp (Port, Settings(..), setPort, setHost,
     defaultSettings)
@@ -51,7 +52,7 @@ data Youdo = Youdo { id :: Int
                    , assignerid :: Int
                    , assigneeid :: Int
                    , description :: String
-                   , duedate :: Maybe String
+                   , duedate :: Maybe UTCTime
                    , completed :: Bool
                    } deriving (Show)
 instance FromRow Youdo where
