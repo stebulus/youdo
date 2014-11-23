@@ -15,7 +15,8 @@ import Data.Time (UTCTime)
 import Data.Time.Format (parseTime)
 import Database.PostgreSQL.Simple (Connection, close)
 import Network.BSD (getHostName)
-import Network.HTTP.Types (created201, badRequest400)
+import Network.HTTP.Types (ok200, created201, badRequest400, notFound404,
+    internalServerError500)
 import Network.URI (URI(..), URIAuth(..), relativeTo, nullURI)
 import Network.Wai.Handler.Warp (Port, Settings(..), setPort, setHost,
     defaultSettings)
@@ -26,7 +27,7 @@ import System.Exit (exitWith, ExitCode(..))
 import System.IO (stderr, hPutStrLn)
 import System.Environment (getArgs, getProgName)
 import System.Locale (defaultTimeLocale, iso8601DateFormat)
-import Web.Scotty (scottyOpts, ScottyM, get, post, status, header, param,
+import Web.Scotty (scottyOpts, ScottyM, get, post, put, status, header, param,
     text, Options(..), setHeader, ActionM, raise, rescue)
 
 main = do
@@ -78,6 +79,23 @@ app baseuri mv_conn = do
         status created201
         setHeader "Location" url
         text $ T.concat ["created at ", url, "\r\n"]
+    get "/0/youdos/:id" $ do
+        id <- read <$> param "id" :: ActionM Int
+        youdos <- liftIO $ withMVar mv_conn $ getYoudo id
+        case youdos of
+            [] -> do status notFound404
+                     text $ T.concat ["no youdo with id ", T.pack $ show id]
+            [youdo] -> do status ok200
+                          text $ T.pack $ show youdo
+            _ -> do status internalServerError500
+                    text $ T.concat ["multiple youdos with id ", T.pack $ show id]
+
+getYoudo :: Int -> Connection -> IO [Youdo]
+getYoudo id conn =
+    query conn
+          "select id, assignerid, assigneeid, description, duedate, completed \
+          \from youdo where id = ?"
+          (Only id)
 
 bodyYoudo :: ActionM Youdo
 bodyYoudo = do
