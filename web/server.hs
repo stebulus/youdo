@@ -14,7 +14,6 @@ import qualified Data.Text.Lazy as T
 import Data.Time (UTCTime)
 import Data.Time.Format (parseTime)
 import Database.PostgreSQL.Simple (Connection, close)
-import Network.BSD (getHostName)
 import Network.HTTP.Types (ok200, created201, badRequest400, notFound404,
     internalServerError500)
 import Network.URI (URI(..), URIAuth(..), relativeTo, nullURI)
@@ -72,7 +71,6 @@ app baseuri mv_conn = do
     post "/0/youdos" $ do
         youdo <- bodyYoudo
         youdoid <- liftIO $ withMVar mv_conn $ postYoudo youdo
-        hostname <- header "Host" >>= maybe (T.pack <$> liftIO getHostName) return
         let url = T.pack $ show $
                 nullURI { uriPath = "0/youdos/" ++ (show youdoid) }
                 `relativeTo` baseuri
