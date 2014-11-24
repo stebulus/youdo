@@ -16,7 +16,7 @@ database, create and populate a testing schema:
 2. Create a service description for the ydserver to use: from the shell,
 
         touch ~/etc/pg_service.conf
-        chmod 600 ~/etc/pg_service.conf  -- it contains a password
+        chmod 600 ~/etc/pg_service.conf  # it contains a password
         cat >> ~/etc/pg_service.conf <<EOF
         [ydservice]
         host=localhost
