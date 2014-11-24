@@ -3,13 +3,14 @@ module Main where
 import Prelude hiding(id)
 import Codec.MIME.Type (mimeType, MIMEType(Application))
 import Codec.MIME.Parse (parseMIMEType)
-import Control.Applicative ((<$>))
+import Control.Applicative ((<$>), (<*>))
 import Control.Concurrent.MVar (MVar, newMVar, withMVar)
 import Control.Exception (bracket)
 import Control.Monad.IO.Class (liftIO)
 import Data.ByteString.Char8 (pack)
 import Data.Default (def)
 import Data.Maybe (listToMaybe)
+import Data.Monoid ((<>))
 import qualified Data.Text.Lazy as T
 import Data.Time (UTCTime)
 import Data.Time.Format (parseTime)
@@ -19,6 +20,8 @@ import Network.HTTP.Types (ok200, created201, badRequest400, notFound404,
 import Network.URI (URI(..), URIAuth(..), relativeTo, nullURI)
 import Network.Wai.Handler.Warp (Port, Settings(..), setPort, setHost,
     defaultSettings)
+import Options.Applicative (option, strOption, auto, long, short, metavar,
+    help, execParser, Parser, fullDesc, progDesc, helper, info, header)
 import System.Exit (exitWith, ExitCode(..))
 import System.IO (stderr, hPutStrLn)
 import System.Environment (getArgs, getProgName)
@@ -28,32 +31,45 @@ import Web.Scotty (scottyOpts, ScottyM, get, post, put, status, header, param,
 import YouDo.DB
 import YouDo.DB.PostgreSQL
 
-main = do
-    progname <- getProgName
-    args <- getArgs
-    case parseArgs progname args of
-        Left err -> do
-            hPutStrLn stderr err
-            exitWith $ ExitFailure 2
-        Right (RunServer port connstr) -> do
-            withPostgresConnection connstr $ \conn -> do
-                mv_conn <- newMVar conn
-                let baseuri = nullURI { uriScheme = "http"
-                                      , uriAuthority = Just URIAuth
-                                            { uriUserInfo = ""
-                                            , uriRegName = "localhost"
-                                            , uriPort = if port == 80
-                                                        then ""
-                                                        else ":" ++ show port
-                                            }
-                                      , uriPath = "/"
-                                      }
-                scottyOpts def{ verbose = 0
-                              , settings = setPort port
-                                         $ setHost "127.0.0.1"  -- for now
-                                         $ defaultSettings
+data YDOptions = YDOptions { port :: Int
+                           , connstr :: String
+                           }
+options :: Parser YDOptions
+options = YDOptions
+    <$> option auto (long "port"
+                     <> short 'p'
+                     <> metavar "PORT"
+                     <> help "Listen on port number PORT.")
+    <*> strOption (long "postgresql"
+                   <> short 'g'
+                   <> metavar "STR"
+                   <> help "Connect to PostgreSQL database specified \
+                           \by libpq connection string STR.")
+main = execParser opts >>= mainOpts
+    where opts = info (helper <*> options)
+            (fullDesc
+            <> Options.Applicative.header "ydserver - a YouDo web server")
+
+mainOpts :: YDOptions -> IO ()
+mainOpts YDOptions { port = p, connstr = cs } =
+    withPostgresConnection cs $ \conn -> do
+        mv_conn <- newMVar conn
+        let baseuri = nullURI { uriScheme = "http"
+                              , uriAuthority = Just URIAuth
+                                    { uriUserInfo = ""
+                                    , uriRegName = "localhost"
+                                    , uriPort = if p == 80
+                                                then ""
+                                                else ":" ++ show p
+                                    }
+                              , uriPath = "/"
                               }
-                           $ app baseuri mv_conn
+        scottyOpts def{ verbose = 0
+                      , settings = setPort p
+                                 $ setHost "127.0.0.1"  -- for now
+                                 $ defaultSettings
+                      }
+                   $ app baseuri mv_conn
 
 withPostgresConnection :: ConnectionString -> (Connection -> IO a) -> IO a
 withPostgresConnection connstr f =
@@ -89,7 +105,7 @@ app baseuri mv_db = do
 
 bodyYoudo :: ActionM Youdo
 bodyYoudo = do
-    hdr <- header "Content-Type"
+    hdr <- Web.Scotty.header "Content-Type"
         >>= maybe (raise "no Content-Type header") return
     contenttype <- maybe (raise $ T.concat ["Incomprehensible Content-Type: ", hdr])
                          return
