@@ -36,8 +36,8 @@ main = do
         Left err -> do
             hPutStrLn stderr err
             exitWith $ ExitFailure 2
-        Right (RunServer port pgurl) -> do
-            withPostgresConnection pgurl $ \conn -> do
+        Right (RunServer port connstr) -> do
+            withPostgresConnection connstr $ \conn -> do
                 mv_conn <- newMVar conn
                 let baseuri = nullURI { uriScheme = "http"
                                       , uriAuthority = Just URIAuth
@@ -56,9 +56,9 @@ main = do
                               }
                            $ app baseuri mv_conn
 
-withPostgresConnection :: URL -> (Connection -> IO a) -> IO a
-withPostgresConnection pgurl f =
-    bracket (connectPostgreSQL $ pack pgurl)
+withPostgresConnection :: ConnectionString -> (Connection -> IO a) -> IO a
+withPostgresConnection connstr f =
+    bracket (connectPostgreSQL $ pack connstr)
             (close)
             f
 
@@ -155,9 +155,9 @@ fromISODateString s =
               (iso8601DateFormat $ Just "%H:%M:%SZ")
               s
 
-data Action = RunServer Port URL
-type URL = String
+data Action = RunServer Port ConnectionString
+type ConnectionString = String
 
 parseArgs :: String -> [String] -> Either String Action
-parseArgs _ [port, pgurl] = Right $ RunServer (read port) pgurl
-parseArgs progname _ = Left $ "usage: " ++ progname ++ " port postgresURL"
+parseArgs _ [port, connstr] = Right $ RunServer (read port) connstr
+parseArgs progname _ = Left $ "usage: " ++ progname ++ " port libpqConnectionString"
