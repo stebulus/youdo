@@ -16,6 +16,7 @@ cabal-version:       >=1.8
 
 executable ydserver
   main-is:             server.hs
+  ghc-options:         -Wall
   -- other-modules:       
   build-depends:       base ==4.6.*
                        , warp ==3.0.*

@@ -9,29 +9,23 @@ import Control.Exception (bracket)
 import Control.Monad.IO.Class (liftIO)
 import Data.ByteString.Char8 (pack)
 import Data.Default (def)
-import Data.Maybe (listToMaybe)
 import Data.Monoid ((<>))
 import qualified Data.Text.Lazy as T
 import Data.Time (UTCTime)
 import Data.Time.Format (parseTime)
-import Database.PostgreSQL.Simple (Connection, close, connectPostgreSQL)
-import Network.HTTP.Types (ok200, created201, badRequest400, notFound404,
+import Database.PostgreSQL.Simple (close, connectPostgreSQL)
+import Network.HTTP.Types (ok200, created201, notFound404,
     internalServerError500)
 import Network.URI (URI(..), URIAuth(..), relativeTo, nullURI)
-import Network.Wai.Handler.Warp (Port, Settings(..), setPort, setHost,
-    defaultSettings)
+import Network.Wai.Handler.Warp (setPort, setHost, defaultSettings)
 import Options.Applicative (option, strOption, flag', auto, long, short,
-    metavar, help, execParser, Parser, fullDesc, progDesc, helper, info,
-    header)
-import System.Exit (exitWith, ExitCode(..))
-import System.IO (stderr, hPutStrLn)
-import System.Environment (getArgs, getProgName)
+    metavar, help, execParser, Parser, fullDesc, helper, info, header)
 import System.Locale (defaultTimeLocale, iso8601DateFormat)
-import Web.Scotty (scottyOpts, ScottyM, get, post, put, status, header, param,
-    text, Options(..), setHeader, ActionM, raise, rescue)
+import Web.Scotty (scottyOpts, ScottyM, get, post, status, header, param,
+    text, Options(..), setHeader, ActionM, raise)
 import YouDo.DB
 import qualified YouDo.DB.Mock as Mock
-import YouDo.DB.PostgreSQL
+import YouDo.DB.PostgreSQL()  -- instance DB Connection
 
 data DBOption = InMemory | Postgres String
 data YDOptions = YDOptions { port :: Int
@@ -52,15 +46,17 @@ options = YDOptions
           <|> flag' InMemory (long "memory"
                              <> short 'm'
                              <> help "Use a transient in-memory database.") )
+
+main :: IO ()
 main = execParser opts >>= mainOpts
     where opts = info (helper <*> options)
             (fullDesc
             <> Options.Applicative.header "ydserver - a YouDo web server")
 
 mainOpts :: YDOptions -> IO ()
-mainOpts YDOptions { port = p, db = db } =
-    withDB db $ \db -> do
-        mvdb <- newMVar db
+mainOpts YDOptions { port = p, db = dbopt } =
+    withDB dbopt $ \db' -> do
+        mvdb <- newMVar db'
         let baseuri = nullURI { uriScheme = "http"
                               , uriAuthority = Just URIAuth
                                     { uriUserInfo = ""
@@ -101,15 +97,15 @@ app baseuri mv_db = do
         setHeader "Location" url
         text $ T.concat ["created at ", url, "\r\n"]
     get "/0/youdos/:id" $ do
-        id <- read <$> param "id" :: ActionM Int
-        youdos <- liftIO $ withMVar mv_db $ getYoudo id
+        ydid <- read <$> param "id" :: ActionM Int
+        youdos <- liftIO $ withMVar mv_db $ getYoudo ydid
         case youdos of
             [] -> do status notFound404
-                     text $ T.concat ["no youdo with id ", T.pack $ show id]
+                     text $ T.concat ["no youdo with id ", T.pack $ show ydid]
             [youdo] -> do status ok200
                           text $ T.pack $ show youdo
             _ -> do status internalServerError500
-                    text $ T.concat ["multiple youdos with id ", T.pack $ show id]
+                    text $ T.concat ["multiple youdos with id ", T.pack $ show ydid]
 
 bodyYoudo :: ActionM Youdo
 bodyYoudo = do
@@ -120,17 +116,17 @@ bodyYoudo = do
                          (parseMIMEType $ T.toStrict hdr)
     case mimeType contenttype of
         Application "x-www-form-urlencoded" -> do
-            assignerid <- param "assignerid"
-            assigneeid <- param "assigneeid"
-            description <- param "description"
-            duedate <- fromISODateString <$> param "duedate"
-            completed <- param "completed"
+            assignerid' <- param "assignerid"
+            assigneeid' <- param "assigneeid"
+            description' <- param "description"
+            duedate' <- fromISODateString <$> param "duedate"
+            completed' <- param "completed"
             return Youdo { id = Nothing
-                         , assignerid = assignerid
-                         , assigneeid = assigneeid
-                         , description = description
-                         , duedate = duedate
-                         , completed = completed
+                         , assignerid = assignerid'
+                         , assigneeid = assigneeid'
+                         , description = description'
+                         , duedate = duedate'
+                         , completed = completed'
                          }
         _ -> raise $ T.concat ["Don't know how to handle Content-Type: ", hdr]
 
