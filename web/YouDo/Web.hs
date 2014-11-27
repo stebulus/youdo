@@ -9,7 +9,6 @@ import Control.Exception (bracket)
 import Control.Monad.IO.Class (liftIO)
 import Data.ByteString.Char8 (pack)
 import Data.Default (def)
-import Data.Maybe (listToMaybe)
 import Data.Monoid ((<>))
 import qualified Data.Text.Lazy as T
 import Data.Time (UTCTime)
