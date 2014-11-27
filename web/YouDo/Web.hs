@@ -14,7 +14,7 @@ import qualified Data.Text.Lazy as T
 import Data.Time (UTCTime)
 import Data.Time.Format (parseTime)
 import Database.PostgreSQL.Simple (close, connectPostgreSQL)
-import Network.HTTP.Types (ok200, created201, badRequest400, notFound404,
+import Network.HTTP.Types (ok200, created201, notFound404,
     internalServerError500)
 import Network.URI (URI(..), URIAuth(..), relativeTo, nullURI)
 import Network.Wai.Handler.Warp (Port, Settings(..), setPort, setHost,
