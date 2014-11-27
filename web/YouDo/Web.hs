@@ -97,15 +97,15 @@ app baseuri mv_db = do
         setHeader "Location" url
         text $ T.concat ["created at ", url, "\r\n"]
     get "/0/youdos/:id" $ do
-        id <- read <$> param "id" :: ActionM Int
-        youdos <- liftIO $ withMVar mv_db $ getYoudo id
+        ydid <- read <$> param "id" :: ActionM Int
+        youdos <- liftIO $ withMVar mv_db $ getYoudo ydid
         case youdos of
             [] -> do status notFound404
-                     text $ T.concat ["no youdo with id ", T.pack $ show id]
+                     text $ T.concat ["no youdo with id ", T.pack $ show ydid]
             [youdo] -> do status ok200
                           text $ T.pack $ show youdo
             _ -> do status internalServerError500
-                    text $ T.concat ["multiple youdos with id ", T.pack $ show id]
+                    text $ T.concat ["multiple youdos with id ", T.pack $ show ydid]
 
 bodyYoudo :: ActionM Youdo
 bodyYoudo = do
