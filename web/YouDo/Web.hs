@@ -19,8 +19,7 @@ import Network.HTTP.Types (ok200, created201, notFound404,
 import Network.URI (URI(..), URIAuth(..), relativeTo, nullURI)
 import Network.Wai.Handler.Warp (setPort, setHost, defaultSettings)
 import Options.Applicative (option, strOption, flag', auto, long, short,
-    metavar, help, execParser, Parser, fullDesc, progDesc, helper, info,
-    header)
+    metavar, help, execParser, Parser, fullDesc, helper, info, header)
 import System.Exit (exitWith, ExitCode(..))
 import System.IO (stderr, hPutStrLn)
 import System.Environment (getArgs, getProgName)
