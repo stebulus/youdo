@@ -1,7 +1,7 @@
 module YouDo.DB.Mock where
 
 import Prelude hiding (id)
-import Control.Concurrent.MVar (MVar, withMVar, modifyMVar)
+import Control.Concurrent.MVar (MVar, withMVar, modifyMVar, newMVar)
 import Data.Maybe (fromJust, listToMaybe)
 import YouDo.DB (Youdo(..), DB(..))
 
@@ -18,3 +18,8 @@ instance DB MockDB where
         return ( db { youdos = yd { id = Just newid } : (youdos db) }
                , newid
                )
+
+empty :: IO MockDB
+empty = do
+    mv <- newMVar $ BareMockDB { youdos = [] }
+    return $ MockDB mv

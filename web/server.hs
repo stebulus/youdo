@@ -1,9 +1,9 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings, RankNTypes #-}
 module Main where
 import Prelude hiding(id)
 import Codec.MIME.Type (mimeType, MIMEType(Application))
 import Codec.MIME.Parse (parseMIMEType)
-import Control.Applicative ((<$>), (<*>))
+import Control.Applicative ((<$>), (<*>), (<|>))
 import Control.Concurrent.MVar (MVar, newMVar, withMVar)
 import Control.Exception (bracket)
 import Control.Monad.IO.Class (liftIO)
@@ -20,8 +20,9 @@ import Network.HTTP.Types (ok200, created201, badRequest400, notFound404,
 import Network.URI (URI(..), URIAuth(..), relativeTo, nullURI)
 import Network.Wai.Handler.Warp (Port, Settings(..), setPort, setHost,
     defaultSettings)
-import Options.Applicative (option, strOption, auto, long, short, metavar,
-    help, execParser, Parser, fullDesc, progDesc, helper, info, header)
+import Options.Applicative (option, strOption, flag', auto, long, short,
+    metavar, help, execParser, Parser, fullDesc, progDesc, helper, info,
+    header)
 import System.Exit (exitWith, ExitCode(..))
 import System.IO (stderr, hPutStrLn)
 import System.Environment (getArgs, getProgName)
@@ -29,10 +30,12 @@ import System.Locale (defaultTimeLocale, iso8601DateFormat)
 import Web.Scotty (scottyOpts, ScottyM, get, post, put, status, header, param,
     text, Options(..), setHeader, ActionM, raise, rescue)
 import YouDo.DB
+import qualified YouDo.DB.Mock as Mock
 import YouDo.DB.PostgreSQL
 
+data DBOption = InMemory | Postgres String
 data YDOptions = YDOptions { port :: Int
-                           , connstr :: String
+                           , db :: DBOption
                            }
 options :: Parser YDOptions
 options = YDOptions
@@ -40,20 +43,24 @@ options = YDOptions
                      <> short 'p'
                      <> metavar "PORT"
                      <> help "Listen on port number PORT.")
-    <*> strOption (long "postgresql"
-                   <> short 'g'
-                   <> metavar "STR"
-                   <> help "Connect to PostgreSQL database specified \
-                           \by libpq connection string STR.")
+    <*> ( Postgres <$> strOption (long "postgresql"
+                                 <> short 'g'
+                                 <> metavar "STR"
+                                 <> help "Connect to PostgreSQL database \
+                                         \specified by libpq connection \
+                                         \string STR.")
+          <|> flag' InMemory (long "memory"
+                             <> short 'm'
+                             <> help "Use a transient in-memory database.") )
 main = execParser opts >>= mainOpts
     where opts = info (helper <*> options)
             (fullDesc
             <> Options.Applicative.header "ydserver - a YouDo web server")
 
 mainOpts :: YDOptions -> IO ()
-mainOpts YDOptions { port = p, connstr = cs } =
-    withPostgresConnection cs $ \conn -> do
-        mv_conn <- newMVar conn
+mainOpts YDOptions { port = p, db = db } =
+    withDB db $ \db -> do
+        mvdb <- newMVar db
         let baseuri = nullURI { uriScheme = "http"
                               , uriAuthority = Just URIAuth
                                     { uriUserInfo = ""
@@ -69,10 +76,11 @@ mainOpts YDOptions { port = p, connstr = cs } =
                                  $ setHost "127.0.0.1"  -- for now
                                  $ defaultSettings
                       }
-                   $ app baseuri mv_conn
+                   $ app baseuri mvdb
 
-withPostgresConnection :: ConnectionString -> (Connection -> IO a) -> IO a
-withPostgresConnection connstr f =
+withDB :: DBOption -> (forall a. DB a => a -> IO ()) -> IO ()
+withDB InMemory f = Mock.empty >>= f
+withDB (Postgres connstr) f =
     bracket (connectPostgreSQL $ pack connstr)
             (close)
             f
