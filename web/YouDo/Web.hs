@@ -17,8 +17,7 @@ import Database.PostgreSQL.Simple (close, connectPostgreSQL)
 import Network.HTTP.Types (ok200, created201, notFound404,
     internalServerError500)
 import Network.URI (URI(..), URIAuth(..), relativeTo, nullURI)
-import Network.Wai.Handler.Warp (Port, Settings(..), setPort, setHost,
-    defaultSettings)
+import Network.Wai.Handler.Warp (setPort, setHost, defaultSettings)
 import Options.Applicative (option, strOption, flag', auto, long, short,
     metavar, help, execParser, Parser, fullDesc, progDesc, helper, info,
     header)
