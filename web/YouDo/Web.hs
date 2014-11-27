@@ -116,17 +116,17 @@ bodyYoudo = do
                          (parseMIMEType $ T.toStrict hdr)
     case mimeType contenttype of
         Application "x-www-form-urlencoded" -> do
-            assignerid <- param "assignerid"
-            assigneeid <- param "assigneeid"
-            description <- param "description"
-            duedate <- fromISODateString <$> param "duedate"
-            completed <- param "completed"
+            assignerid' <- param "assignerid"
+            assigneeid' <- param "assigneeid"
+            description' <- param "description"
+            duedate' <- fromISODateString <$> param "duedate"
+            completed' <- param "completed"
             return Youdo { id = Nothing
-                         , assignerid = assignerid
-                         , assigneeid = assigneeid
-                         , description = description
-                         , duedate = duedate
-                         , completed = completed
+                         , assignerid = assignerid'
+                         , assigneeid = assigneeid'
+                         , description = description'
+                         , duedate = duedate'
+                         , completed = completed'
                          }
         _ -> raise $ T.concat ["Don't know how to handle Content-Type: ", hdr]
 
