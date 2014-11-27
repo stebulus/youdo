@@ -21,8 +21,8 @@ import Network.Wai.Handler.Warp (setPort, setHost, defaultSettings)
 import Options.Applicative (option, strOption, flag', auto, long, short,
     metavar, help, execParser, Parser, fullDesc, helper, info, header)
 import System.Locale (defaultTimeLocale, iso8601DateFormat)
-import Web.Scotty (scottyOpts, ScottyM, get, post, put, status, header, param,
-    text, Options(..), setHeader, ActionM, raise, rescue)
+import Web.Scotty (scottyOpts, ScottyM, get, post, status, header, param,
+    text, Options(..), setHeader, ActionM, raise)
 import YouDo.DB
 import qualified YouDo.DB.Mock as Mock
 import YouDo.DB.PostgreSQL
