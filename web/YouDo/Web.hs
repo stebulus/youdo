@@ -46,6 +46,8 @@ options = YDOptions
           <|> flag' InMemory (long "memory"
                              <> short 'm'
                              <> help "Use a transient in-memory database.") )
+
+main :: IO ()
 main = execParser opts >>= mainOpts
     where opts = info (helper <*> options)
             (fullDesc
