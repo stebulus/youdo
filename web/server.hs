@@ -139,10 +139,3 @@ fromISODateString s =
     parseTime defaultTimeLocale
               (iso8601DateFormat $ Just "%H:%M:%SZ")
               s
-
-data Action = RunServer Port ConnectionString
-type ConnectionString = String
-
-parseArgs :: String -> [String] -> Either String Action
-parseArgs _ [port, connstr] = Right $ RunServer (read port) connstr
-parseArgs progname _ = Left $ "usage: " ++ progname ++ " port libpqConnectionString"
