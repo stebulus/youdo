@@ -32,3 +32,9 @@ executable ydserver
                        , time ==1.4.*
                        , old-locale ==1.0.*
                        , optparse-applicative ==0.11.*
+
+Test-Suite test-web
+  type:                detailed-0.9
+  test-module:         YouDo.Web.Test
+  build-depends:       base ==4.6.*
+                       , Cabal >=1.8
