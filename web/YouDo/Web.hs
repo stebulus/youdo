@@ -25,7 +25,7 @@ import Web.Scotty (scottyOpts, ScottyM, get, post, status, header, param,
     text, Options(..), setHeader, ActionM, raise)
 import YouDo.DB
 import qualified YouDo.DB.Mock as Mock
-import YouDo.DB.PostgreSQL
+import YouDo.DB.PostgreSQL()  -- instance DB Connection
 
 data DBOption = InMemory | Postgres String
 data YDOptions = YDOptions { port :: Int
