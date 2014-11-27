@@ -54,9 +54,9 @@ main = execParser opts >>= mainOpts
             <> Options.Applicative.header "ydserver - a YouDo web server")
 
 mainOpts :: YDOptions -> IO ()
-mainOpts YDOptions { port = p, db = db } =
-    withDB db $ \db -> do
-        mvdb <- newMVar db
+mainOpts YDOptions { port = p, db = dbopt } =
+    withDB dbopt $ \db' -> do
+        mvdb <- newMVar db'
         let baseuri = nullURI { uriScheme = "http"
                               , uriAuthority = Just URIAuth
                                     { uriUserInfo = ""
