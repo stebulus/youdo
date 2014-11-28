@@ -9,13 +9,13 @@ data BareMockDB = BareMockDB { youdos :: [Youdo] }
 data MockDB = MockDB { mvar :: MVar BareMockDB }
 
 instance DB MockDB where
-    getYoudo ydid db = withMVar (mvar db) $ \db ->
-        return $ [yd | yd<-youdos db, maybe False (==ydid) (id yd)]
-    getYoudos db = withMVar (mvar db) $ \db ->
-        return $ youdos db
-    postYoudo yd db = modifyMVar (mvar db) $ \db -> do
-        let newid = 1 + fromJust (maybe (Just 0) id $ listToMaybe $ youdos db)
-        return ( db { youdos = yd { id = Just newid } : (youdos db) }
+    getYoudo ydid db = withMVar (mvar db) $ \db' ->
+        return $ [yd | yd<-youdos db', maybe False (==ydid) (id yd)]
+    getYoudos db = withMVar (mvar db) $ \db' ->
+        return $ youdos db'
+    postYoudo yd db = modifyMVar (mvar db) $ \db' -> do
+        let newid = 1 + fromJust (maybe (Just 0) id $ listToMaybe $ youdos db')
+        return ( db' { youdos = yd { id = Just newid } : (youdos db') }
                , newid
                )
 
