@@ -15,7 +15,7 @@ instance DB DBConnection where
 
     postYoudo youdo (DBConnection conn) = do
         withTransaction conn $ do
-            execute conn
+            _ <- execute conn
                     ("insert into transaction (yd_userid, yd_ipaddr, yd_useragent) \
                     \values (?, ?, ?)"::Query)
                     (0::Int, "127.0.0.1"::String, "some agent"::String)
