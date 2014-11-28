@@ -11,11 +11,11 @@ instance FromRow Youdo where
     fromRow = Youdo <$> field <*> field <*> field <*> field <*> field <*> field
 
 instance DB Connection where
-    getYoudo id conn =
+    getYoudo ydid conn =
         query conn
               "select id, assignerid, assigneeid, description, duedate, completed \
               \from youdo where id = ?"
-              (Only id)
+              (Only ydid)
 
     postYoudo youdo conn = do
         withTransaction conn $ do
