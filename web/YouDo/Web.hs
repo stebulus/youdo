@@ -25,7 +25,7 @@ import Web.Scotty (scottyOpts, ScottyM, get, post, status, header, param,
     text, Options(..), setHeader, ActionM, raise)
 import YouDo.DB
 import qualified YouDo.DB.Mock as Mock
-import YouDo.DB.PostgreSQL()  -- instance DB Connection
+import YouDo.DB.PostgreSQL(DBConnection(..))
 
 data DBOption = InMemory | Postgres String
 data YDOptions = YDOptions { port :: Int
@@ -77,8 +77,8 @@ mainOpts YDOptions { port = p, db = dbopt } =
 withDB :: DBOption -> (forall a. DB a => a -> IO ()) -> IO ()
 withDB InMemory f = Mock.empty >>= f
 withDB (Postgres connstr) f =
-    bracket (connectPostgreSQL $ pack connstr)
-            (close)
+    bracket (DBConnection <$> connectPostgreSQL (pack connstr))
+            (\(DBConnection conn) -> close conn)
             f
 
 app :: DB a => URI -> MVar a -> ScottyM ()

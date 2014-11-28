@@ -10,14 +10,15 @@ import YouDo.DB (Youdo(..), DB(..))
 instance FromRow Youdo where
     fromRow = Youdo <$> field <*> field <*> field <*> field <*> field <*> field
 
-instance DB Connection where
-    getYoudo ydid conn =
+newtype DBConnection = DBConnection Connection
+instance DB DBConnection where
+    getYoudo ydid (DBConnection conn) =
         query conn
               "select id, assignerid, assigneeid, description, duedate, completed \
               \from youdo where id = ?"
               (Only ydid)
 
-    postYoudo youdo conn = do
+    postYoudo youdo (DBConnection conn) = do
         withTransaction conn $ do
             execute conn
                     ("insert into transaction (yd_userid, yd_ipaddr, yd_useragent) \
@@ -32,6 +33,6 @@ instance DB Connection where
                 :: IO [Only Int]
             return $ fromOnly $ head ids
 
-    getYoudos conn = query_ conn
+    getYoudos (DBConnection conn) = query_ conn
         "select id, assignerid, assigneeid, description, duedate, completed \
         \from youdo"
