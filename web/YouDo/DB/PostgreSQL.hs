@@ -1,14 +1,9 @@
 {-# LANGUAGE OverloadedStrings #-}
 module YouDo.DB.PostgreSQL where
 
-import Control.Applicative ((<$>), (<*>))
 import Database.PostgreSQL.Simple (query, query_, execute, withTransaction,
     Only(..), Connection, Query)
-import Database.PostgreSQL.Simple.FromRow (FromRow(..), field)
 import YouDo.DB (Youdo(..), DB(..))
-
-instance FromRow Youdo where
-    fromRow = Youdo <$> field <*> field <*> field <*> field <*> field <*> field
 
 newtype DBConnection = DBConnection Connection
 instance DB DBConnection where
