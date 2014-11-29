@@ -74,7 +74,7 @@ mainOpts YDOptions { port = p, db = dbopt } =
                       }
                    $ app baseuri mvdb
 
-withDB :: DBOption -> (forall a. DB a => a -> IO ()) -> IO ()
+withDB :: DBOption -> (forall a. DB a => a -> IO b) -> IO b
 withDB InMemory f = Mock.empty >>= f
 withDB (Postgres connstr) f =
     bracket (DBConnection <$> connectPostgreSQL (pack connstr))
