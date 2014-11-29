@@ -22,23 +22,29 @@ tests :: IO [Test]
 tests = return [sillyTest]
 
 sillyTest :: Test
-sillyTest = Test $ TestInstance
+sillyTest = serverTest "silly" $ \req -> do
+    (stat, hdrs, body) <- req
+            defaultRequest
+                { requestMethod = methodGet
+                , httpVersion = http11
+                , rawPathInfo = "/"
+                }
+    return $ Finished $
+        if stat /= ok200
+        then Fail (show stat)
+        else if body /= "placeholder"
+        then Fail (unpack body)
+        else Pass
+
+serverTest :: String
+    -> ((Request -> IO (Status, ResponseHeaders, ByteString)) -> IO Progress)
+    -> Test
+serverTest testName f = Test $ TestInstance
     { run = withDB InMemory $ \db -> do
         mvdb <- newMVar db
-        wsgiapp <- scottyApp $ app (fromJust $ parseURI "http://example.com") mvdb
-        (stat, hdrs, body) <- request wsgiapp
-                defaultRequest
-                    { requestMethod = methodGet
-                    , httpVersion = http11
-                    , rawPathInfo = "/"
-                    }
-        return $ Finished $
-            if stat /= ok200
-            then Fail (show stat)
-            else if body /= "placeholder"
-            then Fail (unpack body)
-            else Pass
-    , name = "silly"
+        waiApp <- scottyApp $ app (fromJust $ parseURI "http://example.com") mvdb
+        f (request waiApp)
+    , name = testName
     , tags = []
     , options = []
     , setOption = \_ _ -> Left "no options supported"
