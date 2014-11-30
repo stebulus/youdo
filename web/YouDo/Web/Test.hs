@@ -33,9 +33,9 @@ tests = return
             <> body "assignerid=0&assigneeid=0&description=blah&duedate=&completed=false"
             <> header "Content-Type" "application/x-www-form-urlencoded"
         stat ~= created201
-        lookup (mk "Location") headers ~= Just "http://example.com/0/youdos/1"
+        let ydurl = SB.unpack $ fromJust $ lookup (mk "Location") headers
         (stat', _, bod) <- liftIO $ req
-            $ get "http://example.com/0/youdos/1"
+            $ get ydurl
             <> header "Accept" "text/plain"
         stat' ~= ok200
         bod ~= "Youdo {id = Just 1\
