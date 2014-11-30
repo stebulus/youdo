@@ -7,6 +7,7 @@ import Control.Applicative ((<$>), (<*>), (<|>))
 import Control.Concurrent.MVar (MVar, newMVar, withMVar)
 import Control.Exception (bracket)
 import Control.Monad.IO.Class (liftIO)
+import Data.Aeson (encode)
 import Data.ByteString.Char8 (pack)
 import Data.Default (def)
 import Data.Monoid ((<>))
@@ -19,10 +20,11 @@ import Network.HTTP.Types (ok200, created201, notFound404,
 import Network.URI (URI(..), URIAuth(..), relativeTo, nullURI)
 import Network.Wai.Handler.Warp (setPort, setHost, defaultSettings)
 import Options.Applicative (option, strOption, flag', auto, long, short,
-    metavar, help, execParser, Parser, fullDesc, helper, info, header)
+    metavar, help, execParser, Parser, fullDesc, helper, info)
+import qualified Options.Applicative as Opt
 import System.Locale (defaultTimeLocale, iso8601DateFormat)
 import Web.Scotty (scottyOpts, ScottyM, get, post, status, header, param,
-    text, Options(..), setHeader, ActionM, raise)
+    text, Options(..), setHeader, ActionM, raise, raw)
 import YouDo.DB
 import qualified YouDo.DB.Mock as Mock
 import YouDo.DB.PostgreSQL(DBConnection(..))
@@ -50,8 +52,7 @@ options = YDOptions
 main :: IO ()
 main = execParser opts >>= mainOpts
     where opts = info (helper <*> options)
-            (fullDesc
-            <> Options.Applicative.header "ydserver - a YouDo web server")
+            (fullDesc <> Opt.header "ydserver - a YouDo web server")
 
 mainOpts :: YDOptions -> IO ()
 mainOpts YDOptions { port = p, db = dbopt } =
@@ -103,7 +104,8 @@ app baseuri mv_db = do
             [] -> do status notFound404
                      text $ T.concat ["no youdo with id ", T.pack $ show ydid]
             [youdo] -> do status ok200
-                          text $ T.pack $ show youdo
+                          setHeader "Content-Type" "application/json"
+                          raw $ encode youdo
             _ -> do status internalServerError500
                     text $ T.concat ["multiple youdos with id ", T.pack $ show ydid]
 

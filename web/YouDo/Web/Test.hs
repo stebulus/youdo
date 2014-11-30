@@ -5,9 +5,12 @@ import Control.Concurrent.MVar (newEmptyMVar, newMVar, takeMVar, putMVar,
     modifyMVar_, modifyMVar)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.Either (EitherT(..), left, right)
+import Data.Aeson (decode, Object, Value(..))
 import Data.ByteString.Lazy (ByteString)
+import qualified Data.ByteString.Lazy.Char8 as LB
 import qualified Data.ByteString.Char8 as SB
 import Data.CaseInsensitive (mk)
+import qualified Data.HashMap.Strict as M
 import Data.Maybe (fromJust)
 import Data.Monoid ((<>), Monoid(..))
 import Distribution.TestSuite (Test(..), TestInstance(..), Progress(..),
@@ -34,17 +37,20 @@ tests = return
             <> header "Content-Type" "application/x-www-form-urlencoded"
         stat ~= created201
         let ydurl = SB.unpack $ fromJust $ lookup (mk "Location") headers
-        (stat', _, bod) <- liftIO $ req
+        (stat', headers', bod) <- liftIO $ req
             $ get ydurl
             <> header "Accept" "text/plain"
         stat' ~= ok200
-        bod ~= "Youdo {id = Just 1\
-                     \, assignerid = 0\
-                     \, assigneeid = 0\
-                     \, description = \"blah\"\
-                     \, duedate = Nothing\
-                     \, completed = False\
-                     \}"
+        lookup (mk "Content-Type") headers' ~= Just "application/json"
+        obj <- maybe (left $ LB.unpack $ "bad JSON: " <> bod)
+                     right
+                     (decode bod :: Maybe Object)
+        M.lookup "id" obj ~= Just (Number 1)
+        M.lookup "assignerid" obj ~= Just (Number 0)
+        M.lookup "assigneeid" obj ~= Just (Number 0)
+        M.lookup "description" obj ~= Just (String "blah")
+        M.lookup "duedate" obj ~= Just Null
+        M.lookup "completed" obj ~= Just (Bool False)
     ]
 
 type TestResult = EitherT String IO ()
