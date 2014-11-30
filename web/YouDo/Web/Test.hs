@@ -41,12 +41,21 @@ failure = left
 success :: TestResult
 success = right ()
 
+-- Assert equality.
 (~=) :: (Eq a, Show a) => a -> a -> TestResult
 x ~= y = if x == y
          then success
          else failure $ "expected " ++ (show y) ++ ", got " ++ (show x)
 infix 1 ~=
 
+-- A named test which makes requests to a transient in-memory YouDo
+-- server.  The test proper is the second argument, a function which
+-- accepts a requesting function and uses it to perform a test,
+-- returning a TestResult.  The requesting function accepts any
+-- instance of IsRequest; normally this will be a RequestTransformer
+-- constructed by chaining together values returned by helper functions
+-- such as get, post, header, and body.  See the invocations of
+-- serverTest above for examples.
 serverTest :: (IsRequest a) =>
     String
     -> ((a -> IO (Status, ResponseHeaders, ByteString)) -> TestResult)
@@ -67,8 +76,10 @@ serverTest testName f = Test $ TestInstance
 
 class IsRequest a where
     toRequest :: a -> IO Request
+
 instance IsRequest Request where
     toRequest = return
+
 data RequestTransformer = RequestTransformer (IO Request -> IO Request)
 instance IsRequest RequestTransformer where
     toRequest (RequestTransformer xfm) =
@@ -126,6 +137,7 @@ header key val = RequestTransformer $ \ioreq -> do
     req <- ioreq
     return req { requestHeaders = (mk key, val) : requestHeaders req }
 
+-- Get the response of the given Application to the given Request.
 request :: (IsRequest a) =>
     Application -> a -> IO (Status, ResponseHeaders, ByteString)
 request appl req = do
