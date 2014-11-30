@@ -6,7 +6,6 @@ import Control.Concurrent.MVar (newEmptyMVar, newMVar, takeMVar, putMVar,
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.Either (EitherT(..), left, right)
 import Data.Aeson (decode, Object, Value(..))
-import Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy.Char8 as LB
 import qualified Data.ByteString.Char8 as SB
 import Data.CaseInsensitive (mk)
@@ -76,7 +75,7 @@ infix 1 ~=
 -- serverTest above for examples.
 serverTest :: (IsRequest a) =>
     String
-    -> ((a -> IO (Status, ResponseHeaders, ByteString)) -> TestResult)
+    -> ((a -> IO (Status, ResponseHeaders, LB.ByteString)) -> TestResult)
     -> Test
 serverTest testName f = Test $ TestInstance
     { run = withDB InMemory $ \db -> do
@@ -156,7 +155,7 @@ header key val = transform
 
 -- Get the response of the given Application to the given Request.
 request :: (IsRequest a) =>
-    Application -> a -> IO (Status, ResponseHeaders, ByteString)
+    Application -> a -> IO (Status, ResponseHeaders, LB.ByteString)
 request appl req = do
     mvresp <- newEmptyMVar
     mvbody <- newMVar ""
