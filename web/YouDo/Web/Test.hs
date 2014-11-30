@@ -28,11 +28,23 @@ tests = return
         stat ~= ok200
         bod ~= "placeholder"
     , serverTest "new youdo" $ \req -> do
-        (stat, _, _) <- liftIO $ req
+        (stat, headers, _) <- liftIO $ req
             $ post "http://example.com/0/youdos"
             <> body "assignerid=0&assigneeid=0&description=blah&duedate=&completed=false"
             <> header "Content-Type" "application/x-www-form-urlencoded"
         stat ~= created201
+        lookup (mk "Location") headers ~= Just "http://example.com/0/youdos/1"
+        (stat', _, bod) <- liftIO $ req
+            $ get "http://example.com/0/youdos/1"
+            <> header "Accept" "text/plain"
+        stat' ~= ok200
+        bod ~= "Youdo {id = Just 1\
+                     \, assignerid = 0\
+                     \, assigneeid = 0\
+                     \, description = \"blah\"\
+                     \, duedate = Nothing\
+                     \, completed = False\
+                     \}"
     ]
 
 type TestResult = EitherT String IO ()
