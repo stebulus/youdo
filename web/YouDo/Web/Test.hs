@@ -36,16 +36,21 @@ tests = return
         stat ~= created201
     ]
 
-(~=) :: (Eq a, Show a, Monad m) => a -> a -> EitherT String m ()
+type TestResult = EitherT String IO ()
+failure :: String -> TestResult
+failure = left
+success :: TestResult
+success = right ()
+
+(~=) :: (Eq a, Show a) => a -> a -> TestResult
 x ~= y = if x == y
-         then right ()
-         else left $ "expected " ++ (show y) ++ ", got " ++ (show x)
+         then success
+         else failure $ "expected " ++ (show y) ++ ", got " ++ (show x)
 infix 1 ~=
 
 serverTest :: (IsRequest a) =>
     String
-    -> ((a -> IO (Status, ResponseHeaders, ByteString))
-        -> EitherT String IO ())
+    -> ((a -> IO (Status, ResponseHeaders, ByteString)) -> TestResult)
     -> Test
 serverTest testName f = Test $ TestInstance
     { run = withDB InMemory $ \db -> do
