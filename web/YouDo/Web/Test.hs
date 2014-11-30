@@ -24,7 +24,10 @@ import YouDo.Web (app, withDB, DBOption(..))
 
 tests :: IO [Test]
 tests = return
-    [ sillyTest
+    [ serverTest "silly" $ \req -> do
+        (stat, _, bod) <- liftIO $ req $ get "http://example.com/"
+        stat ~= ok200
+        bod ~= "placeholder"
     , serverTest "new youdo" $ \req -> do
         (stat, _, _) <- liftIO $ req
             $ post "http://example.com/0/youdos"
@@ -32,12 +35,6 @@ tests = return
             <> header "Content-Type" "application/x-www-form-urlencoded"
         stat ~= created201
     ]
-
-sillyTest :: Test
-sillyTest = serverTest "silly" $ \req -> do
-    (stat, _, bod) <- liftIO $ req $ get "http://example.com/"
-    stat ~= ok200
-    bod ~= "placeholder"
 
 (~=) :: (Eq a, Show a, Monad m) => a -> a -> EitherT String m ()
 x ~= y = if x == y
