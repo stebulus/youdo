@@ -71,7 +71,8 @@ instance IsRequest Request where
     toRequest = return
 data RequestTransformer = RequestTransformer (IO Request -> IO Request)
 instance IsRequest RequestTransformer where
-    toRequest (RequestTransformer xfm) = xfm $ return defaultRequest
+    toRequest (RequestTransformer xfm) =
+        xfm $ return defaultRequest { httpVersion = http11 }
 instance Monoid RequestTransformer where
     mempty = RequestTransformer id
     mappend (RequestTransformer f) (RequestTransformer g)
