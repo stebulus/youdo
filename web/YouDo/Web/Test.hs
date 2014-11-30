@@ -109,14 +109,24 @@ method meth = RequestTransformer $ \ioreq -> do
 url :: String -> RequestTransformer
 url u = RequestTransformer $ \ioreq -> do
     req <- ioreq
-    return req { pathInfo = decodePathSegments path
-               , rawPathInfo = path
-               , rawQueryString = query
-               , queryString = parseQuery query
-               }
-        where query = SB.pack $ uriQuery parseduri
-              path = SB.pack $ uriPath parseduri
-              parseduri = fromJust $ parseURI u
+    let req' = if httpVersion req == http11
+               then hostless { requestHeaders = assoc (mk "Host") host
+                                    $ requestHeaders hostless
+                             , requestHeaderHost = Just (host <> portstr)
+                             }
+               else hostless
+        hostless = req { pathInfo = decodePathSegments path
+                       , rawPathInfo = path
+                       , rawQueryString = query
+                       , queryString = parseQuery query
+                       }
+        query = SB.pack $ uriQuery parseduri
+        path = SB.pack $ uriPath parseduri
+        auth = fromJust $ uriAuthority parseduri
+        host = SB.pack $ uriRegName auth
+        portstr = SB.pack $ uriPort auth
+        parseduri = fromJust $ parseURI u
+    return req'
 
 get :: String -> RequestTransformer
 get u = method methodGet <> url u
@@ -162,3 +172,10 @@ successively :: [a] -> IO (IO a)
 successively xs = do
     mv <- newMVar xs
     return $ modifyMVar mv (\(x:rest) -> return (rest,x))
+
+-- Update or insert an entry in an associative list.
+assoc :: (Eq a) => a -> b -> [(a,b)] -> [(a,b)]
+assoc k v [] = [(k,v)]
+assoc k v ((k',v') : rest)
+    | k == k' = (k,v) : rest
+    | otherwise = (k',v') : assoc k v rest
