@@ -3,6 +3,8 @@ module YouDo.Web.Test where
 import Blaze.ByteString.Builder (toLazyByteString)
 import Control.Concurrent.MVar (newEmptyMVar, newMVar, takeMVar, putMVar,
     modifyMVar_)
+import Control.Monad.IO.Class (liftIO)
+import Control.Monad.Trans.Either (EitherT(..), left, right)
 import Data.ByteString.Lazy (ByteString)
 import Data.ByteString.Lazy.Char8 (unpack)
 import qualified Data.ByteString.Char8 as SB
@@ -27,22 +29,29 @@ tests = return [sillyTest]
 
 sillyTest :: Test
 sillyTest = serverTest "silly" $ \req -> do
-    (stat, hdrs, body) <- req $ basicRequest methodGet "http://example.com/"
-    return $ Finished $
-        if stat /= ok200
-        then Fail (show stat)
-        else if body /= "placeholder"
-        then Fail (unpack body)
-        else Pass
+    (stat, hdrs, body) <- liftIO $ req $
+        basicRequest methodGet "http://example.com/"
+    stat ~= ok200
+    body ~= "placeholder"
+
+(~=) :: (Eq a, Show a, Monad m) => a -> a -> EitherT String m ()
+x ~= y = if x == y
+         then right ()
+         else left $ "expected " ++ (show y) ++ ", got " ++ (show x)
+infix 1 ~=
 
 serverTest :: String
-    -> ((Request -> IO (Status, ResponseHeaders, ByteString)) -> IO Progress)
+    -> ((Request -> IO (Status, ResponseHeaders, ByteString))
+        -> EitherT String IO ())
     -> Test
 serverTest testName f = Test $ TestInstance
     { run = withDB InMemory $ \db -> do
         mvdb <- newMVar db
         waiApp <- scottyApp $ app (fromJust $ parseURI "http://example.com") mvdb
-        f (request waiApp)
+        result <- runEitherT $ f $ request waiApp
+        return $ Finished $ case result of
+            Left msg -> Fail msg
+            Right _ -> Pass
     , name = testName
     , tags = []
     , options = []
