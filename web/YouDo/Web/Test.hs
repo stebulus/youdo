@@ -5,15 +5,19 @@ import Control.Concurrent.MVar (newEmptyMVar, newMVar, takeMVar, putMVar,
     modifyMVar_)
 import Data.ByteString.Lazy (ByteString)
 import Data.ByteString.Lazy.Char8 (unpack)
+import qualified Data.ByteString.Char8 as SB
+import Data.CaseInsensitive (CI)
 import Data.Maybe (fromJust)
 import Data.Monoid (mempty, (<>))
 import Distribution.TestSuite (Test(..), TestInstance(..), Progress(..),
     Result(..))
-import Network.HTTP.Types (Status, ResponseHeaders, ok200, http11, methodGet)
-import Network.URI (parseURI)
-import Network.Wai (Application, Request(..), Response, responseToStream,
-    defaultRequest)
-import Network.Wai.Internal (ResponseReceived(..))
+import Network.HTTP.Types (Status, ResponseHeaders, ok200, http11, methodGet,
+    decodePathSegments, parseQuery, Method)
+import Network.Socket (SockAddr(..))
+import Network.URI (parseURI, URI(..), URIAuth(..))
+import Network.Wai (Application, Response, responseToStream, defaultRequest,
+    RequestBodyLength(..))
+import Network.Wai.Internal (Request(..), ResponseReceived(..))
 import Web.Scotty (scottyApp)
 import YouDo.DB.Mock (empty)
 import YouDo.Web (app, withDB, DBOption(..))
@@ -23,12 +27,7 @@ tests = return [sillyTest]
 
 sillyTest :: Test
 sillyTest = serverTest "silly" $ \req -> do
-    (stat, hdrs, body) <- req
-            defaultRequest
-                { requestMethod = methodGet
-                , httpVersion = http11
-                , rawPathInfo = "/"
-                }
+    (stat, hdrs, body) <- req $ basicRequest methodGet "http://example.com/"
     return $ Finished $
         if stat /= ok200
         then Fail (show stat)
@@ -49,6 +48,29 @@ serverTest testName f = Test $ TestInstance
     , options = []
     , setOption = \_ _ -> Left "no options supported"
     }
+
+basicRequest :: Method -> String -> Request
+basicRequest method uri = Request
+    { requestMethod = method
+    , httpVersion = http11
+    , pathInfo = decodePathSegments path
+    , rawPathInfo = path
+    , rawQueryString = query
+    , queryString = parseQuery query
+    , requestHeaders = [("Host"::CI SB.ByteString, host)]
+    , isSecure = False
+    , remoteHost = SockAddrInet 0 0
+    , requestBody = return ""
+    , vault = mempty
+    , requestBodyLength = KnownLength $ fromIntegral $ SB.length body
+    , requestHeaderHost = Just host
+    , requestHeaderRange = Nothing
+    }
+    where body = ""::SB.ByteString
+          host = SB.pack $ uriRegName $ fromJust $ uriAuthority parseduri
+          query = SB.pack $ uriQuery parseduri
+          path = SB.pack $ uriPath parseduri
+          parseduri = fromJust $ parseURI uri
 
 request :: Application -> Request -> IO (Status, ResponseHeaders, ByteString)
 request appl req = do
