@@ -46,6 +46,6 @@ database, create and populate a testing schema:
         cabal install --only-dependencies
         cabal configure
         cabal build
-        PGSYSCONFDIR=~/etc dist/build/ydserver/ydserver 3087 service=ydservice
+        PGSYSCONFDIR=~/etc dist/build/ydserver/ydserver -p 3087 -g service=ydservice
 
 5. Visit [http://localhost:3087/](http://localhost:3087/).
