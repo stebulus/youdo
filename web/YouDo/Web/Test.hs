@@ -21,7 +21,6 @@ import Network.Wai (Application, Response, responseToStream, defaultRequest,
     RequestBodyLength(..))
 import Network.Wai.Internal (Request(..), ResponseReceived(..))
 import Web.Scotty (scottyApp)
-import YouDo.DB.Mock (empty)
 import YouDo.Web (app, withDB, DBOption(..))
 
 tests :: IO [Test]
