@@ -27,8 +27,7 @@ tests = return
     [ sillyTest
     , serverTest "new youdo" $ \req -> do
         (stat, _, _) <- liftIO $ req
-            $ method methodPost
-            <> url "http://example.com/0/youdos"
+            $ post "http://example.com/0/youdos"
             <> body "assignerid=0&assigneeid=0&description=blah&duedate=&completed=false"
             <> header "Content-Type" "application/x-www-form-urlencoded"
         stat ~= created201
@@ -36,9 +35,7 @@ tests = return
 
 sillyTest :: Test
 sillyTest = serverTest "silly" $ \req -> do
-    (stat, _, bod) <- liftIO $ req
-        $ method methodGet
-        <> url "http://example.com/"
+    (stat, _, bod) <- liftIO $ req $ get "http://example.com/"
     stat ~= ok200
     bod ~= "placeholder"
 
@@ -118,6 +115,12 @@ url u = RequestTransformer $ \ioreq -> do
         where query = SB.pack $ uriQuery parseduri
               path = SB.pack $ uriPath parseduri
               parseduri = fromJust $ parseURI u
+
+get :: String -> RequestTransformer
+get u = method methodGet <> url u
+
+post :: String -> RequestTransformer
+post u = method methodPost <> url u
 
 body :: SB.ByteString -> RequestTransformer
 body s = RequestTransformer $ \ioreq -> do
