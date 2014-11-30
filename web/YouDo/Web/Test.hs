@@ -7,14 +7,13 @@ import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.Either (EitherT(..), left, right)
 import Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Char8 as SB
-import Data.CaseInsensitive (CI, mk)
+import Data.CaseInsensitive (mk)
 import Data.Maybe (fromJust)
 import Data.Monoid ((<>), Monoid(..))
 import Distribution.TestSuite (Test(..), TestInstance(..), Progress(..),
     Result(..))
 import Network.HTTP.Types (Status, ResponseHeaders, ok200, created201, http11,
     methodGet, methodPost, decodePathSegments, parseQuery, Method)
-import Network.Socket (SockAddr(..))
 import Network.URI (parseURI, URI(..), URIAuth(..))
 import Network.Wai (Application, responseToStream, RequestBodyLength(..), requestBody,
     defaultRequest)
@@ -65,29 +64,6 @@ serverTest testName f = Test $ TestInstance
     , options = []
     , setOption = \_ _ -> Left "no options supported"
     }
-
-basicRequest :: Method -> String -> Request
-basicRequest meth uri = Request
-    { requestMethod = meth
-    , httpVersion = http11
-    , pathInfo = decodePathSegments path
-    , rawPathInfo = path
-    , rawQueryString = query
-    , queryString = parseQuery query
-    , requestHeaders = [("Host"::CI SB.ByteString, host)]
-    , isSecure = False
-    , remoteHost = SockAddrInet 0 0
-    , requestBody = return ""
-    , vault = mempty
-    , requestBodyLength = KnownLength $ fromIntegral $ SB.length bod
-    , requestHeaderHost = Just host
-    , requestHeaderRange = Nothing
-    }
-    where bod = ""::SB.ByteString
-          host = SB.pack $ uriRegName $ fromJust $ uriAuthority parseduri
-          query = SB.pack $ uriQuery parseduri
-          path = SB.pack $ uriPath parseduri
-          parseduri = fromJust $ parseURI uri
 
 class IsRequest a where
     toRequest :: a -> IO Request
