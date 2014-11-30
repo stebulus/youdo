@@ -50,6 +50,30 @@ tests = return
         M.lookup "duedate" obj ~= Just Null
         M.lookup "completed" obj ~= Just (Bool False)
         M.lookup "url" obj ~= (Just $ String $ T.pack ydurl)
+    , serverTest "new youdo with duedate" $ \req -> do
+        -- In the request and the response the duedate is in the
+        -- same format that JavaScript's Date.toJSON method returns,
+        -- which is ISO 8601.
+        (stat, headers, _) <- liftIO $ req
+            $ post "http://example.com/0/youdos"
+            <> body "assignerid=0&assigneeid=0&description=blah&\
+                    \duedate=2014-11-30T14:10:05.038Z&completed=false"
+            <> header "Content-Type" "application/x-www-form-urlencoded"
+        stat ~= created201
+        let ydurl = SB.unpack $ fromJust $ lookup (mk "Location") headers
+        (stat', headers', bod) <- liftIO $ req
+            $ get ydurl
+            <> header "Accept" "text/plain"
+        stat' ~= ok200
+        lookup (mk "Content-Type") headers' ~= Just "application/json"
+        obj <- hoistEither (eitherDecode bod :: Either String Object)
+        M.lookup "id" obj ~= Just (Number 1)
+        M.lookup "assignerid" obj ~= Just (Number 0)
+        M.lookup "assigneeid" obj ~= Just (Number 0)
+        M.lookup "description" obj ~= Just (String "blah")
+        M.lookup "duedate" obj ~= Just (String "2014-11-30T14:10:05.038Z")
+        M.lookup "completed" obj ~= Just (Bool False)
+        M.lookup "url" obj ~= (Just $ String $ T.pack ydurl)
     ]
 
 type TestResult = EitherT String IO ()

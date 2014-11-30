@@ -14,8 +14,7 @@ import Data.Default (def)
 import Data.Monoid ((<>))
 import qualified Data.Text.Lazy as LT
 import qualified Data.Text as ST
-import Data.Time (UTCTime)
-import Data.Time.Format (parseTime)
+import Data.Time.ISO8601 (parseISO8601)
 import Database.PostgreSQL.Simple (close, connectPostgreSQL)
 import Network.HTTP.Types (ok200, created201, notFound404,
     internalServerError500)
@@ -24,7 +23,6 @@ import Network.Wai.Handler.Warp (setPort, setHost, defaultSettings)
 import Options.Applicative (option, strOption, flag', auto, long, short,
     metavar, help, execParser, Parser, fullDesc, helper, info)
 import qualified Options.Applicative as Opt
-import System.Locale (defaultTimeLocale, iso8601DateFormat)
 import Web.Scotty (scottyOpts, ScottyM, get, post, status, header, param,
     text, Options(..), setHeader, ActionM, raise, raw)
 import YouDo.DB
@@ -130,7 +128,7 @@ bodyYoudo = do
             assignerid' <- param "assignerid"
             assigneeid' <- param "assigneeid"
             description' <- param "description"
-            duedate' <- fromISODateString <$> param "duedate"
+            duedate' <- parseISO8601 <$> param "duedate"
             completed' <- param "completed"
             return Youdo { id = Nothing
                          , assignerid = assignerid'
@@ -140,9 +138,3 @@ bodyYoudo = do
                          , completed = completed'
                          }
         _ -> raise $ LT.concat ["Don't know how to handle Content-Type: ", hdr]
-
-fromISODateString :: String -> Maybe UTCTime
-fromISODateString s =
-    parseTime defaultTimeLocale
-              (iso8601DateFormat $ Just "%H:%M:%SZ")
-              s
