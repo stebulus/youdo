@@ -4,8 +4,8 @@ import Blaze.ByteString.Builder (toLazyByteString)
 import Control.Concurrent.MVar (newEmptyMVar, newMVar, takeMVar, putMVar,
     modifyMVar_, modifyMVar)
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad.Trans.Either (EitherT(..), left, right)
-import Data.Aeson (decode, Object, Value(..))
+import Control.Monad.Trans.Either (EitherT(..), left, right, hoistEither)
+import Data.Aeson (eitherDecode, Object, Value(..))
 import qualified Data.ByteString.Lazy.Char8 as LB
 import qualified Data.ByteString.Char8 as SB
 import Data.CaseInsensitive (mk)
@@ -41,9 +41,7 @@ tests = return
             <> header "Accept" "text/plain"
         stat' ~= ok200
         lookup (mk "Content-Type") headers' ~= Just "application/json"
-        obj <- maybe (left $ LB.unpack $ "bad JSON: " <> bod)
-                     right
-                     (decode bod :: Maybe Object)
+        obj <- hoistEither (eitherDecode bod :: Either String Object)
         M.lookup "id" obj ~= Just (Number 1)
         M.lookup "assignerid" obj ~= Just (Number 0)
         M.lookup "assigneeid" obj ~= Just (Number 0)
