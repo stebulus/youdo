@@ -32,3 +32,28 @@ executable ydserver
                        , time ==1.4.*
                        , old-locale ==1.0.*
                        , optparse-applicative ==0.11.*
+
+Test-Suite test-web
+  type:                detailed-0.9
+  test-module:         YouDo.Web.Test
+  other-modules:       YouDo.Web, YouDo.DB, YouDo.DB.Mock, YouDo.DB.PostgreSQL
+  ghc-options:         -Wall
+  build-depends:       base ==4.6.*
+                       , Cabal >=1.8
+                       , wai ==3.0.*
+                       , warp ==3.0.*
+                       , scotty ==0.9.*
+                       , http-types ==0.8.*
+                       , network ==2.4.*
+                       , mime ==0.4.*
+                       , data-default ==0.5.*
+                       , postgresql-simple ==0.4.*
+                       , bytestring ==0.10.*
+                       , text ==0.11.*
+                       , blaze-builder ==0.3.*
+                       , transformers ==0.3.*
+                       , time ==1.4.*
+                       , old-locale ==1.0.*
+                       , optparse-applicative ==0.11.*
+                       , case-insensitive ==1.1.*
+                       , either ==4.3.*
