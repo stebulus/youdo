@@ -7,11 +7,13 @@ import Control.Applicative ((<$>), (<*>), (<|>))
 import Control.Concurrent.MVar (MVar, newMVar, withMVar)
 import Control.Exception (bracket)
 import Control.Monad.IO.Class (liftIO)
-import Data.Aeson (encode)
+import Data.Aeson (encode, toJSON, Value(..))
 import Data.ByteString.Char8 (pack)
+import qualified Data.HashMap.Strict as M
 import Data.Default (def)
 import Data.Monoid ((<>))
-import qualified Data.Text.Lazy as T
+import qualified Data.Text.Lazy as LT
+import qualified Data.Text as ST
 import Data.Time (UTCTime)
 import Data.Time.Format (parseTime)
 import Database.PostgreSQL.Simple (close, connectPostgreSQL)
@@ -87,35 +89,42 @@ app baseuri mv_db = do
     get "/" $ text "placeholder"
     get "/0/youdos" $ do
         youdos <- liftIO $ withMVar mv_db getYoudos
-        text $ T.pack $ show youdos
+        text $ LT.pack $ show youdos
     post "/0/youdos" $ do
         youdo <- bodyYoudo
         youdoid <- liftIO $ withMVar mv_db $ postYoudo youdo
-        let url = T.pack $ show $
-                nullURI { uriPath = "0/youdos/" ++ (show youdoid) }
-                `relativeTo` baseuri
+        let url = LT.pack $ youdoURL baseuri youdoid
         status created201
         setHeader "Location" url
-        text $ T.concat ["created at ", url, "\r\n"]
+        text $ LT.concat ["created at ", url, "\r\n"]
     get "/0/youdos/:id" $ do
         ydid <- read <$> param "id" :: ActionM Int
         youdos <- liftIO $ withMVar mv_db $ getYoudo ydid
         case youdos of
             [] -> do status notFound404
-                     text $ T.concat ["no youdo with id ", T.pack $ show ydid]
+                     text $ LT.concat ["no youdo with id ", LT.pack $ show ydid]
             [youdo] -> do status ok200
                           setHeader "Content-Type" "application/json"
-                          raw $ encode youdo
+                          let (Object obj) = toJSON youdo
+                              augmented = Object $ M.insert "url"
+                                (String (ST.pack (youdoURL baseuri ydid)))
+                                obj
+                          raw $ encode augmented
             _ -> do status internalServerError500
-                    text $ T.concat ["multiple youdos with id ", T.pack $ show ydid]
+                    text $ LT.concat ["multiple youdos with id ", LT.pack $ show ydid]
+
+youdoURL :: URI -> Int -> String
+youdoURL baseuri ydid = show $
+    nullURI { uriPath = "0/youdos/" ++ (show ydid) }
+    `relativeTo` baseuri
 
 bodyYoudo :: ActionM Youdo
 bodyYoudo = do
     hdr <- Web.Scotty.header "Content-Type"
         >>= maybe (raise "no Content-Type header") return
-    contenttype <- maybe (raise $ T.concat ["Incomprehensible Content-Type: ", hdr])
+    contenttype <- maybe (raise $ LT.concat ["Incomprehensible Content-Type: ", hdr])
                          return
-                         (parseMIMEType $ T.toStrict hdr)
+                         (parseMIMEType $ LT.toStrict hdr)
     case mimeType contenttype of
         Application "x-www-form-urlencoded" -> do
             assignerid' <- param "assignerid"
@@ -130,7 +139,7 @@ bodyYoudo = do
                          , duedate = duedate'
                          , completed = completed'
                          }
-        _ -> raise $ T.concat ["Don't know how to handle Content-Type: ", hdr]
+        _ -> raise $ LT.concat ["Don't know how to handle Content-Type: ", hdr]
 
 fromISODateString :: String -> Maybe UTCTime
 fromISODateString s =

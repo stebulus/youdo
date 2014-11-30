@@ -12,6 +12,7 @@ import Data.CaseInsensitive (mk)
 import qualified Data.HashMap.Strict as M
 import Data.Maybe (fromJust)
 import Data.Monoid ((<>), Monoid(..))
+import qualified Data.Text as T
 import Distribution.TestSuite (Test(..), TestInstance(..), Progress(..),
     Result(..))
 import Network.HTTP.Types (Status, ResponseHeaders, ok200, created201, http11,
@@ -48,6 +49,7 @@ tests = return
         M.lookup "description" obj ~= Just (String "blah")
         M.lookup "duedate" obj ~= Just Null
         M.lookup "completed" obj ~= Just (Bool False)
+        M.lookup "url" obj ~= (Just $ String $ T.pack ydurl)
     ]
 
 type TestResult = EitherT String IO ()

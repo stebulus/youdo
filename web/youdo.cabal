@@ -33,6 +33,7 @@ executable ydserver
                        , old-locale ==1.0.*
                        , optparse-applicative ==0.11.*
                        , aeson ==0.7.*
+                       , unordered-containers ==0.2.*
 
 Test-Suite test-web
   type:                detailed-0.9
