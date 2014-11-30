@@ -89,14 +89,14 @@ instance Monoid RequestTransformer where
     mappend (RequestTransformer f) (RequestTransformer g)
         = RequestTransformer (f.g)
 
+transform :: (Request -> Request) -> RequestTransformer
+transform f = RequestTransformer $ fmap f
+
 method :: Method -> RequestTransformer
-method meth = RequestTransformer $ \ioreq -> do
-    req <- ioreq
-    return req { requestMethod = meth }
+method meth = transform $ \r -> r { requestMethod = meth }
 
 url :: String -> RequestTransformer
-url u = RequestTransformer $ \ioreq -> do
-    req <- ioreq
+url u = transform $ \req ->
     let req' = if httpVersion req == http11
                then hostless { requestHeaders = assoc (mk "Host") host
                                     $ requestHeaders hostless
@@ -114,7 +114,7 @@ url u = RequestTransformer $ \ioreq -> do
         host = SB.pack $ uriRegName auth
         portstr = SB.pack $ uriPort auth
         parseduri = fromJust $ parseURI u
-    return req'
+    in req'
 
 get :: String -> RequestTransformer
 get u = method methodGet <> url u
@@ -133,9 +133,8 @@ body s = RequestTransformer $ \ioreq -> do
                }
 
 header :: SB.ByteString -> SB.ByteString -> RequestTransformer
-header key val = RequestTransformer $ \ioreq -> do
-    req <- ioreq
-    return req { requestHeaders = (mk key, val) : requestHeaders req }
+header key val = transform
+    $ \r -> r { requestHeaders = (mk key, val) : requestHeaders r }
 
 -- Get the response of the given Application to the given Request.
 request :: (IsRequest a) =>
