@@ -6,7 +6,6 @@ import Control.Concurrent.MVar (newEmptyMVar, newMVar, takeMVar, putMVar,
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.Either (EitherT(..), left, right)
 import Data.ByteString.Lazy (ByteString)
-import Data.ByteString.Lazy.Char8 (unpack)
 import qualified Data.ByteString.Char8 as SB
 import Data.CaseInsensitive (CI)
 import Data.Maybe (fromJust)
@@ -17,8 +16,7 @@ import Network.HTTP.Types (Status, ResponseHeaders, ok200, http11, methodGet,
     decodePathSegments, parseQuery, Method)
 import Network.Socket (SockAddr(..))
 import Network.URI (parseURI, URI(..), URIAuth(..))
-import Network.Wai (Application, Response, responseToStream, defaultRequest,
-    RequestBodyLength(..))
+import Network.Wai (Application, responseToStream, RequestBodyLength(..))
 import Network.Wai.Internal (Request(..), ResponseReceived(..))
 import Web.Scotty (scottyApp)
 import YouDo.Web (app, withDB, DBOption(..))
@@ -28,7 +26,7 @@ tests = return [sillyTest]
 
 sillyTest :: Test
 sillyTest = serverTest "silly" $ \req -> do
-    (stat, hdrs, body) <- liftIO $ req $
+    (stat, _, body) <- liftIO $ req $
         basicRequest methodGet "http://example.com/"
     stat ~= ok200
     body ~= "placeholder"

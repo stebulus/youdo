@@ -37,6 +37,7 @@ Test-Suite test-web
   type:                detailed-0.9
   test-module:         YouDo.Web.Test
   other-modules:       YouDo.Web, YouDo.DB, YouDo.DB.Mock, YouDo.DB.PostgreSQL
+  ghc-options:         -Wall
   build-depends:       base ==4.6.*
                        , Cabal >=1.8
                        , wai ==3.0.*
