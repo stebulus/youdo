@@ -139,9 +139,9 @@ method meth = transform $ \r -> r { requestMethod = meth }
 url :: String -> RequestTransformer
 url u = transform $ \req ->
     let req' = if httpVersion req == http11
-               then hostless { requestHeaders = assoc (mk "Host") host
+               then hostless { requestHeaders = assoc (mk "Host") fullhost
                                     $ requestHeaders hostless
-                             , requestHeaderHost = Just (host <> portstr)
+                             , requestHeaderHost = Just fullhost
                              }
                else hostless
         hostless = req { pathInfo = decodePathSegments path
@@ -154,6 +154,7 @@ url u = transform $ \req ->
         auth = fromJust $ uriAuthority parseduri
         host = SB.pack $ uriRegName auth
         portstr = SB.pack $ uriPort auth
+        fullhost = host <> portstr
         parseduri = fromJust $ parseURI u
     in req'
 
