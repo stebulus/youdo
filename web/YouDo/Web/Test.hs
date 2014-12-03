@@ -82,6 +82,20 @@ tests = return
                     \duedate=2014-11-30T14:10:05.038Z&completed=false"
             <> header "Content-Type" "snee"
         stat ~= badRequest400
+    , serverTest "new youdo with unparsable assignerid" $ \req -> do
+        (stat, _, _) <- liftIO $ req
+            $ post "http://example.com/0/youdos"
+            <> body "assignerid=f&assigneeid=0&description=blah&\
+                    \duedate=2014-11-30T14:10:05.038Z&completed=false"
+            <> header "Content-Type" "application/x-www-form-urlencoded"
+        stat ~= badRequest400
+    , serverTest "new youdo with missing assignerid" $ \req -> do
+        (stat, _, _) <- liftIO $ req
+            $ post "http://example.com/0/youdos"
+            <> body "assigneeid=0&description=blah&\
+                    \duedate=2014-11-30T14:10:05.038Z&completed=false"
+            <> header "Content-Type" "application/x-www-form-urlencoded"
+        stat ~= badRequest400
     ]
 
 type TestResult = EitherT String IO ()

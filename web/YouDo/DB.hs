@@ -2,17 +2,37 @@
 module YouDo.DB where
 import Prelude hiding (id)
 import Control.Applicative ((<$>), (<*>))
-import Data.Aeson (ToJSON(..), (.=), object)
+import Data.Aeson (ToJSON(..), (.=), object, Value(..))
+import qualified Data.Text.Lazy as LT
 import Data.Time (UTCTime)
+import Data.Time.ISO8601 (parseISO8601)
+import Database.PostgreSQL.Simple.FromField (FromField(..))
 import Database.PostgreSQL.Simple.FromRow (FromRow(..), field)
+import Database.PostgreSQL.Simple.ToField (ToField(..))
+import Web.Scotty (Parsable(..))
 
 data Youdo = Youdo { id :: Maybe Int  -- Nothing for new Youdos
                    , assignerid :: Int
                    , assigneeid :: Int
                    , description :: String
-                   , duedate :: Maybe UTCTime
+                   , duedate :: DueDate
                    , completed :: Bool
                    } deriving (Show)
+
+-- This newtype avoids orphan instances.
+newtype DueDate = DueDate { toMaybeTime :: Maybe UTCTime } deriving (Show)
+instance Parsable DueDate where
+    parseParam "" = Right $ DueDate Nothing
+    parseParam t = case parseISO8601 (LT.unpack t) of
+        Nothing -> Left $ LT.concat ["could not parse date ", t]
+        Just x -> Right $ DueDate $ Just x
+instance ToJSON DueDate where
+    toJSON (DueDate Nothing) = Null
+    toJSON (DueDate (Just t)) = toJSON t
+instance FromField DueDate where
+    fromField fld = (fmap.fmap) DueDate $ fromField fld
+instance ToField DueDate where
+    toField (DueDate t) = toField t
 
 instance FromRow Youdo where
     fromRow = Youdo <$> field <*> field <*> field <*> field <*> field <*> field

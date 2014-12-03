@@ -7,7 +7,7 @@ import Control.Applicative ((<$>), (<*>), (<|>))
 import Control.Concurrent.MVar (MVar, newMVar, withMVar)
 import Control.Exception (bracket)
 import Control.Monad.Trans.Class (lift)
-import Control.Monad.Trans.Either (EitherT(..), left, right)
+import Control.Monad.Trans.Either (EitherT(..), left, right, hoistEither)
 import Control.Monad.IO.Class (liftIO)
 import Data.Aeson (encode, toJSON, Value(..))
 import Data.ByteString.Char8 (pack)
@@ -16,7 +16,6 @@ import Data.Default (def)
 import Data.Monoid ((<>))
 import qualified Data.Text.Lazy as LT
 import qualified Data.Text as ST
-import Data.Time.ISO8601 (parseISO8601)
 import Database.PostgreSQL.Simple (close, connectPostgreSQL)
 import Network.HTTP.Types (ok200, created201, badRequest400, notFound404,
     internalServerError500)
@@ -26,7 +25,7 @@ import Options.Applicative (option, strOption, flag', auto, long, short,
     metavar, help, execParser, Parser, fullDesc, helper, info)
 import qualified Options.Applicative as Opt
 import Web.Scotty (scottyOpts, ScottyM, get, post, status, header, param,
-    text, Options(..), setHeader, ActionM, raw)
+    params, text, Options(..), setHeader, ActionM, raw, Parsable(..))
 import YouDo.DB
 import qualified YouDo.DB.Mock as Mock
 import YouDo.DB.PostgreSQL(DBConnection(..))
@@ -129,19 +128,19 @@ bodyYoudo = do
     contenttype <- (return $ parseMIMEType $ LT.toStrict hdr)
         `maybeError` (LT.concat ["Incomprehensible Content-Type: ", hdr])
     case mimeType contenttype of
-        Application "x-www-form-urlencoded" -> lift $ do
-            assignerid' <- param "assignerid"
-            assigneeid' <- param "assigneeid"
-            description' <- param "description"
-            duedate' <- parseISO8601 <$> param "duedate"
-            completed' <- param "completed"
-            return Youdo { id = Nothing
-                         , assignerid = assignerid'
-                         , assigneeid = assigneeid'
-                         , description = description'
-                         , duedate = duedate'
-                         , completed = completed'
-                         }
+        Application "x-www-form-urlencoded" -> do
+            assignerid' <- mandatoryParam "assignerid"
+            assigneeid' <- mandatoryParam "assigneeid"
+            description' <- optionalParam "description" ""
+            duedate' <- optionalParam "duedate" (DueDate Nothing)
+            completed' <- optionalParam "completed" False
+            right Youdo { id = Nothing
+                        , assignerid = assignerid'
+                        , assigneeid = assigneeid'
+                        , description = description'
+                        , duedate = duedate'
+                        , completed = completed'
+                        }
         _ -> left $ LT.concat ["Don't know how to handle Content-Type: ", hdr]
 
 maybeError :: (Monad m) => m (Maybe a) -> b -> EitherT b m a
@@ -150,3 +149,17 @@ maybeError mma err = do
     case m of
         Nothing -> left err
         Just x -> right x
+
+mandatoryParam :: (Parsable a) => LT.Text -> EitherT LT.Text ActionM a
+mandatoryParam key = do
+    ps <- lift params
+    case lookup key ps of
+        Nothing -> left $ LT.concat ["missing mandatory parameter ", key]
+        Just val -> hoistEither $ parseParam val
+
+optionalParam :: (Parsable a) => LT.Text -> a -> EitherT LT.Text ActionM a
+optionalParam key defaultval = do
+    ps <- lift params
+    case lookup key ps of
+        Nothing -> right defaultval
+        Just val -> hoistEither $ parseParam val
