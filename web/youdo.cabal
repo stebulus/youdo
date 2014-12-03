@@ -35,6 +35,7 @@ executable ydserver
                        , optparse-applicative ==0.11.*
                        , aeson ==0.7.*
                        , unordered-containers ==0.2.*
+                       , either ==4.3.*
 
 Test-Suite test-web
   type:                detailed-0.9

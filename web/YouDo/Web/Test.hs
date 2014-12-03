@@ -15,8 +15,9 @@ import Data.Monoid ((<>), Monoid(..))
 import qualified Data.Text as T
 import Distribution.TestSuite (Test(..), TestInstance(..), Progress(..),
     Result(..))
-import Network.HTTP.Types (Status, ResponseHeaders, ok200, created201, http11,
-    methodGet, methodPost, decodePathSegments, parseQuery, Method)
+import Network.HTTP.Types (Status, ResponseHeaders, ok200, created201,
+    badRequest400, http11, methodGet, methodPost, decodePathSegments,
+    parseQuery, Method)
 import Network.URI (parseURI, URI(..), URIAuth(..))
 import Network.Wai (Application, responseToStream, RequestBodyLength(..), requestBody,
     defaultRequest)
@@ -74,6 +75,13 @@ tests = return
         M.lookup "duedate" obj ~= Just (String "2014-11-30T14:10:05.038Z")
         M.lookup "completed" obj ~= Just (Bool False)
         M.lookup "url" obj ~= (Just $ String $ T.pack ydurl)
+    , serverTest "new youdo with bad content-type" $ \req -> do
+        (stat, _, _) <- liftIO $ req
+            $ post "http://example.com/0/youdos"
+            <> body "assignerid=0&assigneeid=0&description=blah&\
+                    \duedate=2014-11-30T14:10:05.038Z&completed=false"
+            <> header "Content-Type" "snee"
+        stat ~= badRequest400
     ]
 
 type TestResult = EitherT String IO ()
