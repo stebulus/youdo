@@ -17,6 +17,7 @@ import Data.List (sort)
 import Data.Maybe (fromJust)
 import Data.Monoid ((<>), Monoid(..))
 import qualified Data.Text as T
+import qualified Data.Text.Lazy as LT
 import Distribution.TestSuite (Test(..), TestInstance(..), Progress(..),
     Result(..))
 import Network.HTTP.Types (Status, ResponseHeaders, ok200, created201,
@@ -26,7 +27,7 @@ import Network.URI (parseURI, URI(..), URIAuth(..))
 import Network.Wai (Application, responseToStream, RequestBodyLength(..), requestBody,
     defaultRequest)
 import Network.Wai.Internal (Request(..), ResponseReceived(..))
-import Web.Scotty (scottyApp)
+import Web.Scotty (scottyApp, parseParam)
 import YouDo.DB.Mock
 import YouDo.Holex
 import YouDo.Test (plainTest)
@@ -34,7 +35,7 @@ import YouDo.Types (DueDate)
 import YouDo.Web
 
 tests :: IO [Test]
-tests = return
+tests = return $
     [ serverTest "new youdo, form data" $ \req -> do
         (stat, headers, _) <- liftIO $ req
             $ post "http://example.com/0/youdos"
@@ -200,7 +201,63 @@ tests = return
         M.lookup "duedate" obj5 ~= Just Null
         M.lookup "completed" obj5 ~= Just (Bool True)
         M.lookup "url" obj5 ~= (Just $ String $ T.pack ydurl)
-    , plainTest "Holex parsing from Scotty parameters" $ do
+    ]
+
+    -- Bad duedates in various parsing contexts.
+    ++ do  -- List monad!
+        (datestr, descr, errmsg)
+            <- [ ( "2014-11-30T14_10:05.038Z", "misformatted date",
+                 "parsing UTC time / parsing time / expected ':' / \
+                 \Failed reading: satisfyElem / next characters: _10:05.038" )
+               , ( "snee", "completely misformatted date",
+                 "parsing UTC time / parsing date / parsing year (YYYY) / \
+                 \Failed reading: takeWhile1 / next characters: snee" )
+               , ( "2014-11-31T14:10:05.038Z", "invalid date",
+                 "parsing UTC time / Failed reading: no such date / \
+                 \next characters: T14:10:05." )
+               ]
+        m <- [ serverTest ("new youdo, form data, " ++ descr) $ \req -> do
+                    (stat, _, bod) <- liftIO $ req
+                        $ post "http://example.com/0/youdos"
+                        <> body (SB.pack
+                                 ("assignerid=0&assigneeid=0&description=blah&\
+                                  \duedate=" ++ datestr ++ "&completed=false"))
+                        <> header "Content-Type" "application/x-www-form-urlencoded"
+                    stat ~= badRequest400
+                    bod ~= LB.pack ("cannot parse parameter \"duedate\": "
+                                    ++ errmsg ++ "\r\n")
+             , serverTest ("new youdo, json data, " ++ descr) $ \req -> do
+                    (stat, _, bod) <- liftIO $ req
+                        $ post "http://example.com/0/youdos"
+                        <> body (SB.pack
+                                    ("{\"assignerid\":0,\
+                                     \\"assigneeid\":0,\
+                                     \\"description\":\"blah\",\
+                                     \\"duedate\":\"" ++ datestr ++ "\",\
+                                     \\"completed\":false}"))
+                        <> header "Content-Type" "application/json"
+                    stat ~= badRequest400
+                    bod ~= LB.pack ("cannot parse parameter \"duedate\": "
+                                    ++ errmsg ++ "\r\n")
+             , plainTest ("holex parsing, " ++ descr) $
+                    (runHolex (parse "duedate")
+                              [("duedate", JSONField (String $ T.pack datestr))]
+                    :: Either [HolexError String ParamValue] DueDate)
+                    ~= Left [ParseError "duedate"
+                             (JSONField (String $ T.pack datestr))
+                             (LT.pack errmsg)]
+             , plainTest ("aeson parsing, " ++ descr) $
+                    (parseEither parseJSON (String $ T.pack datestr)
+                    :: Either String DueDate)
+                    ~= Left errmsg
+             , plainTest ("scotty parsing, " ++ descr) $
+                    (parseParam (LT.pack datestr) :: Either LT.Text DueDate)
+                        ~= Left (LT.pack errmsg)
+             ]
+        return m
+
+    ++
+    [ plainTest "Holex parsing from Scotty parameters" $ do
         let expr :: Holex String ParamValue Int
             expr = (+) <$> (parse "a") <*> (parse "b")
             val = runHolex expr [("a", ScottyParam "1"), ("b", ScottyParam "-3")]
@@ -217,14 +274,6 @@ tests = return
         (val,val') ~= (Right (-2),
             Left [ParseError "b" (JSONField (String "q"))
                 "when expecting a Int, encountered String instead"])
-    , plainTest "parsing misformatted duedate from json using Holex" $ do
-        (runHolex (parse "duedate") [("duedate", JSONField (String "snee"))]
-            :: Either [HolexError String ParamValue] DueDate)
-            ~= Left [ParseError "duedate" (JSONField (String "snee"))
-                        "could not parse date \"snee\""]
-    , plainTest "parsing misformatted date from json using Aeson" $ do
-        (parseEither parseJSON "snee" :: Either String DueDate)
-            ~= Left "could not parse date \"snee\""
     ]
 
 unintersperse :: (Eq a) => a -> [a] -> [[a]]

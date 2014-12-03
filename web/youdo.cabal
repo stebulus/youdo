@@ -23,14 +23,15 @@ executable ydserver
                        , youdo ==0.1.*
 
                        , scotty ==0.9.*
-                       , warp ==3.0.*
                        , postgresql-simple ==0.4.*
+                       , warp ==3.0.*
+
                        , optparse-applicative ==0.11.*
 
                        , network ==2.4.*
 
-                       , data-default ==0.5.*
                        , bytestring ==0.10.*
+                       , data-default ==0.5.*
 
 library
   hs-source-dirs:      src
@@ -39,6 +40,7 @@ library
                        , YouDo.DB.PostgreSQL
                        , YouDo.Holex
                        , YouDo.Test
+                       , YouDo.TimeParser
                        , YouDo.Types
                        , YouDo.Web
   ghc-options:         -Wall
@@ -48,6 +50,7 @@ library
                        , scotty ==0.9.*
                        , aeson ==0.7.*
                        , postgresql-simple ==0.4.*
+                       , attoparsec ==0.11.*
 
                        , http-types ==0.8.*
                        , network ==2.4.*
@@ -59,7 +62,6 @@ library
 
                        , bytestring ==0.10.*
                        , data-default ==0.5.*
-                       , iso8601-time ==0.1.*
                        , text ==0.11.*
                        , time ==1.4.*
                        , old-locale ==1.0.*
@@ -89,6 +91,7 @@ Test-Suite test-web
                        , case-insensitive ==1.1.*
                        , text ==0.11.*
                        , unordered-containers ==0.2.*
+                       , attoparsec ==0.11.*
 
 Test-Suite test-holex
   type:                detailed-0.9

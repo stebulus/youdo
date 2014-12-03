@@ -3,17 +3,16 @@ module YouDo.Types where
 
 import Control.Applicative ((<$>), (<*>), pure)
 import Data.Aeson (ToJSON(..), FromJSON(..), (.=), object, Value(..))
-import Data.Aeson.Types (Parser, typeMismatch)
-import qualified Data.Text as ST
+import Data.Aeson.Types (typeMismatch)
 import qualified Data.Text.Lazy as LT
 import Data.Time (UTCTime)
-import Data.Time.ISO8601 (parseISO8601)
 import Database.PostgreSQL.Simple.FromField (FromField(..))
 import Database.PostgreSQL.Simple.FromRow (FromRow(..), field)
 import Database.PostgreSQL.Simple.ToField (ToField(..))
 import Web.Scotty (Parsable(..))
 
 import YouDo.DB
+import YouDo.TimeParser (parseUTCTime)
 
 type Youdo = Versioned YoudoID YoudoData
 instance NamedResource YoudoID where
@@ -91,20 +90,16 @@ data UserUpdate = UserUpdate { oldUserVersion :: VersionedID UserID
 newtype DueDate = DueDate { toMaybeTime :: Maybe UTCTime } deriving (Eq, Show)
 instance Parsable DueDate where
     parseParam "" = Right $ DueDate Nothing
-    parseParam t = case parseISO8601 (LT.unpack t) of
-        Nothing -> Left $ LT.concat ["could not parse date ", t]
-        Just x -> Right $ DueDate $ Just x
+    parseParam t = either (Left . LT.pack)
+                          (Right . DueDate . Just)
+                          $ parseUTCTime t
 instance ToJSON DueDate where
     toJSON (DueDate Nothing) = Null
     toJSON (DueDate (Just t)) = toJSON t
 instance FromJSON DueDate where
     parseJSON Null = DueDate <$> pure Nothing
-    parseJSON (String t) = DueDate <$> (possibleDate =<< pure t)
-        where possibleDate :: ST.Text -> Parser (Maybe UTCTime)
-              possibleDate s =
-                case parseISO8601 (ST.unpack s) of
-                    Just d -> return $ Just d
-                    Nothing -> fail $ "could not parse date " ++ show t
+    parseJSON (String t) = either fail return $
+        DueDate . Just <$> parseUTCTime (LT.fromStrict t)
     parseJSON x = typeMismatch "String or Null" x
 
 instance FromField DueDate where
