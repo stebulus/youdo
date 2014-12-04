@@ -42,7 +42,8 @@ tests = return
             $ get ydurl
             <> header "Accept" "text/plain"
         stat' ~= ok200
-        lookup (mk "Content-Type") headers' ~= Just "application/json"
+        lookup (mk "Content-Type") headers'
+            ~= Just "application/json; charset=utf-8"
         obj <- hoistEither (eitherDecode bod :: Either String Object)
         M.lookup "id" obj ~= Just (Number 1)
         M.lookup "assignerid" obj ~= Just (Number 0)
@@ -67,7 +68,8 @@ tests = return
             $ get ydurl
             <> header "Accept" "text/plain"
         stat' ~= ok200
-        lookup (mk "Content-Type") headers' ~= Just "application/json"
+        lookup (mk "Content-Type") headers'
+            ~= Just "application/json; charset=utf-8"
         obj <- hoistEither (eitherDecode bod :: Either String Object)
         M.lookup "id" obj ~= Just (Number 1)
         M.lookup "assignerid" obj ~= Just (Number 0)

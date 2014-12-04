@@ -9,13 +9,13 @@ import Control.Exception (bracket)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Either (EitherT(..), left, right, hoistEither)
 import Control.Monad.IO.Class (liftIO)
-import Data.Aeson (encode, toJSON, Value(..))
+import Data.Aeson (toJSON, ToJSON(..), Value(..), (.=))
 import Data.ByteString.Char8 (pack)
 import qualified Data.HashMap.Strict as M
 import Data.Default (def)
+import Data.List (foldl')
 import Data.Monoid ((<>))
 import qualified Data.Text.Lazy as LT
-import qualified Data.Text as ST
 import Database.PostgreSQL.Simple (close, connectPostgreSQL)
 import Network.HTTP.Types (ok200, created201, badRequest400, notFound404,
     internalServerError500)
@@ -25,7 +25,7 @@ import Options.Applicative (option, strOption, flag', auto, long, short,
     metavar, help, execParser, Parser, fullDesc, helper, info)
 import qualified Options.Applicative as Opt
 import Web.Scotty (scottyOpts, ScottyM, get, post, status, header, param,
-    params, text, Options(..), setHeader, ActionM, raw, Parsable(..))
+    params, text, json, Options(..), setHeader, ActionM, Parsable(..))
 import YouDo.DB
 import qualified YouDo.DB.Mock as Mock
 import YouDo.DB.PostgreSQL(DBConnection(..))
@@ -107,18 +107,20 @@ app baseuri mv_db = do
             [] -> do status notFound404
                      text $ LT.concat ["no youdo with id ", LT.pack $ show ydid]
             [yd] -> do status ok200
-                       setHeader "Content-Type" "application/json"
-                       let (Object obj) = toJSON yd
-                           augmented = Object
-                                $ M.insert "thisVersion"
-                                    (String (ST.pack
-                                        (youdoVersionURL baseuri (version yd))))
-                                $ M.insert "url"
-                                    (String (ST.pack (youdoURL baseuri ydid)))
-                                    obj
-                       raw $ encode augmented
+                       json (WebYoudo baseuri yd)
             _ -> do status internalServerError500
                     text $ LT.concat ["multiple youdos with id ", LT.pack $ show ydid]
+
+data WebYoudo = WebYoudo URI Youdo
+instance ToJSON WebYoudo where
+    toJSON (WebYoudo baseuri yd) = Object augmentedmap
+        where augmentedmap = foldl' (flip (uncurry M.insert)) origmap
+                    [ "url" .= youdoURL baseuri (youdoid (version yd))
+                    , "thisVersion" .= youdoVersionURL baseuri (version yd)
+                    ]
+              origmap = case toJSON yd of
+                            Object m -> m
+                            _ -> error "Youdo didn't become a JSON object"
 
 youdoURL :: URI -> YoudoID -> String
 youdoURL baseuri (YoudoID n) = show $
