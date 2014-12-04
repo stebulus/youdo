@@ -11,7 +11,15 @@ import Database.PostgreSQL.Simple.FromRow (FromRow(..), field)
 import Database.PostgreSQL.Simple.ToField (ToField(..))
 import Web.Scotty (Parsable(..))
 
-data Youdo = Youdo { id :: Int
+newtype YoudoID = YoudoID Int deriving (Show, Eq)
+instance FromField YoudoID where
+    fromField fld = (fmap.fmap) YoudoID $ fromField fld
+instance ToField YoudoID where
+    toField (YoudoID n) = toField n
+instance ToJSON YoudoID where
+    toJSON (YoudoID n) = toJSON n
+
+data Youdo = Youdo { id :: YoudoID
                    , youdo :: YoudoData
                    } deriving (Show)
 
@@ -52,6 +60,6 @@ instance ToJSON Youdo where
         ]
 
 class DB a where
-    getYoudo :: Int -> a -> IO [Youdo]
-    postYoudo :: YoudoData -> a -> IO Int
+    getYoudo :: YoudoID -> a -> IO [Youdo]
+    postYoudo :: YoudoData -> a -> IO YoudoID
     getYoudos :: a -> IO [Youdo]

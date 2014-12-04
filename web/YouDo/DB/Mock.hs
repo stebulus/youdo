@@ -3,7 +3,7 @@ module YouDo.DB.Mock where
 import Prelude hiding (id)
 import Control.Concurrent.MVar (MVar, withMVar, modifyMVar, newMVar)
 import Data.Maybe (listToMaybe)
-import YouDo.DB (Youdo(..), DB(..))
+import YouDo.DB (YoudoID(..), Youdo(..), DB(..))
 
 data BareMockDB = BareMockDB { youdos :: [Youdo] }
 data MockDB = MockDB { mvar :: MVar BareMockDB }
@@ -14,7 +14,10 @@ instance DB MockDB where
     getYoudos db = withMVar (mvar db) $ \db' ->
         return $ youdos db'
     postYoudo yd db = modifyMVar (mvar db) $ \db' -> do
-        let newid = 1 + (maybe 0 id $ listToMaybe $ youdos db')
+        let newid = YoudoID $
+                1 + case listToMaybe $ youdos db' of
+                        Nothing -> 0
+                        Just (Youdo { id = YoudoID n }) -> n
         return ( db' { youdos = Youdo { id = newid, youdo = yd } : (youdos db') }
                , newid
                )

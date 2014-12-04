@@ -3,7 +3,7 @@ module YouDo.DB.PostgreSQL where
 
 import Database.PostgreSQL.Simple (query, query_, execute, withTransaction,
     Only(..), Connection, Query)
-import YouDo.DB (YoudoData(..), DB(..))
+import YouDo.DB (YoudoID(..), YoudoData(..), DB(..))
 
 newtype DBConnection = DBConnection Connection
 instance DB DBConnection where
@@ -25,7 +25,7 @@ instance DB DBConnection where
                 \values (?, ?, ?, ?, ?) returning id"
                 (assignerid yd, assigneeid yd, description yd,
                 duedate yd, completed yd)
-                :: IO [Only Int]
+                :: IO [Only YoudoID]
             return $ fromOnly $ head ids
 
     getYoudos (DBConnection conn) = query_ conn
