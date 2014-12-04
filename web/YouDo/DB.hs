@@ -19,6 +19,15 @@ instance ToField YoudoID where
 instance ToJSON YoudoID where
     toJSON (YoudoID n) = toJSON n
 
+newtype TransactionID = TransactionID Int deriving (Show, Eq)
+instance FromField TransactionID where
+    fromField fld = (fmap.fmap) TransactionID $ fromField fld
+
+data YoudoVersionID = YoudoVersionID
+    { youdoid :: YoudoID
+    , youdotxnid :: TransactionID
+    } deriving (Show, Eq)
+
 newtype UserID = UserID Int deriving (Show, Eq)
 instance FromField UserID where
     fromField fld = (fmap.fmap) UserID $ fromField fld
@@ -29,7 +38,7 @@ instance ToJSON UserID where
 instance Parsable UserID where
     parseParam x = UserID <$> parseParam x
 
-data Youdo = Youdo { id :: YoudoID
+data Youdo = Youdo { version :: YoudoVersionID
                    , youdo :: YoudoData
                    } deriving (Show)
 
@@ -56,12 +65,12 @@ instance ToField DueDate where
     toField (DueDate t) = toField t
 
 instance FromRow Youdo where
-    fromRow = Youdo <$> field
+    fromRow = Youdo <$> (YoudoVersionID <$> field <*> field)
         <*> (YoudoData <$> field <*> field <*> field <*> field <*> field)
 
 instance ToJSON Youdo where
     toJSON yd = object
-        [ "id" .= id yd
+        [ "id" .= youdoid (version yd)
         , "assignerid" .= assignerid (youdo yd)
         , "assigneeid" .= assigneeid (youdo yd)
         , "description" .= description (youdo yd)

@@ -51,6 +51,7 @@ tests = return
         M.lookup "duedate" obj ~= Just Null
         M.lookup "completed" obj ~= Just (Bool False)
         M.lookup "url" obj ~= (Just $ String $ T.pack ydurl)
+        M.lookup "thisVersion" obj ~= (Just $ String $ T.pack $ ydurl <> "/1")
     , serverTest "new youdo with duedate" $ \req -> do
         -- In the request and the response the duedate is in the
         -- same format that JavaScript's Date.toJSON method returns,

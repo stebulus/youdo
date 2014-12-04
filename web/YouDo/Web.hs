@@ -109,9 +109,13 @@ app baseuri mv_db = do
             [yd] -> do status ok200
                        setHeader "Content-Type" "application/json"
                        let (Object obj) = toJSON yd
-                           augmented = Object $ M.insert "url"
-                                (String (ST.pack (youdoURL baseuri ydid)))
-                                obj
+                           augmented = Object
+                                $ M.insert "thisVersion"
+                                    (String (ST.pack
+                                        (youdoVersionURL baseuri (version yd))))
+                                $ M.insert "url"
+                                    (String (ST.pack (youdoURL baseuri ydid)))
+                                    obj
                        raw $ encode augmented
             _ -> do status internalServerError500
                     text $ LT.concat ["multiple youdos with id ", LT.pack $ show ydid]
@@ -120,6 +124,12 @@ youdoURL :: URI -> YoudoID -> String
 youdoURL baseuri (YoudoID n) = show $
     nullURI { uriPath = "0/youdos/" ++ (show n) }
     `relativeTo` baseuri
+
+youdoVersionURL :: URI -> YoudoVersionID -> String
+youdoVersionURL baseuri (YoudoVersionID (YoudoID yd) (TransactionID txn))
+    = show $
+        nullURI { uriPath = "0/youdos/" ++ (show yd) ++ "/" ++ (show txn) }
+        `relativeTo` baseuri
 
 bodyYoudoData :: EitherT LT.Text ActionM YoudoData
 bodyYoudoData = do

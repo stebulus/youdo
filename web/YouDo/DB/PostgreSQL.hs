@@ -9,7 +9,7 @@ newtype DBConnection = DBConnection Connection
 instance DB DBConnection where
     getYoudo ydid (DBConnection conn) =
         query conn
-              "select id, assignerid, assigneeid, description, duedate, completed \
+              "select id, txnid, assignerid, assigneeid, description, duedate, completed \
               \from youdo where id = ?"
               (Only ydid)
 
