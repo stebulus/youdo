@@ -11,13 +11,16 @@ import Database.PostgreSQL.Simple.FromRow (FromRow(..), field)
 import Database.PostgreSQL.Simple.ToField (ToField(..))
 import Web.Scotty (Parsable(..))
 
-data Youdo = Youdo { id :: Maybe Int  -- Nothing for new Youdos
-                   , assignerid :: Int
-                   , assigneeid :: Int
-                   , description :: String
-                   , duedate :: DueDate
-                   , completed :: Bool
+data Youdo = Youdo { id :: Int
+                   , youdo :: YoudoData
                    } deriving (Show)
+
+data YoudoData = YoudoData { assignerid :: Int
+                           , assigneeid :: Int
+                           , description :: String
+                           , duedate :: DueDate
+                           , completed :: Bool
+                           } deriving (Show)
 
 -- This newtype avoids orphan instances.
 newtype DueDate = DueDate { toMaybeTime :: Maybe UTCTime } deriving (Show)
@@ -35,19 +38,20 @@ instance ToField DueDate where
     toField (DueDate t) = toField t
 
 instance FromRow Youdo where
-    fromRow = Youdo <$> field <*> field <*> field <*> field <*> field <*> field
+    fromRow = Youdo <$> field
+        <*> (YoudoData <$> field <*> field <*> field <*> field <*> field)
 
 instance ToJSON Youdo where
     toJSON yd = object
         [ "id" .= id yd
-        , "assignerid" .= assignerid yd
-        , "assigneeid" .= assigneeid yd
-        , "description" .= description yd
-        , "duedate" .= duedate yd
-        , "completed" .= completed yd
+        , "assignerid" .= assignerid (youdo yd)
+        , "assigneeid" .= assigneeid (youdo yd)
+        , "description" .= description (youdo yd)
+        , "duedate" .= duedate (youdo yd)
+        , "completed" .= completed (youdo yd)
         ]
 
 class DB a where
     getYoudo :: Int -> a -> IO [Youdo]
-    postYoudo :: Youdo -> a -> IO Int
+    postYoudo :: YoudoData -> a -> IO Int
     getYoudos :: a -> IO [Youdo]

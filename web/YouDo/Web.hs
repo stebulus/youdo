@@ -91,9 +91,9 @@ app baseuri mv_db = do
         text $ LT.pack $ show youdos
     post "/0/youdos" $ do
         err_url <- runEitherT $ do
-            youdo <- bodyYoudo
-            youdoid <- liftIO $ withMVar mv_db $ postYoudo youdo
-            return $ LT.pack $ youdoURL baseuri youdoid
+            yd <- bodyYoudoData
+            ydid <- liftIO $ withMVar mv_db $ postYoudo yd
+            return $ LT.pack $ youdoURL baseuri ydid
         case err_url of
             Left err -> do status badRequest400
                            text err
@@ -106,13 +106,13 @@ app baseuri mv_db = do
         case youdos of
             [] -> do status notFound404
                      text $ LT.concat ["no youdo with id ", LT.pack $ show ydid]
-            [youdo] -> do status ok200
-                          setHeader "Content-Type" "application/json"
-                          let (Object obj) = toJSON youdo
-                              augmented = Object $ M.insert "url"
+            [yd] -> do status ok200
+                       setHeader "Content-Type" "application/json"
+                       let (Object obj) = toJSON yd
+                           augmented = Object $ M.insert "url"
                                 (String (ST.pack (youdoURL baseuri ydid)))
                                 obj
-                          raw $ encode augmented
+                       raw $ encode augmented
             _ -> do status internalServerError500
                     text $ LT.concat ["multiple youdos with id ", LT.pack $ show ydid]
 
@@ -121,8 +121,8 @@ youdoURL baseuri ydid = show $
     nullURI { uriPath = "0/youdos/" ++ (show ydid) }
     `relativeTo` baseuri
 
-bodyYoudo :: EitherT LT.Text ActionM Youdo
-bodyYoudo = do
+bodyYoudoData :: EitherT LT.Text ActionM YoudoData
+bodyYoudoData = do
     hdr <- Web.Scotty.header "Content-Type"
         `maybeError` "no Content-Type header"
     contenttype <- (return $ parseMIMEType $ LT.toStrict hdr)
@@ -134,13 +134,12 @@ bodyYoudo = do
             description' <- optionalParam "description" ""
             duedate' <- optionalParam "duedate" (DueDate Nothing)
             completed' <- optionalParam "completed" False
-            right Youdo { id = Nothing
-                        , assignerid = assignerid'
-                        , assigneeid = assigneeid'
-                        , description = description'
-                        , duedate = duedate'
-                        , completed = completed'
-                        }
+            right YoudoData { assignerid = assignerid'
+                            , assigneeid = assigneeid'
+                            , description = description'
+                            , duedate = duedate'
+                            , completed = completed'
+                            }
         _ -> left $ LT.concat ["Don't know how to handle Content-Type: ", hdr]
 
 maybeError :: (Monad m) => m (Maybe a) -> b -> EitherT b m a

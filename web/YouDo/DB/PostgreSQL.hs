@@ -3,7 +3,7 @@ module YouDo.DB.PostgreSQL where
 
 import Database.PostgreSQL.Simple (query, query_, execute, withTransaction,
     Only(..), Connection, Query)
-import YouDo.DB (Youdo(..), DB(..))
+import YouDo.DB (YoudoData(..), DB(..))
 
 newtype DBConnection = DBConnection Connection
 instance DB DBConnection where
@@ -13,7 +13,7 @@ instance DB DBConnection where
               \from youdo where id = ?"
               (Only ydid)
 
-    postYoudo youdo (DBConnection conn) = do
+    postYoudo yd (DBConnection conn) = do
         withTransaction conn $ do
             _ <- execute conn
                     ("insert into transaction (yd_userid, yd_ipaddr, yd_useragent) \
@@ -23,8 +23,8 @@ instance DB DBConnection where
                 "insert into youdo \
                 \(assignerid, assigneeid, description, duedate, completed) \
                 \values (?, ?, ?, ?, ?) returning id"
-                (assignerid youdo, assigneeid youdo, description youdo,
-                duedate youdo, completed youdo)
+                (assignerid yd, assigneeid yd, description yd,
+                duedate yd, completed yd)
                 :: IO [Only Int]
             return $ fromOnly $ head ids
 
