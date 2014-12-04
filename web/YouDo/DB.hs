@@ -19,12 +19,22 @@ instance ToField YoudoID where
 instance ToJSON YoudoID where
     toJSON (YoudoID n) = toJSON n
 
+newtype UserID = UserID Int deriving (Show, Eq)
+instance FromField UserID where
+    fromField fld = (fmap.fmap) UserID $ fromField fld
+instance ToField UserID where
+    toField (UserID n) = toField n
+instance ToJSON UserID where
+    toJSON (UserID n) = toJSON n
+instance Parsable UserID where
+    parseParam x = UserID <$> parseParam x
+
 data Youdo = Youdo { id :: YoudoID
                    , youdo :: YoudoData
                    } deriving (Show)
 
-data YoudoData = YoudoData { assignerid :: Int
-                           , assigneeid :: Int
+data YoudoData = YoudoData { assignerid :: UserID
+                           , assigneeid :: UserID
                            , description :: String
                            , duedate :: DueDate
                            , completed :: Bool
