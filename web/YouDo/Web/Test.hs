@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 module YouDo.Web.Test where
 import Blaze.ByteString.Builder (toLazyByteString)
+import Control.Applicative ((<$>))
 import Control.Concurrent.MVar (newEmptyMVar, newMVar, takeMVar, putMVar,
     modifyMVar_, modifyMVar)
 import Control.Monad.IO.Class (liftIO)
@@ -10,14 +11,15 @@ import qualified Data.ByteString.Lazy.Char8 as LB
 import qualified Data.ByteString.Char8 as SB
 import Data.CaseInsensitive (mk)
 import qualified Data.HashMap.Strict as M
+import Data.List (sort)
 import Data.Maybe (fromJust)
 import Data.Monoid ((<>), Monoid(..))
 import qualified Data.Text as T
 import Distribution.TestSuite (Test(..), TestInstance(..), Progress(..),
     Result(..))
 import Network.HTTP.Types (Status, ResponseHeaders, ok200, created201,
-    badRequest400, http11, methodGet, methodPost, decodePathSegments,
-    parseQuery, Method)
+    badRequest400, methodNotAllowed405, http11, methodGet, methodPost,
+    methodPut, decodePathSegments, parseQuery, Method)
 import Network.URI (parseURI, URI(..), URIAuth(..))
 import Network.Wai (Application, responseToStream, RequestBodyLength(..), requestBody,
     defaultRequest)
@@ -99,7 +101,25 @@ tests = return
                     \duedate=2014-11-30T14:10:05.038Z&completed=false"
             <> header "Content-Type" "application/x-www-form-urlencoded"
         stat ~= badRequest400
+    , serverTest "bad method to /0/youdos" $ \req -> do
+        (stat, hdrs, _) <- liftIO $ req
+            $ method methodPut
+            <> url "http://example.com/0/youdos"
+            <> body "grar"
+            <> header "Content-Type" "text/plain"
+        stat ~= methodNotAllowed405
+        (sort . unintersperse ',' . filter (/= ' ') . SB.unpack)
+            <$> lookup (mk "Allow") hdrs
+            ~= Just ["GET", "POST"]
     ]
+
+unintersperse :: (Eq a) => a -> [a] -> [[a]]
+unintersperse _ [] = []
+unintersperse d xs =
+    let (hd,tl) = break (== d) xs
+    in hd : case tl of
+                [] -> []
+                _:tl' -> unintersperse d tl'
 
 type TestResult = EitherT String IO ()
 failure :: String -> TestResult

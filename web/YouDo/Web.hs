@@ -18,14 +18,14 @@ import Data.Monoid ((<>))
 import qualified Data.Text.Lazy as LT
 import Database.PostgreSQL.Simple (close, connectPostgreSQL)
 import Network.HTTP.Types (ok200, created201, badRequest400, notFound404,
-    internalServerError500)
+    methodNotAllowed405, internalServerError500)
 import Network.URI (URI(..), URIAuth(..), relativeTo, nullURI)
 import Network.Wai.Handler.Warp (setPort, setHost, defaultSettings)
 import Options.Applicative (option, strOption, flag', auto, long, short,
     metavar, help, execParser, Parser, fullDesc, helper, info)
 import qualified Options.Applicative as Opt
-import Web.Scotty (scottyOpts, ScottyM, get, post, status, header, param,
-    params, text, json, Options(..), setHeader, ActionM, Parsable(..))
+import Web.Scotty (scottyOpts, ScottyM, get, post, matchAny, status, header,
+    param, params, text, json, Options(..), setHeader, ActionM, Parsable(..))
 import YouDo.DB
 import qualified YouDo.DB.Mock as Mock
 import YouDo.DB.PostgreSQL(DBConnection(..))
@@ -100,6 +100,10 @@ app baseuri mv_db = do
             Right url -> do status created201
                             setHeader "Location" url
                             text $ LT.concat ["created at ", url, "\r\n"]
+    matchAny "/0/youdos" $ do
+        status methodNotAllowed405
+        setHeader "Allow" "POST, GET"
+        text ""
     get "/0/youdos/:id" $ do
         ydid <- YoudoID <$> read <$> param "id"
         youdos <- liftIO $ withMVar mv_db $ getYoudo ydid
