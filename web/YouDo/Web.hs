@@ -28,7 +28,7 @@ import Options.Applicative (option, strOption, flag', auto, long, short,
 import qualified Options.Applicative as Opt
 import Web.Scotty (scottyOpts, ScottyM, get, matchAny, status, header,
     addroute, RoutePattern, param, params, text, json, Options(..), setHeader,
-    ActionM, Parsable(..))
+    ActionM, Parsable(..), raise)
 import YouDo.DB
 import qualified YouDo.DB.Mock as Mock
 import YouDo.DB.PostgreSQL(DBConnection(..))
@@ -126,6 +126,40 @@ app baseuri mv_db = do
                 status ok200
                 json $ map (WebYoudoVersionID baseuri) ydvers
         )]
+    resource "/0/youdos/:id/:txnid" [(GET, do
+        ydver <- runEitherT bodyYoudoVersionID
+        case ydver of
+            Left err -> do status badRequest400
+                           text err
+            Right ver -> do
+                youdos <- liftIO $ withMVar mv_db $ getYoudoVersion ver
+                case youdos of
+                    [] -> do status notFound404
+                             text $ LT.concat ["no youdo with ", LT.pack $ show ver]
+                    [yd] -> do status ok200
+                               json (WebYoudo baseuri yd)
+                    _ -> do status internalServerError500
+                            text $ LT.concat ["multiple youdos with ", LT.pack $ show ver]
+        ),(POST, do
+            ydupd <- runEitherT bodyYoudoUpdate
+            case ydupd of
+                Left err -> do status badRequest400
+                               text err
+                Right upd -> do result <- liftIO $ withMVar mv_db $ updateYoudo upd
+                                case result of
+                                    OldVersion newver ->
+                                        do status badRequest400
+                                           text $ LT.concat
+                                                [ "cannot modify old version; modify "
+                                                , LT.pack $ youdoVersionURL baseuri newver
+                                                ]
+                                    Failure err -> raise $ LT.pack err
+                                    Success ydver ->
+                                        let url = LT.pack $ youdoVersionURL baseuri ydver
+                                        in do status created201
+                                              setHeader "Location" url
+                                              text $ LT.concat ["created at ", url, "\r\n"]
+        )]
 
 resource :: RoutePattern -> [(StdMethod, ActionM ())] -> ScottyM ()
 resource route acts =
@@ -163,6 +197,30 @@ youdoVersionURL baseuri (YoudoVersionID (YoudoID yd) (TransactionID txn))
     = show $
         nullURI { uriPath = "0/youdos/" ++ (show yd) ++ "/" ++ (show txn) }
         `relativeTo` baseuri
+
+bodyYoudoUpdate :: EitherT LT.Text ActionM YoudoUpdate
+bodyYoudoUpdate = do
+    hdr <- Web.Scotty.header "Content-Type"
+        `maybeError` "no Content-Type header"
+    contenttype <- (return $ parseMIMEType $ LT.toStrict hdr)
+        `maybeError` (LT.concat ["Incomprehensible Content-Type: ", hdr])
+    case mimeType contenttype of
+        Application "x-www-form-urlencoded" -> do
+            id <- mandatoryParam "id"
+            txnid <- mandatoryParam "txnid"
+            assignerid' <- maybeParam "assignerid"
+            assigneeid' <- maybeParam "assigneeid"
+            description' <- maybeParam "description"
+            duedate' <- maybeParam "duedate"
+            completed' <- maybeParam "completed"
+            right YoudoUpdate { oldVersion = YoudoVersionID id txnid
+                              , newAssignerid = assignerid'
+                              , newAssigneeid = assigneeid'
+                              , newDescription = description'
+                              , newDuedate = duedate'
+                              , newCompleted = completed'
+                              }
+        _ -> left $ LT.concat ["Don't know how to handle Content-Type: ", hdr]
 
 bodyYoudoData :: EitherT LT.Text ActionM YoudoData
 bodyYoudoData = do
@@ -216,3 +274,10 @@ optionalParam key defaultval = do
     case lookup key ps of
         Nothing -> right defaultval
         Just val -> hoistEither $ parseParam val
+
+maybeParam :: (Parsable a) => LT.Text -> EitherT LT.Text ActionM (Maybe a)
+maybeParam key = do
+    ps <- lift params
+    case lookup key ps of
+        Nothing -> right Nothing
+        Just val -> hoistEither $ Just <$> parseParam val

@@ -112,16 +112,43 @@ tests = return
             <$> lookup (mk "Allow") hdrs
             ~= Just ["GET", "POST"]
     , serverTest "youdo versions" $ \req -> do
-        (stat, headers, _) <- liftIO $ req
+        -- create a new youdo
+        (stat1, headers, _) <- liftIO $ req
             $ post "http://example.com/0/youdos"
             <> body "assignerid=0&assigneeid=0&description=blah&duedate=&completed=false"
             <> header "Content-Type" "application/x-www-form-urlencoded"
-        stat ~= created201
+        stat1 ~= created201
         let ydurl = SB.unpack $ fromJust $ lookup (mk "Location") headers
-        (stat', _, bod) <- liftIO $ req $ get $ ydurl ++ "/versions"
-        stat' ~= ok200
+        -- check versions
+        (stat2, _, bod) <- liftIO $ req $ get $ ydurl ++ "/versions"
+        stat2 ~= ok200
         objs <- hoistEither (eitherDecode bod :: Either String [String])
         objs ~= ["http://example.com/0/youdos/1/1"]
+        -- change the youdo
+        (stat3, hdrs3, _) <- liftIO $ req
+            $ post (objs!!0)
+            <> body "completed=true"
+            <> header "Content-Type" "application/x-www-form-urlencoded"
+        stat3 ~= created201
+        lookup (mk "Location") hdrs3 ~= Just "http://example.com/0/youdos/1/2"
+        -- check versions
+        (stat4, _, bod4) <- liftIO $ req $ get $ ydurl ++ "/versions"
+        stat4 ~= ok200
+        objs4 <- hoistEither (eitherDecode bod4 :: Either String [String])
+        objs4 ~= [ "http://example.com/0/youdos/1/2"
+                 , "http://example.com/0/youdos/1/1"
+                 ]
+        -- check correctness of new version
+        (stat5, _, bod5) <- liftIO $ req $ get $ head objs4
+        stat5 ~= ok200
+        obj5 <- hoistEither (eitherDecode bod5 :: Either String Object)
+        M.lookup "id" obj5 ~= Just (Number 1)
+        M.lookup "assignerid" obj5 ~= Just (Number 0)
+        M.lookup "assigneeid" obj5 ~= Just (Number 0)
+        M.lookup "description" obj5 ~= Just (String "blah")
+        M.lookup "duedate" obj5 ~= Just Null
+        M.lookup "completed" obj5 ~= Just (Bool True)
+        M.lookup "url" obj5 ~= (Just $ String $ T.pack ydurl)
     ]
 
 unintersperse :: (Eq a) => a -> [a] -> [[a]]

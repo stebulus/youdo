@@ -53,6 +53,14 @@ data YoudoData = YoudoData { assignerid :: UserID
                            , completed :: Bool
                            } deriving (Show)
 
+data YoudoUpdate = YoudoUpdate { oldVersion :: YoudoVersionID
+                               , newAssignerid :: Maybe UserID
+                               , newAssigneeid :: Maybe UserID
+                               , newDescription :: Maybe String
+                               , newDuedate :: Maybe DueDate
+                               , newCompleted :: Maybe Bool
+                               } deriving (Show)
+
 -- This newtype avoids orphan instances.
 newtype DueDate = DueDate { toMaybeTime :: Maybe UTCTime } deriving (Show)
 instance Parsable DueDate where
@@ -84,6 +92,12 @@ instance ToJSON Youdo where
 
 class DB a where
     getYoudo :: YoudoID -> a -> IO [Youdo]
+    getYoudoVersion :: YoudoVersionID -> a -> IO [Youdo]
     getYoudoVersions :: YoudoID -> a -> IO [YoudoVersionID]
     postYoudo :: YoudoData -> a -> IO YoudoID
+    updateYoudo :: YoudoUpdate -> a -> IO YoudoUpdateResult
     getYoudos :: a -> IO [Youdo]
+
+data YoudoUpdateResult = Success YoudoVersionID
+                       | Failure String
+                       | OldVersion YoudoVersionID
