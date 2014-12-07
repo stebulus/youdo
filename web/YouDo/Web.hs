@@ -103,7 +103,7 @@ app baseuri mv_db = do
                                 setHeader "Location" url
                                 text $ LT.concat ["created at ", url, "\r\n"]
         )]
-    get "/0/youdos/:id" $ do
+    resource "/0/youdos/:id" [(GET, do
         ydid <- YoudoID <$> read <$> param "id"
         youdos <- liftIO $ withMVar mv_db $ getYoudo ydid
         case youdos of
@@ -113,6 +113,7 @@ app baseuri mv_db = do
                        json (WebYoudo baseuri yd)
             _ -> do status internalServerError500
                     text $ LT.concat ["multiple youdos with id ", LT.pack $ show ydid]
+        )]
 
 resource :: RoutePattern -> [(StdMethod, ActionM ())] -> ScottyM ()
 resource route acts =
