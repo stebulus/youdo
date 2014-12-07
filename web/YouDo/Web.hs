@@ -169,8 +169,8 @@ bodyYoudoData = do
 
 maybeError :: (Monad m) => m (Maybe a) -> b -> EitherT b m a
 maybeError mma err = do
-    m <- lift mma
-    case m of
+    ma <- lift mma
+    case ma of
         Nothing -> left err
         Just x -> right x
 
