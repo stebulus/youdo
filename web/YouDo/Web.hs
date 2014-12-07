@@ -8,24 +8,25 @@ import Control.Concurrent.MVar (MVar, newMVar, withMVar)
 import Control.Exception (bracket)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Either (EitherT(..), left, right, hoistEither)
-import Control.Monad.IO.Class (liftIO)
+import Control.Monad.IO.Class (liftIO, MonadIO)
 import Data.Aeson (toJSON, ToJSON(..), Value(..), (.=))
 import Data.ByteString.Char8 (pack)
 import qualified Data.HashMap.Strict as M
 import Data.Default (def)
-import Data.List (foldl')
+import Data.List (foldl', intercalate)
 import Data.Monoid ((<>))
 import qualified Data.Text.Lazy as LT
 import Database.PostgreSQL.Simple (close, connectPostgreSQL)
 import Network.HTTP.Types (ok200, created201, badRequest400, notFound404,
-    methodNotAllowed405, internalServerError500)
+    methodNotAllowed405, internalServerError500, StdMethod(..))
 import Network.URI (URI(..), URIAuth(..), relativeTo, nullURI)
 import Network.Wai.Handler.Warp (setPort, setHost, defaultSettings)
 import Options.Applicative (option, strOption, flag', auto, long, short,
     metavar, help, execParser, Parser, fullDesc, helper, info)
 import qualified Options.Applicative as Opt
-import Web.Scotty (scottyOpts, ScottyM, get, post, matchAny, status, header,
-    param, params, text, json, Options(..), setHeader, ActionM, Parsable(..))
+import Web.Scotty (scottyOpts, ScottyM, get, matchAny, status, header,
+    addroute, RoutePattern, param, params, text, json, Options(..), setHeader,
+    ActionM, Parsable(..))
 import YouDo.DB
 import qualified YouDo.DB.Mock as Mock
 import YouDo.DB.PostgreSQL(DBConnection(..))
@@ -86,24 +87,22 @@ withDB (Postgres connstr) f =
 app :: DB a => URI -> MVar a -> ScottyM ()
 app baseuri mv_db = do
     get "/" $ text "placeholder"
-    get "/0/youdos" $ do
-        youdos <- liftIO $ withMVar mv_db getYoudos
-        text $ LT.pack $ show youdos
-    post "/0/youdos" $ do
-        err_url <- runEitherT $ do
-            yd <- bodyYoudoData
-            ydid <- liftIO $ withMVar mv_db $ postYoudo yd
-            return $ LT.pack $ youdoURL baseuri ydid
-        case err_url of
-            Left err -> do status badRequest400
-                           text err
-            Right url -> do status created201
-                            setHeader "Location" url
-                            text $ LT.concat ["created at ", url, "\r\n"]
-    matchAny "/0/youdos" $ do
-        status methodNotAllowed405
-        setHeader "Allow" "POST, GET"
-        text ""
+    resource "/0/youdos"
+        [(GET, do
+            youdos <- liftIO $ withMVar mv_db getYoudos
+            text $ LT.pack $ show youdos
+        ),(POST, do
+            err_url <- runEitherT $ do
+                yd <- bodyYoudoData
+                ydid <- liftIO $ withMVar mv_db $ postYoudo yd
+                return $ LT.pack $ youdoURL baseuri ydid
+            case err_url of
+                Left err -> do status badRequest400
+                               text err
+                Right url -> do status created201
+                                setHeader "Location" url
+                                text $ LT.concat ["created at ", url, "\r\n"]
+        )]
     get "/0/youdos/:id" $ do
         ydid <- YoudoID <$> read <$> param "id"
         youdos <- liftIO $ withMVar mv_db $ getYoudo ydid
@@ -114,6 +113,16 @@ app baseuri mv_db = do
                        json (WebYoudo baseuri yd)
             _ -> do status internalServerError500
                     text $ LT.concat ["multiple youdos with id ", LT.pack $ show ydid]
+
+resource :: RoutePattern -> [(StdMethod, ActionM ())] -> ScottyM ()
+resource route acts =
+    let allowedMethods = intercalate "," $ map (show . fst) acts
+    in do
+        sequence_ [addroute method route act | (method, act) <- acts]
+        matchAny route $ do
+            status methodNotAllowed405
+            setHeader "Allow" $ LT.pack allowedMethods
+            text ""
 
 data WebYoudo = WebYoudo URI Youdo
 instance ToJSON WebYoudo where
