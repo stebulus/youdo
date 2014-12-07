@@ -111,6 +111,17 @@ tests = return
         (sort . unintersperse ',' . filter (/= ' ') . SB.unpack)
             <$> lookup (mk "Allow") hdrs
             ~= Just ["GET", "POST"]
+    , serverTest "youdo versions" $ \req -> do
+        (stat, headers, _) <- liftIO $ req
+            $ post "http://example.com/0/youdos"
+            <> body "assignerid=0&assigneeid=0&description=blah&duedate=&completed=false"
+            <> header "Content-Type" "application/x-www-form-urlencoded"
+        stat ~= created201
+        let ydurl = SB.unpack $ fromJust $ lookup (mk "Location") headers
+        (stat', _, bod) <- liftIO $ req $ get $ ydurl ++ "/versions"
+        stat' ~= ok200
+        objs <- hoistEither (eitherDecode bod :: Either String [String])
+        objs ~= ["http://example.com/0/youdos/1/1"]
     ]
 
 unintersperse :: (Eq a) => a -> [a] -> [[a]]

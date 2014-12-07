@@ -18,10 +18,14 @@ instance ToField YoudoID where
     toField (YoudoID n) = toField n
 instance ToJSON YoudoID where
     toJSON (YoudoID n) = toJSON n
+instance Parsable YoudoID where
+    parseParam x = YoudoID <$> parseParam x
 
 newtype TransactionID = TransactionID Int deriving (Show, Eq)
 instance FromField TransactionID where
     fromField fld = (fmap.fmap) TransactionID $ fromField fld
+instance Parsable TransactionID where
+    parseParam x = TransactionID <$> parseParam x
 
 data YoudoVersionID = YoudoVersionID
     { youdoid :: YoudoID
@@ -80,5 +84,6 @@ instance ToJSON Youdo where
 
 class DB a where
     getYoudo :: YoudoID -> a -> IO [Youdo]
+    getYoudoVersions :: YoudoID -> a -> IO [YoudoVersionID]
     postYoudo :: YoudoData -> a -> IO YoudoID
     getYoudos :: a -> IO [Youdo]

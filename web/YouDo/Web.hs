@@ -10,11 +10,13 @@ import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Either (EitherT(..), left, right, hoistEither)
 import Control.Monad.IO.Class (liftIO, MonadIO)
 import Data.Aeson (toJSON, ToJSON(..), Value(..), (.=))
+import qualified Data.Aeson as A
 import Data.ByteString.Char8 (pack)
 import qualified Data.HashMap.Strict as M
 import Data.Default (def)
 import Data.List (foldl', intercalate)
 import Data.Monoid ((<>))
+import qualified Data.Text as ST
 import qualified Data.Text.Lazy as LT
 import Database.PostgreSQL.Simple (close, connectPostgreSQL)
 import Network.HTTP.Types (ok200, created201, badRequest400, notFound404,
@@ -114,6 +116,16 @@ app baseuri mv_db = do
             _ -> do status internalServerError500
                     text $ LT.concat ["multiple youdos with id ", LT.pack $ show ydid]
         )]
+    resource "/0/youdos/:id/versions" [(GET, do
+        ydid' <- runEitherT bodyYoudoID
+        case ydid' of
+            Left err -> do status badRequest400
+                           text err
+            Right ydid -> do
+                ydvers <- liftIO $ withMVar mv_db $ getYoudoVersions ydid
+                status ok200
+                json $ map (WebYoudoVersionID baseuri) ydvers
+        )]
 
 resource :: RoutePattern -> [(StdMethod, ActionM ())] -> ScottyM ()
 resource route acts =
@@ -135,6 +147,11 @@ instance ToJSON WebYoudo where
               origmap = case toJSON yd of
                             Object m -> m
                             _ -> error "Youdo didn't become a JSON object"
+
+data WebYoudoVersionID = WebYoudoVersionID URI YoudoVersionID
+instance ToJSON WebYoudoVersionID where
+    toJSON (WebYoudoVersionID baseuri ydver) =
+        A.String $ ST.pack $ youdoVersionURL baseuri ydver
 
 youdoURL :: URI -> YoudoID -> String
 youdoURL baseuri (YoudoID n) = show $
@@ -167,6 +184,17 @@ bodyYoudoData = do
                             , completed = completed'
                             }
         _ -> left $ LT.concat ["Don't know how to handle Content-Type: ", hdr]
+
+bodyYoudoID :: EitherT LT.Text ActionM YoudoID
+bodyYoudoID = do
+    ydid <- mandatoryParam "id"
+    right $ YoudoID ydid
+
+bodyYoudoVersionID :: EitherT LT.Text ActionM YoudoVersionID
+bodyYoudoVersionID = do
+    ydid <- mandatoryParam "id"
+    txnid <- mandatoryParam "txnid"
+    right YoudoVersionID { youdoid = ydid, youdotxnid = txnid }
 
 maybeError :: (Monad m) => m (Maybe a) -> b -> EitherT b m a
 maybeError mma err = do
