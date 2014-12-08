@@ -265,6 +265,9 @@ showHolexError (UnusedKey k) = LT.concat [ "unknown parameter "
 showHolexError (DuplicateValue k _) = LT.concat [ "duplicate value for parameter "
                                                 , LT.pack (show k)
                                                 ]
+showHolexError (ParseError k _) = LT.concat [ "cannot parse parameter "
+                                            , LT.pack (show k)
+                                            ]
 showHolexError (CustomError e) = LT.pack (show e)
 
 showHolexErrors :: (Show k, Show e) => [HolexError k v e] -> LT.Text

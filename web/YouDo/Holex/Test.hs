@@ -40,6 +40,13 @@ tests = return
             val' = runHolex expr [("a", -1), ("b", -3)]
             result = (val,val') ~= (Right (-2), Left [CustomError "a must be positive"])
         in return result
+    , plainTest "Holex parsing" $
+        let expr :: Holex String String String Int
+            expr = (+) <$> (parse "a") <*> (parse "b")
+            val = runHolex expr [("a", "1"), ("b", "-3")]
+            val' = runHolex expr [("a", "1"), ("b", "q")]
+            result = (val,val') ~= (Right (-2), Left [ParseError "b" "q"])
+        in return result
     ]
 
 (~=) :: (Eq a, Show a) => a -> a -> Result

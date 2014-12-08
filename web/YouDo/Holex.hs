@@ -3,6 +3,7 @@ module YouDo.Holex where
 import Control.Applicative (Applicative(..))
 import Control.Monad.Writer.Lazy (Writer, runWriter, tell)
 import Data.List (foldl')
+import Data.Maybe (listToMaybe)
 import Data.Monoid (Sum(..))
 
 -- An expression with named holes.
@@ -11,8 +12,8 @@ import Data.Monoid (Sum(..))
 data (Eq k) => Holex k v e a
     = Const a
     | forall b. Apply (Holex k v e (b->a)) (Holex k v e b)
-    | forall b. TryApply (Holex k v e (b->Either e a)) (Holex k v e b)
-    | TryApplyFailed e
+    | forall b. TryApply (Holex k v e (b->Either (HolexError k v e) a)) (Holex k v e b)
+    | TryApplyFailed (HolexError k v e)
     | Hole k (v->a)
 
 keys :: (Eq k) => Holex k v e a -> [k]
@@ -22,7 +23,7 @@ keys (TryApply exprf exprx) = keys exprf ++ keys exprx
 keys (TryApplyFailed _) = []
 keys (Hole k _) = [k]
 
-errors :: (Eq k) => Holex k v e a -> [e]
+errors :: (Eq k) => Holex k v e a -> [HolexError k v e]
 errors (Const _) = []
 errors (Apply exprf exprx) = errors exprf ++ errors exprx
 errors (TryApply exprf exprx) = errors exprf ++ errors exprx
@@ -34,7 +35,13 @@ hole k = Hole k id
 
 check :: (Eq k, Show e) => (a->Bool) -> e -> Holex k v e a -> Holex k v e a
 check good err expr =
-    TryApply (Const (\x -> if good x then Right x else Left err)) expr
+    TryApply (Const (\x -> if good x then Right x else Left (CustomError err))) expr
+
+parse :: (Eq k, Read a) => k -> Holex k String e a
+parse k = TryApply (Const (\x -> maybe (Left (ParseError k x))
+                                       Right
+                                       (maybeRead x)))
+                   $ hole k
 
 instance (Eq k) => Functor (Holex k v e) where
     fmap f (Const x) = Const (f x)
@@ -52,6 +59,7 @@ instance (Eq k) => Applicative (Holex k v e) where
 data HolexError k v e = MissingKey k
                       | UnusedKey k
                       | DuplicateValue k v
+                      | ParseError k v
                       | CustomError e
     deriving (Show, Eq)
 
@@ -60,7 +68,7 @@ runHolex expr kvs =
     case (value,allerrs) of
         (Const x,[]) -> Right x
         _ -> Left $ allerrs ++ (map MissingKey $ keys value)
-                            ++ (map CustomError $ errors value)
+                            ++ (errors value)
     where (value,_,allerrs) = foldl' kv1 (expr,[],[]) kvs
           kv1 (e,used,errs) (k,v) =
                 let (e',n) = runWriter $ fill1 e k v
@@ -96,3 +104,8 @@ fill1 expr@(Hole key f) k v
         tell (Sum 1)
         return $ Const (f v)
     | otherwise = return expr
+
+maybeRead :: (Read a) => String -> Maybe a
+maybeRead s = do
+    (a,unparsed) <- listToMaybe $ reads s
+    if unparsed == "" then Just a else Nothing
