@@ -255,7 +255,7 @@ bodyYoudoVersionID = do
     txnid <- mandatoryParam "txnid"
     right YoudoVersionID { youdoid = ydid, youdotxnid = txnid }
 
-showHolexError :: (Show k, Show e) => HolexError k v e -> LT.Text
+showHolexError :: (Show k) => HolexError k v -> LT.Text
 showHolexError (MissingKey k) = LT.concat [ "missing mandatory parameter "
                                           , LT.pack (show k)
                                           ]
@@ -272,7 +272,7 @@ showHolexError (ParseError k _ msg) = LT.concat [ "cannot parse parameter "
                                                 ]
 showHolexError (CustomError e) = LT.pack (show e)
 
-showHolexErrors :: (Show k, Show e) => [HolexError k v e] -> LT.Text
+showHolexErrors :: (Show k) => [HolexError k v] -> LT.Text
 showHolexErrors es = LT.concat [ LT.concat [ showHolexError e, "\r\n" ]
                                | e<-es ]
 

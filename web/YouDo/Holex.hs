@@ -10,61 +10,61 @@ import Web.Scotty (Parsable(..))
 -- An expression with named holes.
 -- k is the type of the names; v is the type of the values that fill
 -- holes; a is the type of the expression.
-data (Eq k) => Holex k v e a
+data (Eq k) => Holex k v a
     = Const a
-    | forall b. Apply (Holex k v e (b->a)) (Holex k v e b)
-    | forall b. TryApply (Holex k v e (b->Either (HolexError k v e) a)) (Holex k v e b)
-    | TryApplyFailed (HolexError k v e)
+    | forall b. Apply (Holex k v (b->a)) (Holex k v b)
+    | forall b. TryApply (Holex k v (b->Either (HolexError k v) a)) (Holex k v b)
+    | TryApplyFailed (HolexError k v)
     | Hole k (v->a)
 
-keys :: (Eq k) => Holex k v e a -> [k]
+keys :: (Eq k) => Holex k v a -> [k]
 keys (Const _) = []
 keys (Apply exprf exprx) = keys exprf ++ keys exprx
 keys (TryApply exprf exprx) = keys exprf ++ keys exprx
 keys (TryApplyFailed _) = []
 keys (Hole k _) = [k]
 
-errors :: (Eq k) => Holex k v e a -> [HolexError k v e]
+errors :: (Eq k) => Holex k v a -> [HolexError k v]
 errors (Const _) = []
 errors (Apply exprf exprx) = errors exprf ++ errors exprx
 errors (TryApply exprf exprx) = errors exprf ++ errors exprx
 errors (TryApplyFailed e) = [e]
 errors (Hole _ _) = []
 
-hole :: (Eq k) => k -> Holex k v e v
+hole :: (Eq k) => k -> Holex k v v
 hole k = Hole k id
 
-check :: (Eq k, Show e) => (a->Bool) -> e -> Holex k v e a -> Holex k v e a
+check :: (Eq k) => (a->Bool) -> Text -> Holex k v a -> Holex k v a
 check good err expr =
     TryApply (Const (\x -> if good x then Right x else Left (CustomError err))) expr
 
-parse :: (Eq k, Parsable a) => k -> Holex k Text e a
+parse :: (Eq k, Parsable a) => k -> Holex k Text a
 parse k = TryApply (Const (\x -> case parseParam x of
                                     Left err -> Left (ParseError k x err)
                                     Right val -> Right val))
                    $ hole k
 
-instance (Eq k) => Functor (Holex k v e) where
+instance (Eq k) => Functor (Holex k v) where
     fmap f (Const x) = Const (f x)
     fmap f (Apply exprg exprx) = Apply (fmap (f.) exprg) exprx
     fmap f (TryApply exprg exprx) = TryApply (fmap ((fmap f) .) exprg) exprx
     fmap _ (TryApplyFailed err) = TryApplyFailed err
     fmap f (Hole k g) = Hole k (f.g)
-instance (Eq k) => Applicative (Holex k v e) where
+instance (Eq k) => Applicative (Holex k v) where
     pure = Const
     (Const f) <*> (Const x) = Const (f x)
     (Const f) <*> (Hole k g) = Hole k (f.g)
     (Hole k f) <*> (Const x) = Hole k (($x).f)
     u <*> v = Apply u v
 
-data HolexError k v e = MissingKey k
-                      | UnusedKey k
-                      | DuplicateValue k v
-                      | ParseError k v Text
-                      | CustomError e
+data HolexError k v = MissingKey k
+                    | UnusedKey k
+                    | DuplicateValue k v
+                    | ParseError k v Text
+                    | CustomError Text
     deriving (Show, Eq)
 
-runHolex :: (Eq k) => Holex k v e a -> [(k,v)] -> Either [HolexError k v e] a
+runHolex :: (Eq k) => Holex k v a -> [(k,v)] -> Either [HolexError k v] a
 runHolex expr kvs =
     case (value,allerrs) of
         (Const x,[]) -> Right x
@@ -85,7 +85,7 @@ runHolex expr kvs =
                             else errs
                 in (e',used',errs')
 
-fill1 :: (Eq k) => Holex k v e a -> k -> v -> Writer (Sum Int) (Holex k v e a)
+fill1 :: (Eq k) => Holex k v a -> k -> v -> Writer (Sum Int) (Holex k v a)
 fill1 expr@(Const _) _ _ = return expr
 fill1 (Apply exprf exprx) k v = do
     exprf' <- fill1 exprf k v
