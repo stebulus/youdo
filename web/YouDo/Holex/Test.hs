@@ -1,9 +1,11 @@
+{-# LANGUAGE OverloadedStrings #-}
 module YouDo.Holex.Test where
 import Control.Applicative ((<$>), (<*>))
 import Control.Monad.Writer.Lazy (runWriter)
 import Data.List ((\\))
 import Distribution.TestSuite
 import Data.Monoid (Sum(..))
+import Data.Text.Lazy (Text)
 import YouDo.Holex
 
 tests :: IO [Test]
@@ -41,11 +43,11 @@ tests = return
             result = (val,val') ~= (Right (-2), Left [CustomError "a must be positive"])
         in return result
     , plainTest "Holex parsing" $
-        let expr :: Holex String String String Int
+        let expr :: Holex String Text String Int
             expr = (+) <$> (parse "a") <*> (parse "b")
             val = runHolex expr [("a", "1"), ("b", "-3")]
             val' = runHolex expr [("a", "1"), ("b", "q")]
-            result = (val,val') ~= (Right (-2), Left [ParseError "b" "q"])
+            result = (val,val') ~= (Right (-2), Left [ParseError "b" "q" "readEither: no parse"])
         in return result
     ]
 

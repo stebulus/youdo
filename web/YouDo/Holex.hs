@@ -3,8 +3,9 @@ module YouDo.Holex where
 import Control.Applicative (Applicative(..))
 import Control.Monad.Writer.Lazy (Writer, runWriter, tell)
 import Data.List (foldl')
-import Data.Maybe (listToMaybe)
 import Data.Monoid (Sum(..))
+import Data.Text.Lazy (Text)
+import Web.Scotty (Parsable(..))
 
 -- An expression with named holes.
 -- k is the type of the names; v is the type of the values that fill
@@ -37,10 +38,10 @@ check :: (Eq k, Show e) => (a->Bool) -> e -> Holex k v e a -> Holex k v e a
 check good err expr =
     TryApply (Const (\x -> if good x then Right x else Left (CustomError err))) expr
 
-parse :: (Eq k, Read a) => k -> Holex k String e a
-parse k = TryApply (Const (\x -> maybe (Left (ParseError k x))
-                                       Right
-                                       (maybeRead x)))
+parse :: (Eq k, Parsable a) => k -> Holex k Text e a
+parse k = TryApply (Const (\x -> case parseParam x of
+                                    Left err -> Left (ParseError k x err)
+                                    Right val -> Right val))
                    $ hole k
 
 instance (Eq k) => Functor (Holex k v e) where
@@ -59,7 +60,7 @@ instance (Eq k) => Applicative (Holex k v e) where
 data HolexError k v e = MissingKey k
                       | UnusedKey k
                       | DuplicateValue k v
-                      | ParseError k v
+                      | ParseError k v Text
                       | CustomError e
     deriving (Show, Eq)
 
@@ -104,8 +105,3 @@ fill1 expr@(Hole key f) k v
         tell (Sum 1)
         return $ Const (f v)
     | otherwise = return expr
-
-maybeRead :: (Read a) => String -> Maybe a
-maybeRead s = do
-    (a,unparsed) <- listToMaybe $ reads s
-    if unparsed == "" then Just a else Nothing
