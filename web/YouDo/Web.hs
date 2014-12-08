@@ -32,6 +32,7 @@ import Web.Scotty (scottyOpts, ScottyM, get, matchAny, status, header,
 import YouDo.DB
 import qualified YouDo.DB.Mock as Mock
 import YouDo.DB.PostgreSQL(DBConnection(..))
+import YouDo.Holex
 
 data DBOption = InMemory | Postgres String
 data YDOptions = YDOptions { port :: Int
@@ -253,6 +254,22 @@ bodyYoudoVersionID = do
     ydid <- mandatoryParam "id"
     txnid <- mandatoryParam "txnid"
     right YoudoVersionID { youdoid = ydid, youdotxnid = txnid }
+
+showHolexError :: (Show k, Show e) => HolexError k v e -> LT.Text
+showHolexError (MissingKey k) = LT.concat [ "missing mandatory parameter "
+                                          , LT.pack (show k)
+                                          ]
+showHolexError (UnusedKey k) = LT.concat [ "unknown parameter "
+                                         , LT.pack (show k)
+                                         ]
+showHolexError (DuplicateValue k _) = LT.concat [ "duplicate value for parameter "
+                                                , LT.pack (show k)
+                                                ]
+showHolexError (CustomError e) = LT.pack (show e)
+
+showHolexErrors :: (Show k, Show e) => [HolexError k v e] -> LT.Text
+showHolexErrors es = LT.concat [ LT.concat [ showHolexError e, "\r\n" ]
+                               | e<-es ]
 
 maybeError :: (Monad m) => m (Maybe a) -> b -> EitherT b m a
 maybeError mma err = do
