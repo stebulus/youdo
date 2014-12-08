@@ -32,7 +32,7 @@ import Web.Scotty (scottyOpts, ScottyM, get, matchAny, status, header,
 import YouDo.DB
 import qualified YouDo.DB.Mock as Mock
 import YouDo.DB.PostgreSQL(DBConnection(..))
-import YouDo.Holex (runHolex, parse, Holex(..), HolexError(..))
+import YouDo.Holex (runHolex, parse, defaultTo, Holex(..), HolexError(..))
 
 data DBOption = InMemory | Postgres String
 data YDOptions = YDOptions { port :: Int
@@ -230,18 +230,13 @@ bodyYoudoData = do
     contenttype <- (return $ parseMIMEType $ LT.toStrict hdr)
         `maybeError` (LT.concat ["Incomprehensible Content-Type: ", hdr])
     case mimeType contenttype of
-        Application "x-www-form-urlencoded" -> do
-            assignerid' <- mandatoryParam "assignerid"
-            assigneeid' <- mandatoryParam "assigneeid"
-            description' <- optionalParam "description" ""
-            duedate' <- optionalParam "duedate" (DueDate Nothing)
-            completed' <- optionalParam "completed" False
-            right YoudoData { assignerid = assignerid'
-                            , assigneeid = assigneeid'
-                            , description = description'
-                            , duedate = duedate'
-                            , completed = completed'
-                            }
+        Application "x-www-form-urlencoded" ->
+            bodyData $
+                YoudoData <$> parse "assignerid"
+                          <*> parse "assigneeid"
+                          <*> defaultTo "" (parse "description")
+                          <*> defaultTo (DueDate Nothing) (parse "duedate")
+                          <*> defaultTo False (parse "completed")
         _ -> left $ LT.concat ["Don't know how to handle Content-Type: ", hdr]
 
 bodyData :: Holex LT.Text LT.Text a -> EitherT LT.Text ActionM a
