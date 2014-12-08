@@ -36,9 +36,23 @@ data HolexError k v = MissingKey k
 
 runHolex :: (Eq k) => Holex k v a -> [(k,v)] -> Either [HolexError k v] a
 runHolex expr kvs =
-    case foldl' (\holex (k,v) -> fst $ runWriter $ fill1 holex k v) expr kvs of
-        Const x -> Right x
-        expr' -> Left $ map MissingKey $ keys expr'
+    case (value,allerrs) of
+        (Const x,[]) -> Right x
+        _ -> Left $ allerrs ++ (map MissingKey $ keys value)
+    where (value,_,allerrs) = foldl' kv1 (expr,[],[]) kvs
+          kv1 (e,used,errs) (k,v) =
+                let (e',n) = runWriter $ fill1 e k v
+                    noMatch = getSum n == 0
+                    duplicate = k `elem` used
+                    used' = if not (duplicate || noMatch)
+                            then k:used
+                            else used
+                    errs' = if duplicate
+                            then (DuplicateValue k v):errs
+                            else if noMatch
+                            then (UnusedKey k):errs
+                            else errs
+                in (e',used',errs')
 
 fill1 :: (Eq k) => Holex k v a -> k -> v -> Writer (Sum Int) (Holex k v a)
 fill1 expr@(Const _) _ _ = return expr

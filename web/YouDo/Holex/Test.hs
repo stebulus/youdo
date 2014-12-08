@@ -1,6 +1,7 @@
 module YouDo.Holex.Test where
 import Control.Applicative ((<$>), (<*>))
 import Control.Monad.Writer.Lazy (runWriter)
+import Data.List ((\\))
 import Distribution.TestSuite
 import Data.Monoid (Sum(..))
 import YouDo.Holex
@@ -23,10 +24,28 @@ tests = return
                          ["a","b","c"]
                      ~= [2,1,0]
         in return result
+    , plainTest "Holex errors" $
+        let expr :: Holex String Int Int
+            expr = (+) <$> Hole "a" id
+                       <*> Hole "b" id
+            result = case runHolex expr [("a", 3), ("a", 2), ("c", 4)] of
+                        Right n -> Fail $ "evaluated to " ++ (show n)
+                        Left errs -> errs `permutationOf`
+                                     [ MissingKey "b"
+                                     , UnusedKey "c"
+                                     , DuplicateValue "a" 2
+                                     ]
+        in return result
     ]
 
 (~=) :: (Eq a, Show a) => a -> a -> Result
 x ~= y = if x == y then Pass else Fail $ (show x) ++ " /= " ++ (show y)
+
+permutationOf :: (Eq a, Show a) => [a] -> [a] -> Result
+xs `permutationOf` ys =
+    case (xs \\ ys) ~= [] of
+        Pass -> (ys \\ xs) ~= []
+        r -> r
 
 plainTest :: String -> IO Result -> Test
 plainTest testName f = Test $ TestInstance
