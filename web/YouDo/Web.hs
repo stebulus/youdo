@@ -32,7 +32,8 @@ import Web.Scotty (scottyOpts, ScottyM, get, matchAny, status, header,
 import YouDo.DB
 import qualified YouDo.DB.Mock as Mock
 import YouDo.DB.PostgreSQL(DBConnection(..))
-import YouDo.Holex (runHolex, parse, defaultTo, Holex(..), HolexError(..))
+import YouDo.Holex (runHolex, parse, optional, defaultTo, Holex(..),
+    HolexError(..))
 
 data DBOption = InMemory | Postgres String
 data YDOptions = YDOptions { port :: Int
@@ -206,21 +207,15 @@ bodyYoudoUpdate = do
     contenttype <- (return $ parseMIMEType $ LT.toStrict hdr)
         `maybeError` (LT.concat ["Incomprehensible Content-Type: ", hdr])
     case mimeType contenttype of
-        Application "x-www-form-urlencoded" -> do
-            id <- mandatoryParam "id"
-            txnid <- mandatoryParam "txnid"
-            assignerid' <- maybeParam "assignerid"
-            assigneeid' <- maybeParam "assigneeid"
-            description' <- maybeParam "description"
-            duedate' <- maybeParam "duedate"
-            completed' <- maybeParam "completed"
-            right YoudoUpdate { oldVersion = YoudoVersionID id txnid
-                              , newAssignerid = assignerid'
-                              , newAssigneeid = assigneeid'
-                              , newDescription = description'
-                              , newDuedate = duedate'
-                              , newCompleted = completed'
-                              }
+        Application "x-www-form-urlencoded" ->
+            bodyData $
+                YoudoUpdate <$> (YoudoVersionID <$> parse "id"
+                                                <*> parse "txnid")
+                            <*> optional (parse "assignerid")
+                            <*> optional (parse "assigneeid")
+                            <*> optional (parse "description")
+                            <*> optional (parse "duedate")
+                            <*> optional (parse "completed")
         _ -> left $ LT.concat ["Don't know how to handle Content-Type: ", hdr]
 
 bodyYoudoData :: EitherT LT.Text ActionM YoudoData
