@@ -97,7 +97,12 @@ app baseuri mv_db = do
             text $ LT.pack $ show youdos
         ),(POST, do
             err_url <- runEitherT $ do
-                yd <- bodyYoudoData
+                yd <- fromParams $
+                    YoudoData <$> parse "assignerid"
+                              <*> parse "assigneeid"
+                              <*> defaultTo "" (parse "description")
+                              <*> defaultTo (DueDate Nothing) (parse "duedate")
+                              <*> defaultTo False (parse "completed")
                 ydid <- liftIO $ withMVar mv_db $ postYoudo yd
                 return $ LT.pack $ youdoURL baseuri ydid
             case err_url of
@@ -143,7 +148,14 @@ app baseuri mv_db = do
                     _ -> do status internalServerError500
                             text $ LT.concat ["multiple youdos with ", LT.pack $ show ver]
         ),(POST, do
-            ydupd <- runEitherT bodyYoudoUpdate
+            ydupd <- runEitherT $ fromParams $
+                YoudoUpdate <$> (YoudoVersionID <$> parse "id"
+                                                <*> parse "txnid")
+                            <*> optional (parse "assignerid")
+                            <*> optional (parse "assigneeid")
+                            <*> optional (parse "description")
+                            <*> optional (parse "duedate")
+                            <*> optional (parse "completed")
             case ydupd of
                 Left err -> do status badRequest400
                                text err
@@ -200,38 +212,14 @@ youdoVersionURL baseuri (YoudoVersionID (YoudoID yd) (TransactionID txn))
         nullURI { uriPath = "0/youdos/" ++ (show yd) ++ "/" ++ (show txn) }
         `relativeTo` baseuri
 
-bodyYoudoUpdate :: EitherT LT.Text ActionM YoudoUpdate
-bodyYoudoUpdate = do
+fromParams :: Holex LT.Text LT.Text a -> EitherT LT.Text ActionM a
+fromParams expr = do
     hdr <- Web.Scotty.header "Content-Type"
         `maybeError` "no Content-Type header"
     contenttype <- (return $ parseMIMEType $ LT.toStrict hdr)
         `maybeError` (LT.concat ["Incomprehensible Content-Type: ", hdr])
     case mimeType contenttype of
-        Application "x-www-form-urlencoded" ->
-            bodyData $
-                YoudoUpdate <$> (YoudoVersionID <$> parse "id"
-                                                <*> parse "txnid")
-                            <*> optional (parse "assignerid")
-                            <*> optional (parse "assigneeid")
-                            <*> optional (parse "description")
-                            <*> optional (parse "duedate")
-                            <*> optional (parse "completed")
-        _ -> left $ LT.concat ["Don't know how to handle Content-Type: ", hdr]
-
-bodyYoudoData :: EitherT LT.Text ActionM YoudoData
-bodyYoudoData = do
-    hdr <- Web.Scotty.header "Content-Type"
-        `maybeError` "no Content-Type header"
-    contenttype <- (return $ parseMIMEType $ LT.toStrict hdr)
-        `maybeError` (LT.concat ["Incomprehensible Content-Type: ", hdr])
-    case mimeType contenttype of
-        Application "x-www-form-urlencoded" ->
-            bodyData $
-                YoudoData <$> parse "assignerid"
-                          <*> parse "assigneeid"
-                          <*> defaultTo "" (parse "description")
-                          <*> defaultTo (DueDate Nothing) (parse "duedate")
-                          <*> defaultTo False (parse "completed")
+        Application "x-www-form-urlencoded" -> bodyData expr
         _ -> left $ LT.concat ["Don't know how to handle Content-Type: ", hdr]
 
 bodyData :: Holex LT.Text LT.Text a -> EitherT LT.Text ActionM a
