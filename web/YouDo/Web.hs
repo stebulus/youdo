@@ -62,7 +62,7 @@ mainOpts :: YDOptions -> IO ()
 mainOpts YDOptions { port = p, db = dbopt } =
     withDB dbopt $ \db' -> do
         mvdb <- newMVar db'
-        let baseuri = nullURI { uriScheme = "http"
+        let baseuri = nullURI { uriScheme = "http:"
                               , uriAuthority = Just URIAuth
                                     { uriUserInfo = ""
                                     , uriRegName = "localhost"
