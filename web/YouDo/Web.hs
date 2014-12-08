@@ -1,13 +1,13 @@
 {-# LANGUAGE OverloadedStrings, RankNTypes #-}
 module YouDo.Web where
-import Prelude hiding(id)
 import Codec.MIME.Type (mimeType, MIMEType(Application))
 import Codec.MIME.Parse (parseMIMEType)
 import Control.Applicative ((<$>), (<*>), (<|>))
 import Control.Concurrent.MVar (MVar, newMVar, withMVar)
 import Control.Exception (bracket)
 import Control.Monad.Trans.Class (lift)
-import Control.Monad.Trans.Either (EitherT(..), left, right)
+import Control.Monad.Trans.Either (EitherT(..), left, right, hoistEither,
+    bimapEitherT)
 import Control.Monad.IO.Class (liftIO, MonadIO)
 import Data.Aeson (toJSON, ToJSON(..), Value(..), (.=))
 import qualified Data.Aeson as A
@@ -225,9 +225,7 @@ fromParams expr = do
 bodyData :: Holex LT.Text LT.Text a -> EitherT LT.Text ActionM a
 bodyData holex = do
     ps <- lift params
-    case runHolex holex ps of
-        Left errs -> left $ showHolexErrors errs
-        Right ver -> right ver
+    bimapEitherT showHolexErrors id $ hoistEither $ runHolex holex ps
 
 showHolexError :: (Show k) => HolexError k v -> LT.Text
 showHolexError (MissingKey k) = LT.concat [ "missing mandatory parameter "
