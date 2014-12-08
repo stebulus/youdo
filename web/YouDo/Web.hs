@@ -7,7 +7,7 @@ import Control.Applicative ((<$>), (<*>), (<|>))
 import Control.Concurrent.MVar (MVar, newMVar, withMVar)
 import Control.Exception (bracket)
 import Control.Monad.Trans.Class (lift)
-import Control.Monad.Trans.Either (EitherT(..), left, right, hoistEither)
+import Control.Monad.Trans.Either (EitherT(..), left, right)
 import Control.Monad.IO.Class (liftIO, MonadIO)
 import Data.Aeson (toJSON, ToJSON(..), Value(..), (.=))
 import qualified Data.Aeson as A
@@ -28,7 +28,7 @@ import Options.Applicative (option, strOption, flag', auto, long, short,
 import qualified Options.Applicative as Opt
 import Web.Scotty (scottyOpts, ScottyM, get, matchAny, status, header,
     addroute, RoutePattern, param, params, text, json, Options(..), setHeader,
-    ActionM, Parsable(..), raise)
+    ActionM, raise)
 import YouDo.DB
 import qualified YouDo.DB.Mock as Mock
 import YouDo.DB.PostgreSQL(DBConnection(..))
@@ -268,24 +268,3 @@ maybeError mma err = do
     case ma of
         Nothing -> left err
         Just x -> right x
-
-mandatoryParam :: (Parsable a) => LT.Text -> EitherT LT.Text ActionM a
-mandatoryParam key = do
-    ps <- lift params
-    case lookup key ps of
-        Nothing -> left $ LT.concat ["missing mandatory parameter ", key]
-        Just val -> hoistEither $ parseParam val
-
-optionalParam :: (Parsable a) => LT.Text -> a -> EitherT LT.Text ActionM a
-optionalParam key defaultval = do
-    ps <- lift params
-    case lookup key ps of
-        Nothing -> right defaultval
-        Just val -> hoistEither $ parseParam val
-
-maybeParam :: (Parsable a) => LT.Text -> EitherT LT.Text ActionM (Maybe a)
-maybeParam key = do
-    ps <- lift params
-    case lookup key ps of
-        Nothing -> right Nothing
-        Just val -> hoistEither $ Just <$> parseParam val
