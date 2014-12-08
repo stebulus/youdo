@@ -1,6 +1,6 @@
 {-# LANGUAGE ExistentialQuantification #-}
 module YouDo.Holex where
-import Control.Applicative (Applicative(..))
+import Control.Applicative ((<$>), Applicative(..))
 import Control.Monad.Writer.Lazy (Writer, runWriter, tell)
 import Data.List (foldl')
 import Data.Monoid (Sum(..))
@@ -46,6 +46,9 @@ parse k = tryApply (Const (\x -> case parseParam x of
                                     Left err -> Left (ParseError k x err)
                                     Right val -> Right val))
                    $ hole k
+
+optional :: (Eq k) => Holex k v a -> Holex k v (Maybe a)
+optional expr = defaultTo Nothing (Just <$> expr)
 
 tryApply :: (Eq k) => (Holex k v (b->Either (HolexError k v) a)) -> Holex k v b
     -> Holex k v a

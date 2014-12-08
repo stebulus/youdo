@@ -56,6 +56,13 @@ tests = return
             val' = runHolex expr [("b", "-3")]
             result = (val,val') ~= (Right (-2), Right 0)
         in return result
+    , plainTest "maybe-values in Holexes" $
+        let expr :: Holex String Text (Int, Maybe Int)
+            expr = (,) <$> parse "a" <*> optional (parse "b")
+            val = runHolex expr [("a", "1"), ("b", "2")]
+            val' = runHolex expr [("a", "1")]
+            result = (val,val') ~= (Right (1,Just 2), Right (1,Nothing))
+        in return result
     ]
 
 (~=) :: (Eq a, Show a) => a -> a -> Result
