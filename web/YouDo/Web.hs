@@ -32,7 +32,7 @@ import Web.Scotty (scottyOpts, ScottyM, get, matchAny, status, header,
 import YouDo.DB
 import qualified YouDo.DB.Mock as Mock
 import YouDo.DB.PostgreSQL(DBConnection(..))
-import YouDo.Holex
+import YouDo.Holex (runHolex, parse, Holex(..), HolexError(..))
 
 data DBOption = InMemory | Postgres String
 data YDOptions = YDOptions { port :: Int
@@ -118,7 +118,7 @@ app baseuri mv_db = do
                     text $ LT.concat ["multiple youdos with id ", LT.pack $ show ydid]
         )]
     resource "/0/youdos/:id/versions" [(GET, do
-        ydid' <- runEitherT bodyYoudoID
+        ydid' <- runEitherT $ bodyData $ YoudoID <$> parse "id"
         case ydid' of
             Left err -> do status badRequest400
                            text err
@@ -128,7 +128,7 @@ app baseuri mv_db = do
                 json $ map (WebYoudoVersionID baseuri) ydvers
         )]
     resource "/0/youdos/:id/:txnid" [(GET, do
-        ydver <- runEitherT bodyYoudoVersionID
+        ydver <- runEitherT $ bodyData $ YoudoVersionID <$> parse "id" <*> parse "txnid"
         case ydver of
             Left err -> do status badRequest400
                            text err
@@ -244,16 +244,12 @@ bodyYoudoData = do
                             }
         _ -> left $ LT.concat ["Don't know how to handle Content-Type: ", hdr]
 
-bodyYoudoID :: EitherT LT.Text ActionM YoudoID
-bodyYoudoID = do
-    ydid <- mandatoryParam "id"
-    right $ YoudoID ydid
-
-bodyYoudoVersionID :: EitherT LT.Text ActionM YoudoVersionID
-bodyYoudoVersionID = do
-    ydid <- mandatoryParam "id"
-    txnid <- mandatoryParam "txnid"
-    right YoudoVersionID { youdoid = ydid, youdotxnid = txnid }
+bodyData :: Holex LT.Text LT.Text a -> EitherT LT.Text ActionM a
+bodyData holex = do
+    ps <- lift params
+    case runHolex holex ps of
+        Left errs -> left $ showHolexErrors errs
+        Right ver -> right ver
 
 showHolexError :: (Show k) => HolexError k v -> LT.Text
 showHolexError (MissingKey k) = LT.concat [ "missing mandatory parameter "
