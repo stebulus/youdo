@@ -1,6 +1,9 @@
 {-# LANGUAGE ExistentialQuantification #-}
 module YouDo.Holex where
 import Control.Applicative (Applicative(..))
+import Control.Monad.Writer.Lazy (Writer, runWriter, tell)
+import Data.List (foldl')
+import Data.Monoid (Sum(..))
 
 -- An expression with named holes.
 -- k is the type of the names; v is the type of the values that fill
@@ -9,6 +12,11 @@ data (Eq k) => Holex k v a
     = Const a
     | forall b. Apply (Holex k v (b->a)) (Holex k v b)
     | Hole k (v->a)
+
+keys :: (Eq k) => Holex k v a -> [k]
+keys (Const _) = []
+keys (Apply exprf exprx) = keys exprf ++ keys exprx
+keys (Hole k _) = [k]
 
 instance (Eq k) => Functor (Holex k v) where
     fmap f (Const x) = Const (f x)
@@ -21,17 +29,25 @@ instance (Eq k) => Applicative (Holex k v) where
     (Hole k f) <*> (Const x) = Hole k (($x).f)
     u <*> v = Apply u v
 
-runHolex :: (Eq k) => Holex k v a -> [(k,v)] -> Either String a
-runHolex expr kvs =
-    case fill expr kvs of
-        Const x -> Right x
-        _ -> Left "incomplete evaluation"
+data HolexError k v = MissingKey k
+                    | UnusedKey k
+                    | DuplicateValue k v
+    deriving (Show, Eq)
 
-fill :: (Eq k) => Holex k v a -> [(k,v)] -> Holex k v a
-fill expr [] = expr
-fill expr@(Const _) _ = expr
-fill (Apply exprf exprx) kvs = fill exprf kvs <*> fill exprx kvs
-fill expr@(Hole k f) kvs =
-    case lookup k kvs of
-        Nothing -> expr
-        Just v -> Const (f v)
+runHolex :: (Eq k) => Holex k v a -> [(k,v)] -> Either [HolexError k v] a
+runHolex expr kvs =
+    case foldl' (\holex (k,v) -> fst $ runWriter $ fill1 holex k v) expr kvs of
+        Const x -> Right x
+        expr' -> Left $ map MissingKey $ keys expr'
+
+fill1 :: (Eq k) => Holex k v a -> k -> v -> Writer (Sum Int) (Holex k v a)
+fill1 expr@(Const _) _ _ = return expr
+fill1 (Apply exprf exprx) k v = do
+    exprf' <- fill1 exprf k v
+    exprx' <- fill1 exprx k v
+    return $ exprf' <*> exprx'
+fill1 expr@(Hole key f) k v
+    | key == k = do
+        tell (Sum 1)
+        return $ Const (f v)
+    | otherwise = return expr
