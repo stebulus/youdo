@@ -49,6 +49,13 @@ tests = return
             val' = runHolex expr [("a", "1"), ("b", "q")]
             result = (val,val') ~= (Right (-2), Left [ParseError "b" "q" "readEither: no parse"])
         in return result
+    , plainTest "default values in Holexes" $
+        let expr :: Holex String Text Int
+            expr = (+) <$> (defaultTo 3 (parse "a")) <*> (parse "b")
+            val = runHolex expr [("a", "1"), ("b", "-3")]
+            val' = runHolex expr [("b", "-3")]
+            result = (val,val') ~= (Right (-2), Right 0)
+        in return result
     ]
 
 (~=) :: (Eq a, Show a) => a -> a -> Result

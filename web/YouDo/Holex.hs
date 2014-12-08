@@ -16,6 +16,7 @@ data (Eq k) => Holex k v a
     | forall b. TryApply (Holex k v (b->Either (HolexError k v) a)) (Holex k v b)
     | TryApplyFailed (HolexError k v)
     | Hole k (v->a)
+    | Default a (Holex k v a)
 
 keys :: (Eq k) => Holex k v a -> [k]
 keys (Const _) = []
@@ -23,6 +24,7 @@ keys (Apply exprf exprx) = keys exprf ++ keys exprx
 keys (TryApply exprf exprx) = keys exprf ++ keys exprx
 keys (TryApplyFailed _) = []
 keys (Hole k _) = [k]
+keys (Default _ expr) = keys expr
 
 errors :: (Eq k) => Holex k v a -> [HolexError k v]
 errors (Const _) = []
@@ -30,19 +32,32 @@ errors (Apply exprf exprx) = errors exprf ++ errors exprx
 errors (TryApply exprf exprx) = errors exprf ++ errors exprx
 errors (TryApplyFailed e) = [e]
 errors (Hole _ _) = []
+errors (Default _ _) = []
 
 hole :: (Eq k) => k -> Holex k v v
 hole k = Hole k id
 
 check :: (Eq k) => (a->Bool) -> Text -> Holex k v a -> Holex k v a
 check good err expr =
-    TryApply (Const (\x -> if good x then Right x else Left (CustomError err))) expr
+    tryApply (Const (\x -> if good x then Right x else Left (CustomError err))) expr
 
 parse :: (Eq k, Parsable a) => k -> Holex k Text a
-parse k = TryApply (Const (\x -> case parseParam x of
+parse k = tryApply (Const (\x -> case parseParam x of
                                     Left err -> Left (ParseError k x err)
                                     Right val -> Right val))
                    $ hole k
+
+tryApply :: (Eq k) => (Holex k v (b->Either (HolexError k v) a)) -> Holex k v b
+    -> Holex k v a
+tryApply (Const f) (Const x) =
+    case f x of
+        Left err -> TryApplyFailed err
+        Right b -> Const b
+tryApply f expr = TryApply f expr
+
+defaultTo :: (Eq k) => a -> Holex k v a -> Holex k v a
+defaultTo _ expr@(Const _) = expr
+defaultTo v expr = Default v expr
 
 instance (Eq k) => Functor (Holex k v) where
     fmap f (Const x) = Const (f x)
@@ -50,6 +65,7 @@ instance (Eq k) => Functor (Holex k v) where
     fmap f (TryApply exprg exprx) = TryApply (fmap ((fmap f) .) exprg) exprx
     fmap _ (TryApplyFailed err) = TryApplyFailed err
     fmap f (Hole k g) = Hole k (f.g)
+    fmap f (Default v expr) = Default (f v) (fmap f expr)
 instance (Eq k) => Applicative (Holex k v) where
     pure = Const
     (Const f) <*> (Const x) = Const (f x)
@@ -64,9 +80,15 @@ data HolexError k v = MissingKey k
                     | CustomError Text
     deriving (Show, Eq)
 
+setDefaults :: (Eq k) => Holex k v a -> Holex k v a
+setDefaults (Apply exprf exprx) = setDefaults exprf <*> setDefaults exprx
+setDefaults (TryApply exprf exprx) = tryApply (setDefaults exprf) (setDefaults exprx)
+setDefaults (Default v _) = Const v
+setDefaults expr = expr
+
 runHolex :: (Eq k) => Holex k v a -> [(k,v)] -> Either [HolexError k v] a
 runHolex expr kvs =
-    case (value,allerrs) of
+    case (setDefaults value, allerrs) of
         (Const x,[]) -> Right x
         _ -> Left $ allerrs ++ (map MissingKey $ keys value)
                             ++ (errors value)
@@ -105,3 +127,6 @@ fill1 expr@(Hole key f) k v
         tell (Sum 1)
         return $ Const (f v)
     | otherwise = return expr
+fill1 (Default v' expr) k v = do
+    expr' <- fill1 expr k v
+    return $ defaultTo v' expr'
