@@ -2,11 +2,11 @@
 module YouDo.Holex.Test where
 import Control.Applicative ((<$>), (<*>))
 import Control.Monad.Writer.Lazy (runWriter)
-import Data.List ((\\))
 import Distribution.TestSuite
 import Data.Monoid (Sum(..))
 import Data.Text.Lazy (Text)
 import YouDo.Holex
+import YouDo.Test
 
 tests :: IO [Test]
 tests = return
@@ -71,21 +71,3 @@ tests = return
             result = (val,val') ~= (Right (1,Just 2), Right (1,Nothing))
         in return result
     ]
-
-(~=) :: (Eq a, Show a) => a -> a -> Result
-x ~= y = if x == y then Pass else Fail $ (show x) ++ " /= " ++ (show y)
-
-permutationOf :: (Eq a, Show a) => [a] -> [a] -> Result
-xs `permutationOf` ys =
-    case (xs \\ ys) ~= [] of
-        Pass -> (ys \\ xs) ~= []
-        r -> r
-
-plainTest :: String -> IO Result -> Test
-plainTest testName f = Test $ TestInstance
-    { run = Finished <$> f
-    , name = testName
-    , tags = []
-    , options = []
-    , setOption = \_ _ -> Left "no options supported"
-    }
