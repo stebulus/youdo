@@ -27,7 +27,7 @@ import Options.Applicative (option, strOption, flag', auto, long, short,
     metavar, help, execParser, Parser, fullDesc, helper, info)
 import qualified Options.Applicative as Opt
 import Web.Scotty (scottyOpts, ScottyM, get, matchAny, status, header,
-    addroute, RoutePattern, param, params, text, json, Options(..), setHeader,
+    addroute, RoutePattern, params, text, json, Options(..), setHeader,
     ActionM, raise)
 import YouDo.DB
 import qualified YouDo.DB.Mock as Mock
@@ -113,15 +113,19 @@ app baseuri mv_db = do
                                 text $ LT.concat ["created at ", url, "\r\n"]
         )]
     resource "/0/youdos/:id" [(GET, do
-        ydid <- YoudoID <$> read <$> param "id"
-        youdos <- liftIO $ withMVar mv_db $ getYoudo ydid
-        case youdos of
-            [] -> do status notFound404
-                     text $ LT.concat ["no youdo with id ", LT.pack $ show ydid]
-            [yd] -> do status ok200
-                       json (WebYoudo baseuri yd)
-            _ -> do status internalServerError500
-                    text $ LT.concat ["multiple youdos with id ", LT.pack $ show ydid]
+        err_ydid <- runEitherT $ fromParams $ YoudoID <$> parse "id"
+        case err_ydid of
+            Left err -> do status badRequest400
+                           text err
+            Right ydid -> do
+                yds <- liftIO $ withMVar mv_db $ getYoudo ydid
+                case yds of
+                    [] -> do status notFound404
+                             text $ LT.concat ["no youdo with id ", LT.pack $ show ydid]
+                    [yd] -> do status ok200
+                               json (WebYoudo baseuri yd)
+                    _ -> do status internalServerError500
+                            text $ LT.concat ["multiple youdos with id ", LT.pack $ show ydid]
         )]
     resource "/0/youdos/:id/versions" [(GET, do
         ydid' <- runEitherT $ bodyData $ YoudoID <$> parse "id"
@@ -214,13 +218,15 @@ youdoVersionURL baseuri (YoudoVersionID (YoudoID yd) (TransactionID txn))
 
 fromParams :: Holex LT.Text LT.Text a -> EitherT LT.Text ActionM a
 fromParams expr = do
-    hdr <- Web.Scotty.header "Content-Type"
-        `maybeError` "no Content-Type header"
-    contenttype <- (return $ parseMIMEType $ LT.toStrict hdr)
-        `maybeError` (LT.concat ["Incomprehensible Content-Type: ", hdr])
-    case mimeType contenttype of
-        Application "x-www-form-urlencoded" -> bodyData expr
-        _ -> left $ LT.concat ["Don't know how to handle Content-Type: ", hdr]
+    maybehdr <- lift $ Web.Scotty.header "Content-Type"
+    case maybehdr of
+        Nothing -> bodyData expr
+        Just hdr -> do
+            contenttype <- (return $ parseMIMEType $ LT.toStrict hdr)
+                `maybeError` (LT.concat ["Incomprehensible Content-Type: ", hdr])
+            case mimeType contenttype of
+                Application "x-www-form-urlencoded" -> bodyData expr
+                _ -> left $ LT.concat ["Don't know how to handle Content-Type: ", hdr]
 
 bodyData :: Holex LT.Text LT.Text a -> EitherT LT.Text ActionM a
 bodyData holex = do
