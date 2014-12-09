@@ -11,6 +11,7 @@ import qualified Data.ByteString.Lazy.Char8 as LB
 import qualified Data.ByteString.Char8 as SB
 import Data.CaseInsensitive (mk)
 import qualified Data.HashMap.Strict as M
+import Data.HashMap.Strict ((!))
 import Data.List (sort)
 import Data.Maybe (fromJust)
 import Data.Monoid ((<>), Monoid(..))
@@ -122,11 +123,12 @@ tests = return
         -- check versions
         (stat2, _, bod) <- liftIO $ req $ get $ ydurl ++ "/versions"
         stat2 ~= ok200
-        objs <- hoistEither (eitherDecode bod :: Either String [String])
-        objs ~= ["http://example.com/0/youdos/1/1"]
+        objs2 <- hoistEither (eitherDecode bod :: Either String [Object])
+        map (! "thisVersion") objs2 ~= [ String "http://example.com/0/youdos/1/1" ]
         -- change the youdo
+        let String urltext3 = objs2!!0 ! "thisVersion"
         (stat3, hdrs3, _) <- liftIO $ req
-            $ post (objs!!0)
+            $ post (T.unpack urltext3)
             <> body "completed=true"
             <> header "Content-Type" "application/x-www-form-urlencoded"
         stat3 ~= created201
@@ -134,12 +136,13 @@ tests = return
         -- check versions
         (stat4, _, bod4) <- liftIO $ req $ get $ ydurl ++ "/versions"
         stat4 ~= ok200
-        objs4 <- hoistEither (eitherDecode bod4 :: Either String [String])
-        objs4 ~= [ "http://example.com/0/youdos/1/2"
-                 , "http://example.com/0/youdos/1/1"
-                 ]
+        objs4 <- hoistEither (eitherDecode bod4 :: Either String [Object])
+        map (! "thisVersion") objs4 ~= [ String "http://example.com/0/youdos/1/2"
+                                       , String "http://example.com/0/youdos/1/1"
+                                       ]
         -- check correctness of new version
-        (stat5, _, bod5) <- liftIO $ req $ get $ head objs4
+        let String urltext5 = objs4!!0 ! "thisVersion"
+        (stat5, _, bod5) <- liftIO $ req $ get $ T.unpack urltext5
         stat5 ~= ok200
         obj5 <- hoistEither (eitherDecode bod5 :: Either String Object)
         M.lookup "id" obj5 ~= Just (Number 1)

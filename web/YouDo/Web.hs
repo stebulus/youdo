@@ -135,7 +135,7 @@ app baseuri mv_db = do
             Right ydid -> do
                 ydvers <- liftIO $ withMVar mv_db $ getYoudoVersions ydid
                 status ok200
-                json $ map (WebYoudoVersionID baseuri) ydvers
+                json $ map (WebYoudo baseuri) ydvers
         )]
     resource "/0/youdos/:id/:txnid" [(GET, do
         ydver <- runEitherT $ bodyData $ YoudoVersionID <$> parse "id" <*> parse "txnid"

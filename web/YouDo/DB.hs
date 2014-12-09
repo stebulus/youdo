@@ -93,7 +93,7 @@ instance ToJSON Youdo where
 class DB a where
     getYoudo :: YoudoID -> a -> IO [Youdo]
     getYoudoVersion :: YoudoVersionID -> a -> IO [Youdo]
-    getYoudoVersions :: YoudoID -> a -> IO [YoudoVersionID]
+    getYoudoVersions :: YoudoID -> a -> IO [Youdo]
     postYoudo :: YoudoData -> a -> IO YoudoID
     updateYoudo :: YoudoUpdate -> a -> IO YoudoUpdateResult
     getYoudos :: a -> IO [Youdo]
