@@ -63,12 +63,7 @@ defaultTo _ expr@(Const _) = expr
 defaultTo v expr = Default v expr
 
 instance (Eq k) => Functor (Holex k v) where
-    fmap f (Const x) = Const (f x)
-    fmap f (Apply exprg exprx) = Apply (fmap (f.) exprg) exprx
-    fmap f (TryApply exprg exprx) = TryApply (fmap ((fmap f) .) exprg) exprx
-    fmap _ (TryApplyFailed err) = TryApplyFailed err
-    fmap f (Hole k g) = Hole k (f.g)
-    fmap f (Default v expr) = Default (f v) (fmap f expr)
+    fmap f expr = pure f <*> expr
 instance (Eq k) => Applicative (Holex k v) where
     pure = Const
     (Const f) <*> (Const x) = Const (f x)
