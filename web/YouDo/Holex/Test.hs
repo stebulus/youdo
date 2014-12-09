@@ -50,23 +50,24 @@ tests = return
             result = (val,val') ~= (Right (-2), Left [ParseError "b" "q" "readEither: no parse"])
         in return result
     , plainTest "default values in Holexes" $
-        let expr :: Holex String Text Int
-            expr = (+) <$> (defaultTo 3 (parse "a")) <*> (parse "b")
-            val = runHolex expr [("a", "1"), ("b", "-3")]
-            val' = runHolex expr [("b", "-3")]
+        let expr :: Holex String Int Int
+            expr = (+) <$> (defaultTo 3 (hole "a")) <*> (hole "b")
+            val = runHolex expr [("a", 1), ("b", -3)]
+            val' = runHolex expr [("b", -3)]
             result = (val,val') ~= (Right (-2), Right 0)
         in return result
-    , plainTest "default doesn't suppress parse error" $
-        let expr :: Holex String Text Int
-            expr = (+) <$> (defaultTo 3 (parse "a")) <*> (parse "b")
-            val = runHolex expr [("a", "q"), ("b", "3")]
-            result = val ~= Left [ParseError "a" "q" "readEither: no parse"]
+    , plainTest "default doesn't suppress validation errors" $
+        let expr :: Holex String Int Int
+            expr = (+) <$> (defaultTo 3 $ check (>0) "a must be positive" $ hole "a")
+                       <*> (hole "b")
+            val = runHolex expr [("a", -2), ("b", 3)]
+            result = val ~= Left [CustomError "a must be positive"]
         in return result
     , plainTest "maybe-values in Holexes" $
-        let expr :: Holex String Text (Int, Maybe Int)
-            expr = (,) <$> parse "a" <*> optional (parse "b")
-            val = runHolex expr [("a", "1"), ("b", "2")]
-            val' = runHolex expr [("a", "1")]
+        let expr :: Holex String Int (Int, Maybe Int)
+            expr = (,) <$> hole "a" <*> optional (hole "b")
+            val = runHolex expr [("a", 1), ("b", 2)]
+            val' = runHolex expr [("a", 1)]
             result = (val,val') ~= (Right (1,Just 2), Right (1,Nothing))
         in return result
     ]

@@ -220,7 +220,7 @@ fromParams :: Holex LT.Text LT.Text a -> EitherT LT.Text ActionM a
 fromParams expr = do
     maybehdr <- lift $ Web.Scotty.header "Content-Type"
     case maybehdr of
-        Nothing -> bodyData expr
+        Nothing -> bodyData expr  -- no body, just use captures
         Just hdr -> do
             contenttype <- (return $ parseMIMEType $ LT.toStrict hdr)
                 `maybeError` (LT.concat ["Incomprehensible Content-Type: ", hdr])
