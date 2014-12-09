@@ -56,6 +56,12 @@ tests = return
             val' = runHolex expr [("b", "-3")]
             result = (val,val') ~= (Right (-2), Right 0)
         in return result
+    , plainTest "default doesn't suppress parse error" $
+        let expr :: Holex String Text Int
+            expr = (+) <$> (defaultTo 3 (parse "a")) <*> (parse "b")
+            val = runHolex expr [("a", "q"), ("b", "3")]
+            result = val ~= Left [ParseError "a" "q" "readEither: no parse"]
+        in return result
     , plainTest "maybe-values in Holexes" $
         let expr :: Holex String Text (Int, Maybe Int)
             expr = (,) <$> parse "a" <*> optional (parse "b")

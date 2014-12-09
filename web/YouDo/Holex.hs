@@ -32,7 +32,7 @@ errors (Apply exprf exprx) = errors exprf ++ errors exprx
 errors (TryApply exprf exprx) = errors exprf ++ errors exprx
 errors (TryApplyFailed e) = [e]
 errors (Hole _ _) = []
-errors (Default _ _) = []
+errors (Default _ expr) = errors expr
 
 hole :: (Eq k) => k -> Holex k v v
 hole k = Hole k id
@@ -84,11 +84,18 @@ setDefaults expr = expr
 
 runHolex :: (Eq k) => Holex k v a -> [(k,v)] -> Either [HolexError k v] a
 runHolex expr kvs =
-    case (setDefaults value, allerrs) of
+    case (valueWithDefaults, allErrs) of
         (Const x,[]) -> Right x
-        _ -> Left $ allerrs ++ (map MissingKey $ keys value)
-                            ++ (errors value)
-    where (value,_,allerrs) = foldl' kv1 (expr,[],[]) kvs
+        _ -> Left allErrs
+    where (value,_,someErrs) = foldl' kv1 (expr,[],[]) kvs
+          valueWithDefaults = setDefaults value
+          allErrs = someErrs
+                    ++ (errors value)
+                    ++ (map MissingKey $ keys valueWithDefaults)
+                    -- (Find e.g. parse errors in value, not valueWithDefaults,
+                    -- so that parse errors are not suppressed by defaulting;
+                    -- but compute missing key errors from valueWithDefaults
+                    -- so that absent keys with default values are not errors.)
           kv1 (e,used,errs) (k,v) =
                 let (e',n) = runWriter $ fill1 e k v
                     noMatch = getSum n == 0
