@@ -66,9 +66,7 @@ instance (Eq k) => Functor (Holex k v) where
     fmap f expr = pure f <*> expr
 instance (Eq k) => Applicative (Holex k v) where
     pure = Const
-    (Const f) <*> (Const x) = Const (f x)
-    (Const f) <*> (Hole k g) = Hole k (f.g)
-    (Hole k f) <*> (Const x) = Hole k (($x).f)
+    Const f <*> Const x = Const (f x)
     u <*> v = Apply u v
 
 data HolexError k v = MissingKey k
