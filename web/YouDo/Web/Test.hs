@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 module YouDo.Web.Test where
 import Blaze.ByteString.Builder (toLazyByteString)
-import Control.Applicative ((<$>))
+import Control.Applicative ((<$>), (<*>))
 import Control.Concurrent.MVar (newEmptyMVar, newMVar, takeMVar, putMVar,
     modifyMVar_, modifyMVar)
 import Control.Monad.IO.Class (liftIO)
@@ -11,6 +11,7 @@ import qualified Data.ByteString.Lazy.Char8 as LB
 import qualified Data.ByteString.Char8 as SB
 import Data.CaseInsensitive (mk)
 import qualified Data.HashMap.Strict as M
+import Data.HashMap.Strict ((!))
 import Data.List (sort)
 import Data.Maybe (fromJust)
 import Data.Monoid ((<>), Monoid(..))
@@ -25,7 +26,9 @@ import Network.Wai (Application, responseToStream, RequestBodyLength(..), reques
     defaultRequest)
 import Network.Wai.Internal (Request(..), ResponseReceived(..))
 import Web.Scotty (scottyApp)
-import YouDo.Web (app, withDB, DBOption(..))
+import YouDo.Holex
+import YouDo.Test (plainTest)
+import YouDo.Web (app, withDB, DBOption(..), parse, ParamValue(..))
 
 tests :: IO [Test]
 tests = return
@@ -33,11 +36,37 @@ tests = return
         (stat, _, bod) <- liftIO $ req $ get "http://example.com/"
         stat ~= ok200
         bod ~= "placeholder"
-    , serverTest "new youdo" $ \req -> do
+    , serverTest "new youdo, form data" $ \req -> do
         (stat, headers, _) <- liftIO $ req
             $ post "http://example.com/0/youdos"
             <> body "assignerid=0&assigneeid=0&description=blah&duedate=&completed=false"
             <> header "Content-Type" "application/x-www-form-urlencoded"
+        stat ~= created201
+        let ydurl = SB.unpack $ fromJust $ lookup (mk "Location") headers
+        (stat', headers', bod) <- liftIO $ req
+            $ get ydurl
+            <> header "Accept" "text/plain"
+        stat' ~= ok200
+        lookup (mk "Content-Type") headers'
+            ~= Just "application/json; charset=utf-8"
+        obj <- hoistEither (eitherDecode bod :: Either String Object)
+        M.lookup "id" obj ~= Just (Number 1)
+        M.lookup "assignerid" obj ~= Just (Number 0)
+        M.lookup "assigneeid" obj ~= Just (Number 0)
+        M.lookup "description" obj ~= Just (String "blah")
+        M.lookup "duedate" obj ~= Just Null
+        M.lookup "completed" obj ~= Just (Bool False)
+        M.lookup "url" obj ~= (Just $ String $ T.pack ydurl)
+        M.lookup "thisVersion" obj ~= (Just $ String $ T.pack $ ydurl <> "/1")
+    , serverTest "new youdo, json body" $ \req -> do
+        (stat, headers, _) <- liftIO $ req
+            $ post "http://example.com/0/youdos"
+            <> body "{\"assignerid\":0,\
+                    \\"assigneeid\":0,\
+                    \\"description\":\"blah\",\
+                    \\"duedate\":\"\",\
+                    \\"completed\":false}"
+            <> header "Content-Type" "application/json"
         stat ~= created201
         let ydurl = SB.unpack $ fromJust $ lookup (mk "Location") headers
         (stat', headers', bod) <- liftIO $ req
@@ -80,6 +109,32 @@ tests = return
         M.lookup "duedate" obj ~= Just (String "2014-11-30T14:10:05.038Z")
         M.lookup "completed" obj ~= Just (Bool False)
         M.lookup "url" obj ~= (Just $ String $ T.pack ydurl)
+    , serverTest "new youdo with duedate, json body" $ \req -> do
+        (stat, headers, _) <- liftIO $ req
+            $ post "http://example.com/0/youdos"
+            <> body "{\"assignerid\":0,\
+                    \\"assigneeid\":0,\
+                    \\"description\":\"blah\",\
+                    \\"duedate\":\"2014-11-30T14:10:05.038Z\",\
+                    \\"completed\":false}"
+            <> header "Content-Type" "application/json"
+        stat ~= created201
+        let ydurl = SB.unpack $ fromJust $ lookup (mk "Location") headers
+        (stat', headers', bod) <- liftIO $ req
+            $ get ydurl
+            <> header "Accept" "text/plain"
+        stat' ~= ok200
+        lookup (mk "Content-Type") headers'
+            ~= Just "application/json; charset=utf-8"
+        obj <- hoistEither (eitherDecode bod :: Either String Object)
+        M.lookup "id" obj ~= Just (Number 1)
+        M.lookup "assignerid" obj ~= Just (Number 0)
+        M.lookup "assigneeid" obj ~= Just (Number 0)
+        M.lookup "description" obj ~= Just (String "blah")
+        M.lookup "duedate" obj ~= Just (String "2014-11-30T14:10:05.038Z")
+        M.lookup "completed" obj ~= Just (Bool False)
+        M.lookup "url" obj ~= (Just $ String $ T.pack ydurl)
+        M.lookup "thisVersion" obj ~= (Just $ String $ T.pack $ ydurl <> "/1")
     , serverTest "new youdo with bad content-type" $ \req -> do
         (stat, _, _) <- liftIO $ req
             $ post "http://example.com/0/youdos"
@@ -122,11 +177,12 @@ tests = return
         -- check versions
         (stat2, _, bod) <- liftIO $ req $ get $ ydurl ++ "/versions"
         stat2 ~= ok200
-        objs <- hoistEither (eitherDecode bod :: Either String [String])
-        objs ~= ["http://example.com/0/youdos/1/1"]
+        objs2 <- hoistEither (eitherDecode bod :: Either String [Object])
+        map (! "thisVersion") objs2 ~= [ String "http://example.com/0/youdos/1/1" ]
         -- change the youdo
+        let String urltext3 = objs2!!0 ! "thisVersion"
         (stat3, hdrs3, _) <- liftIO $ req
-            $ post (objs!!0)
+            $ post (T.unpack urltext3)
             <> body "completed=true"
             <> header "Content-Type" "application/x-www-form-urlencoded"
         stat3 ~= created201
@@ -134,12 +190,13 @@ tests = return
         -- check versions
         (stat4, _, bod4) <- liftIO $ req $ get $ ydurl ++ "/versions"
         stat4 ~= ok200
-        objs4 <- hoistEither (eitherDecode bod4 :: Either String [String])
-        objs4 ~= [ "http://example.com/0/youdos/1/2"
-                 , "http://example.com/0/youdos/1/1"
-                 ]
+        objs4 <- hoistEither (eitherDecode bod4 :: Either String [Object])
+        map (! "thisVersion") objs4 ~= [ String "http://example.com/0/youdos/1/2"
+                                       , String "http://example.com/0/youdos/1/1"
+                                       ]
         -- check correctness of new version
-        (stat5, _, bod5) <- liftIO $ req $ get $ head objs4
+        let String urltext5 = objs4!!0 ! "thisVersion"
+        (stat5, _, bod5) <- liftIO $ req $ get $ T.unpack urltext5
         stat5 ~= ok200
         obj5 <- hoistEither (eitherDecode bod5 :: Either String Object)
         M.lookup "id" obj5 ~= Just (Number 1)
@@ -149,6 +206,23 @@ tests = return
         M.lookup "duedate" obj5 ~= Just Null
         M.lookup "completed" obj5 ~= Just (Bool True)
         M.lookup "url" obj5 ~= (Just $ String $ T.pack ydurl)
+    , plainTest "Holex parsing from Scotty parameters" $ do
+        let expr :: Holex String ParamValue Int
+            expr = (+) <$> (parse "a") <*> (parse "b")
+            val = runHolex expr [("a", ScottyParam "1"), ("b", ScottyParam "-3")]
+            val' = runHolex expr [("a", ScottyParam "1"), ("b", ScottyParam "q")]
+        (val,val') ~= (Right (-2),
+            Left [ParseError "b" (ScottyParam "q") "readEither: no parse"])
+    , plainTest "Holex parsing from JSON fields" $ do
+        let expr :: Holex String ParamValue Int
+            expr = (+) <$> (parse "a") <*> (parse "b")
+            val = runHolex expr [("a", JSONField (Number 1)),
+                                 ("b", JSONField (Number (-3)))]
+            val' = runHolex expr [("a", JSONField (Number 1)),
+                                  ("b", JSONField (String "q"))]
+        (val,val') ~= (Right (-2),
+            Left [ParseError "b" (JSONField (String "q"))
+                "when expecting a Int, encountered String instead"])
     ]
 
 unintersperse :: (Eq a) => a -> [a] -> [[a]]

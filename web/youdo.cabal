@@ -28,6 +28,7 @@ executable ydserver
                        , postgresql-simple ==0.4.*
                        , bytestring ==0.10.*
                        , text ==0.11.*
+                       , mtl ==2.1.*
                        , transformers ==0.3.*
                        , time ==1.4.*
                        , iso8601-time ==0.1.*
@@ -40,7 +41,8 @@ executable ydserver
 Test-Suite test-web
   type:                detailed-0.9
   test-module:         YouDo.Web.Test
-  other-modules:       YouDo.Web, YouDo.DB, YouDo.DB.Mock, YouDo.DB.PostgreSQL
+  other-modules:       YouDo.Web, YouDo.DB, YouDo.DB.Mock, YouDo.DB.PostgreSQL,
+                       YouDo.Holex, YouDo.Test
   ghc-options:         -Wall
   build-depends:       base ==4.6.*
                        , Cabal >=1.8
@@ -55,6 +57,7 @@ Test-Suite test-web
                        , bytestring ==0.10.*
                        , text ==0.11.*
                        , blaze-builder ==0.3.*
+                       , mtl ==2.1.*
                        , transformers ==0.3.*
                        , time ==1.4.*
                        , iso8601-time ==0.1.*
@@ -64,3 +67,16 @@ Test-Suite test-web
                        , either ==4.3.*
                        , aeson ==0.7.*
                        , unordered-containers ==0.2.*
+
+Test-Suite test-holex
+  type:                detailed-0.9
+  test-module:         YouDo.Holex.Test
+  other-modules:       YouDo.Holex, YouDo.Test
+  ghc-options:         -Wall
+  build-depends:       base ==4.6.*
+                       , Cabal >=1.8
+                       , mtl ==2.1.*
+                       , transformers ==0.3.*
+                       , text ==0.11.*
+                       , scotty ==0.9.*
+                       , either ==4.3.*

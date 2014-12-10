@@ -1,15 +1,16 @@
 {-# LANGUAGE OverloadedStrings, RankNTypes #-}
 module YouDo.Web where
-import Prelude hiding(id)
 import Codec.MIME.Type (mimeType, MIMEType(Application))
 import Codec.MIME.Parse (parseMIMEType)
 import Control.Applicative ((<$>), (<*>), (<|>))
 import Control.Concurrent.MVar (MVar, newMVar, withMVar)
 import Control.Exception (bracket)
 import Control.Monad.Trans.Class (lift)
-import Control.Monad.Trans.Either (EitherT(..), left, right, hoistEither)
+import Control.Monad.Trans.Either (EitherT(..), left, right, hoistEither,
+    bimapEitherT)
 import Control.Monad.IO.Class (liftIO, MonadIO)
 import Data.Aeson (toJSON, ToJSON(..), Value(..), (.=))
+import Data.Aeson.Types (parseEither)
 import qualified Data.Aeson as A
 import Data.ByteString.Char8 (pack)
 import qualified Data.HashMap.Strict as M
@@ -27,11 +28,13 @@ import Options.Applicative (option, strOption, flag', auto, long, short,
     metavar, help, execParser, Parser, fullDesc, helper, info)
 import qualified Options.Applicative as Opt
 import Web.Scotty (scottyOpts, ScottyM, get, matchAny, status, header,
-    addroute, RoutePattern, param, params, text, json, Options(..), setHeader,
-    ActionM, Parsable(..), raise)
+    addroute, RoutePattern, params, text, json, Options(..), setHeader,
+    ActionM, raise, Parsable(..), body)
 import YouDo.DB
 import qualified YouDo.DB.Mock as Mock
 import YouDo.DB.PostgreSQL(DBConnection(..))
+import YouDo.Holex (runHolex, hole, optional, defaultTo, Holex(..),
+    HolexError(..), tryApply)
 
 data DBOption = InMemory | Postgres String
 data YDOptions = YDOptions { port :: Int
@@ -95,7 +98,12 @@ app baseuri mv_db = do
             text $ LT.pack $ show youdos
         ),(POST, do
             err_url <- runEitherT $ do
-                yd <- bodyYoudoData
+                yd <- fromRequest $
+                    YoudoData <$> parse "assignerid"
+                              <*> parse "assigneeid"
+                              <*> defaultTo "" (parse "description")
+                              <*> defaultTo (DueDate Nothing) (parse "duedate")
+                              <*> defaultTo False (parse "completed")
                 ydid <- liftIO $ withMVar mv_db $ postYoudo yd
                 return $ LT.pack $ youdoURL baseuri ydid
             case err_url of
@@ -106,28 +114,32 @@ app baseuri mv_db = do
                                 text $ LT.concat ["created at ", url, "\r\n"]
         )]
     resource "/0/youdos/:id" [(GET, do
-        ydid <- YoudoID <$> read <$> param "id"
-        youdos <- liftIO $ withMVar mv_db $ getYoudo ydid
-        case youdos of
-            [] -> do status notFound404
-                     text $ LT.concat ["no youdo with id ", LT.pack $ show ydid]
-            [yd] -> do status ok200
-                       json (WebYoudo baseuri yd)
-            _ -> do status internalServerError500
-                    text $ LT.concat ["multiple youdos with id ", LT.pack $ show ydid]
+        err_ydid <- runEitherT $ fromRequest $ YoudoID <$> parse "id"
+        case err_ydid of
+            Left err -> do status badRequest400
+                           text err
+            Right ydid -> do
+                yds <- liftIO $ withMVar mv_db $ getYoudo ydid
+                case yds of
+                    [] -> do status notFound404
+                             text $ LT.concat ["no youdo with id ", LT.pack $ show ydid]
+                    [yd] -> do status ok200
+                               json (WebYoudo baseuri yd)
+                    _ -> do status internalServerError500
+                            text $ LT.concat ["multiple youdos with id ", LT.pack $ show ydid]
         )]
     resource "/0/youdos/:id/versions" [(GET, do
-        ydid' <- runEitherT bodyYoudoID
+        ydid' <- runEitherT $ fromRequest $ YoudoID <$> parse "id"
         case ydid' of
             Left err -> do status badRequest400
                            text err
             Right ydid -> do
                 ydvers <- liftIO $ withMVar mv_db $ getYoudoVersions ydid
                 status ok200
-                json $ map (WebYoudoVersionID baseuri) ydvers
+                json $ map (WebYoudo baseuri) ydvers
         )]
     resource "/0/youdos/:id/:txnid" [(GET, do
-        ydver <- runEitherT bodyYoudoVersionID
+        ydver <- runEitherT $ fromRequest $ YoudoVersionID <$> parse "id" <*> parse "txnid"
         case ydver of
             Left err -> do status badRequest400
                            text err
@@ -141,7 +153,14 @@ app baseuri mv_db = do
                     _ -> do status internalServerError500
                             text $ LT.concat ["multiple youdos with ", LT.pack $ show ver]
         ),(POST, do
-            ydupd <- runEitherT bodyYoudoUpdate
+            ydupd <- runEitherT $ fromRequest $
+                YoudoUpdate <$> (YoudoVersionID <$> parse "id"
+                                                <*> parse "txnid")
+                            <*> optional (parse "assignerid")
+                            <*> optional (parse "assigneeid")
+                            <*> optional (parse "description")
+                            <*> optional (parse "duedate")
+                            <*> optional (parse "completed")
             case ydupd of
                 Left err -> do status badRequest400
                                text err
@@ -198,61 +217,76 @@ youdoVersionURL baseuri (YoudoVersionID (YoudoID yd) (TransactionID txn))
         nullURI { uriPath = "0/youdos/" ++ (show yd) ++ "/" ++ (show txn) }
         `relativeTo` baseuri
 
-bodyYoudoUpdate :: EitherT LT.Text ActionM YoudoUpdate
-bodyYoudoUpdate = do
-    hdr <- Web.Scotty.header "Content-Type"
-        `maybeError` "no Content-Type header"
-    contenttype <- (return $ parseMIMEType $ LT.toStrict hdr)
-        `maybeError` (LT.concat ["Incomprehensible Content-Type: ", hdr])
-    case mimeType contenttype of
-        Application "x-www-form-urlencoded" -> do
-            id <- mandatoryParam "id"
-            txnid <- mandatoryParam "txnid"
-            assignerid' <- maybeParam "assignerid"
-            assigneeid' <- maybeParam "assigneeid"
-            description' <- maybeParam "description"
-            duedate' <- maybeParam "duedate"
-            completed' <- maybeParam "completed"
-            right YoudoUpdate { oldVersion = YoudoVersionID id txnid
-                              , newAssignerid = assignerid'
-                              , newAssigneeid = assigneeid'
-                              , newDescription = description'
-                              , newDuedate = duedate'
-                              , newCompleted = completed'
-                              }
-        _ -> left $ LT.concat ["Don't know how to handle Content-Type: ", hdr]
+fromRequest :: Holex LT.Text ParamValue a -> EitherT LT.Text ActionM a
+fromRequest expr = do
+    kvs <- requestData
+    bimapEitherT showHolexErrors id $ hoistEither $ runHolex expr kvs
 
-bodyYoudoData :: EitherT LT.Text ActionM YoudoData
-bodyYoudoData = do
-    hdr <- Web.Scotty.header "Content-Type"
-        `maybeError` "no Content-Type header"
-    contenttype <- (return $ parseMIMEType $ LT.toStrict hdr)
-        `maybeError` (LT.concat ["Incomprehensible Content-Type: ", hdr])
-    case mimeType contenttype of
-        Application "x-www-form-urlencoded" -> do
-            assignerid' <- mandatoryParam "assignerid"
-            assigneeid' <- mandatoryParam "assigneeid"
-            description' <- optionalParam "description" ""
-            duedate' <- optionalParam "duedate" (DueDate Nothing)
-            completed' <- optionalParam "completed" False
-            right YoudoData { assignerid = assignerid'
-                            , assigneeid = assigneeid'
-                            , description = description'
-                            , duedate = duedate'
-                            , completed = completed'
-                            }
-        _ -> left $ LT.concat ["Don't know how to handle Content-Type: ", hdr]
+requestData :: EitherT LT.Text ActionM [(LT.Text, ParamValue)]
+requestData = do
+    ps <- lift params
+    let paramdata = [(k, ScottyParam v) | (k,v)<-ps]
+    bodydata <- do
+        maybehdr <- lift $ Web.Scotty.header "Content-Type"
+        case maybehdr of
+            Nothing -> return []
+            Just hdr -> do
+                contenttype <- (return $ parseMIMEType $ LT.toStrict hdr)
+                    `maybeError` (LT.concat ["Incomprehensible Content-Type: ", hdr])
+                case mimeType contenttype of
+                    Application "x-www-form-urlencoded" ->
+                        -- form data is already in params
+                        return []
+                    Application "json" -> do
+                        bod <- lift body
+                        case A.eitherDecode' bod of
+                            Left err ->
+                                left (LT.pack err)
+                            Right (Object obj) ->
+                                return [(LT.fromStrict k, JSONField v) | (k,v)<-M.toList obj]
+                            Right _ ->
+                                left "json payload is not an object"
+                    _ -> left $ LT.concat ["Don't know how to handle Content-Type: ", hdr]
+    return $ paramdata ++ bodydata
 
-bodyYoudoID :: EitherT LT.Text ActionM YoudoID
-bodyYoudoID = do
-    ydid <- mandatoryParam "id"
-    right $ YoudoID ydid
+parse :: (Eq k, Parsable a, A.FromJSON a) => k -> Holex k ParamValue a
+parse k = tryApply
+    (Const (\x ->
+        case x of
+            ScottyParam txt ->
+                case parseParam txt of
+                    Left err -> Left (ParseError k x err)
+                    Right val -> Right val
+            JSONField jsonval ->
+                case parseEither A.parseJSON jsonval of
+                    Left err -> Left (ParseError k x (LT.pack err))
+                    Right val -> Right val))
+    $ hole k
 
-bodyYoudoVersionID :: EitherT LT.Text ActionM YoudoVersionID
-bodyYoudoVersionID = do
-    ydid <- mandatoryParam "id"
-    txnid <- mandatoryParam "txnid"
-    right YoudoVersionID { youdoid = ydid, youdotxnid = txnid }
+data ParamValue = ScottyParam LT.Text
+                | JSONField Value
+    deriving (Eq, Show)
+
+showHolexError :: (Show k) => HolexError k v -> LT.Text
+showHolexError (MissingKey k) = LT.concat [ "missing mandatory parameter "
+                                          , LT.pack (show k)
+                                          ]
+showHolexError (UnusedKey k) = LT.concat [ "unknown parameter "
+                                         , LT.pack (show k)
+                                         ]
+showHolexError (DuplicateValue k _) = LT.concat [ "duplicate value for parameter "
+                                                , LT.pack (show k)
+                                                ]
+showHolexError (ParseError k _ msg) = LT.concat [ "cannot parse parameter "
+                                                , LT.pack (show k)
+                                                , ": "
+                                                , msg
+                                                ]
+showHolexError (CustomError e) = LT.pack (show e)
+
+showHolexErrors :: (Show k) => [HolexError k v] -> LT.Text
+showHolexErrors es = LT.concat [ LT.concat [ showHolexError e, "\r\n" ]
+                               | e<-es ]
 
 maybeError :: (Monad m) => m (Maybe a) -> b -> EitherT b m a
 maybeError mma err = do
@@ -260,24 +294,3 @@ maybeError mma err = do
     case ma of
         Nothing -> left err
         Just x -> right x
-
-mandatoryParam :: (Parsable a) => LT.Text -> EitherT LT.Text ActionM a
-mandatoryParam key = do
-    ps <- lift params
-    case lookup key ps of
-        Nothing -> left $ LT.concat ["missing mandatory parameter ", key]
-        Just val -> hoistEither $ parseParam val
-
-optionalParam :: (Parsable a) => LT.Text -> a -> EitherT LT.Text ActionM a
-optionalParam key defaultval = do
-    ps <- lift params
-    case lookup key ps of
-        Nothing -> right defaultval
-        Just val -> hoistEither $ parseParam val
-
-maybeParam :: (Parsable a) => LT.Text -> EitherT LT.Text ActionM (Maybe a)
-maybeParam key = do
-    ps <- lift params
-    case lookup key ps of
-        Nothing -> right Nothing
-        Just val -> hoistEither $ Just <$> parseParam val
