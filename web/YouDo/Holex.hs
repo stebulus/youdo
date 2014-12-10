@@ -18,6 +18,13 @@ data (Eq k) => Holex k v a
     | Hole k (v->a)
     | Default a (Holex k v a)
 
+instance (Eq k) => Functor (Holex k v) where
+    fmap f expr = pure f <*> expr
+instance (Eq k) => Applicative (Holex k v) where
+    pure = Const
+    Const f <*> Const x = Const (f x)
+    u <*> v = Apply u v
+
 data HolexError k v = MissingKey k
                     | UnusedKey k
                     | DuplicateValue k v
@@ -56,13 +63,6 @@ tryApply f expr = TryApply f expr
 defaultTo :: (Eq k) => a -> Holex k v a -> Holex k v a
 defaultTo _ expr@(Const _) = expr
 defaultTo v expr = Default v expr
-
-instance (Eq k) => Functor (Holex k v) where
-    fmap f expr = pure f <*> expr
-instance (Eq k) => Applicative (Holex k v) where
-    pure = Const
-    Const f <*> Const x = Const (f x)
-    u <*> v = Apply u v
 
 setDefaults :: (Eq k) => Holex k v a -> Holex k v a
 setDefaults expr = recursively deflt expr
