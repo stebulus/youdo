@@ -29,7 +29,7 @@ import Options.Applicative (option, strOption, flag', auto, long, short,
 import qualified Options.Applicative as Opt
 import Web.Scotty (scottyOpts, ScottyM, get, matchAny, status, header,
     addroute, RoutePattern, params, text, json, Options(..), setHeader,
-    ActionM, raise, Parsable(..))
+    ActionM, raise, Parsable(..), body)
 import YouDo.DB
 import qualified YouDo.DB.Mock as Mock
 import YouDo.DB.PostgreSQL(DBConnection(..))
@@ -98,7 +98,7 @@ app baseuri mv_db = do
             text $ LT.pack $ show youdos
         ),(POST, do
             err_url <- runEitherT $ do
-                yd <- fromParams $
+                yd <- fromRequest $
                     YoudoData <$> parse "assignerid"
                               <*> parse "assigneeid"
                               <*> defaultTo "" (parse "description")
@@ -114,7 +114,7 @@ app baseuri mv_db = do
                                 text $ LT.concat ["created at ", url, "\r\n"]
         )]
     resource "/0/youdos/:id" [(GET, do
-        err_ydid <- runEitherT $ fromParams $ YoudoID <$> parse "id"
+        err_ydid <- runEitherT $ fromRequest $ YoudoID <$> parse "id"
         case err_ydid of
             Left err -> do status badRequest400
                            text err
@@ -129,7 +129,7 @@ app baseuri mv_db = do
                             text $ LT.concat ["multiple youdos with id ", LT.pack $ show ydid]
         )]
     resource "/0/youdos/:id/versions" [(GET, do
-        ydid' <- runEitherT $ bodyData $ YoudoID <$> parse "id"
+        ydid' <- runEitherT $ fromRequest $ YoudoID <$> parse "id"
         case ydid' of
             Left err -> do status badRequest400
                            text err
@@ -139,7 +139,7 @@ app baseuri mv_db = do
                 json $ map (WebYoudo baseuri) ydvers
         )]
     resource "/0/youdos/:id/:txnid" [(GET, do
-        ydver <- runEitherT $ bodyData $ YoudoVersionID <$> parse "id" <*> parse "txnid"
+        ydver <- runEitherT $ fromRequest $ YoudoVersionID <$> parse "id" <*> parse "txnid"
         case ydver of
             Left err -> do status badRequest400
                            text err
@@ -153,7 +153,7 @@ app baseuri mv_db = do
                     _ -> do status internalServerError500
                             text $ LT.concat ["multiple youdos with ", LT.pack $ show ver]
         ),(POST, do
-            ydupd <- runEitherT $ fromParams $
+            ydupd <- runEitherT $ fromRequest $
                 YoudoUpdate <$> (YoudoVersionID <$> parse "id"
                                                 <*> parse "txnid")
                             <*> optional (parse "assignerid")
@@ -217,17 +217,37 @@ youdoVersionURL baseuri (YoudoVersionID (YoudoID yd) (TransactionID txn))
         nullURI { uriPath = "0/youdos/" ++ (show yd) ++ "/" ++ (show txn) }
         `relativeTo` baseuri
 
-fromParams :: Holex LT.Text ParamValue a -> EitherT LT.Text ActionM a
-fromParams expr = do
-    maybehdr <- lift $ Web.Scotty.header "Content-Type"
-    case maybehdr of
-        Nothing -> bodyData expr  -- no body, just use captures
-        Just hdr -> do
-            contenttype <- (return $ parseMIMEType $ LT.toStrict hdr)
-                `maybeError` (LT.concat ["Incomprehensible Content-Type: ", hdr])
-            case mimeType contenttype of
-                Application "x-www-form-urlencoded" -> bodyData expr
-                _ -> left $ LT.concat ["Don't know how to handle Content-Type: ", hdr]
+fromRequest :: Holex LT.Text ParamValue a -> EitherT LT.Text ActionM a
+fromRequest expr = do
+    kvs <- requestData
+    bimapEitherT showHolexErrors id $ hoistEither $ runHolex expr kvs
+
+requestData :: EitherT LT.Text ActionM [(LT.Text, ParamValue)]
+requestData = do
+    ps <- lift params
+    let paramdata = [(k, ScottyParam v) | (k,v)<-ps]
+    bodydata <- do
+        maybehdr <- lift $ Web.Scotty.header "Content-Type"
+        case maybehdr of
+            Nothing -> return []
+            Just hdr -> do
+                contenttype <- (return $ parseMIMEType $ LT.toStrict hdr)
+                    `maybeError` (LT.concat ["Incomprehensible Content-Type: ", hdr])
+                case mimeType contenttype of
+                    Application "x-www-form-urlencoded" ->
+                        -- form data is already in params
+                        return []
+                    Application "json" -> do
+                        bod <- lift body
+                        case A.eitherDecode' bod of
+                            Left err ->
+                                left (LT.pack err)
+                            Right (Object obj) ->
+                                return [(LT.fromStrict k, JSONField v) | (k,v)<-M.toList obj]
+                            Right _ ->
+                                left "json payload is not an object"
+                    _ -> left $ LT.concat ["Don't know how to handle Content-Type: ", hdr]
+    return $ paramdata ++ bodydata
 
 parse :: (Eq k, Parsable a, A.FromJSON a) => k -> Holex k ParamValue a
 parse k = tryApply
@@ -246,12 +266,6 @@ parse k = tryApply
 data ParamValue = ScottyParam LT.Text
                 | JSONField Value
     deriving (Eq, Show)
-
-bodyData :: Holex LT.Text ParamValue a -> EitherT LT.Text ActionM a
-bodyData holex = do
-    ps <- lift params
-    bimapEitherT showHolexErrors id $ hoistEither $
-        runHolex holex [(k, ScottyParam v) | (k,v)<-ps]
 
 showHolexError :: (Show k) => HolexError k v -> LT.Text
 showHolexError (MissingKey k) = LT.concat [ "missing mandatory parameter "

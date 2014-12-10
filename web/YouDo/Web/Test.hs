@@ -36,11 +36,37 @@ tests = return
         (stat, _, bod) <- liftIO $ req $ get "http://example.com/"
         stat ~= ok200
         bod ~= "placeholder"
-    , serverTest "new youdo" $ \req -> do
+    , serverTest "new youdo, form data" $ \req -> do
         (stat, headers, _) <- liftIO $ req
             $ post "http://example.com/0/youdos"
             <> body "assignerid=0&assigneeid=0&description=blah&duedate=&completed=false"
             <> header "Content-Type" "application/x-www-form-urlencoded"
+        stat ~= created201
+        let ydurl = SB.unpack $ fromJust $ lookup (mk "Location") headers
+        (stat', headers', bod) <- liftIO $ req
+            $ get ydurl
+            <> header "Accept" "text/plain"
+        stat' ~= ok200
+        lookup (mk "Content-Type") headers'
+            ~= Just "application/json; charset=utf-8"
+        obj <- hoistEither (eitherDecode bod :: Either String Object)
+        M.lookup "id" obj ~= Just (Number 1)
+        M.lookup "assignerid" obj ~= Just (Number 0)
+        M.lookup "assigneeid" obj ~= Just (Number 0)
+        M.lookup "description" obj ~= Just (String "blah")
+        M.lookup "duedate" obj ~= Just Null
+        M.lookup "completed" obj ~= Just (Bool False)
+        M.lookup "url" obj ~= (Just $ String $ T.pack ydurl)
+        M.lookup "thisVersion" obj ~= (Just $ String $ T.pack $ ydurl <> "/1")
+    , serverTest "new youdo, json body" $ \req -> do
+        (stat, headers, _) <- liftIO $ req
+            $ post "http://example.com/0/youdos"
+            <> body "{\"assignerid\":0,\
+                    \\"assigneeid\":0,\
+                    \\"description\":\"blah\",\
+                    \\"duedate\":\"\",\
+                    \\"completed\":false}"
+            <> header "Content-Type" "application/json"
         stat ~= created201
         let ydurl = SB.unpack $ fromJust $ lookup (mk "Location") headers
         (stat', headers', bod) <- liftIO $ req
@@ -83,6 +109,32 @@ tests = return
         M.lookup "duedate" obj ~= Just (String "2014-11-30T14:10:05.038Z")
         M.lookup "completed" obj ~= Just (Bool False)
         M.lookup "url" obj ~= (Just $ String $ T.pack ydurl)
+    , serverTest "new youdo with duedate, json body" $ \req -> do
+        (stat, headers, _) <- liftIO $ req
+            $ post "http://example.com/0/youdos"
+            <> body "{\"assignerid\":0,\
+                    \\"assigneeid\":0,\
+                    \\"description\":\"blah\",\
+                    \\"duedate\":\"2014-11-30T14:10:05.038Z\",\
+                    \\"completed\":false}"
+            <> header "Content-Type" "application/json"
+        stat ~= created201
+        let ydurl = SB.unpack $ fromJust $ lookup (mk "Location") headers
+        (stat', headers', bod) <- liftIO $ req
+            $ get ydurl
+            <> header "Accept" "text/plain"
+        stat' ~= ok200
+        lookup (mk "Content-Type") headers'
+            ~= Just "application/json; charset=utf-8"
+        obj <- hoistEither (eitherDecode bod :: Either String Object)
+        M.lookup "id" obj ~= Just (Number 1)
+        M.lookup "assignerid" obj ~= Just (Number 0)
+        M.lookup "assigneeid" obj ~= Just (Number 0)
+        M.lookup "description" obj ~= Just (String "blah")
+        M.lookup "duedate" obj ~= Just (String "2014-11-30T14:10:05.038Z")
+        M.lookup "completed" obj ~= Just (Bool False)
+        M.lookup "url" obj ~= (Just $ String $ T.pack ydurl)
+        M.lookup "thisVersion" obj ~= (Just $ String $ T.pack $ ydurl <> "/1")
     , serverTest "new youdo with bad content-type" $ \req -> do
         (stat, _, _) <- liftIO $ req
             $ post "http://example.com/0/youdos"
