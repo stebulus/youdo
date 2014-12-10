@@ -1,7 +1,8 @@
-{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE ExistentialQuantification, RankNTypes #-}
 module YouDo.Holex where
 import Control.Applicative ((<$>), Applicative(..))
 import Control.Monad.Writer.Lazy (Writer, runWriter, tell)
+import Data.Functor.Identity (Identity(..))
 import Data.List (foldl')
 import Data.Monoid (Sum(..))
 import Data.Text.Lazy (Text)
@@ -70,10 +71,9 @@ data HolexError k v = MissingKey k
     deriving (Show, Eq)
 
 setDefaults :: (Eq k) => Holex k v a -> Holex k v a
-setDefaults (Apply exprf exprx) = setDefaults exprf <*> setDefaults exprx
-setDefaults (TryApply exprf exprx) = tryApply (setDefaults exprf) (setDefaults exprx)
-setDefaults (Default v _) = Const v
-setDefaults expr = expr
+setDefaults expr = recursively deflt expr
+    where deflt (Default v _) = Just $ Const v
+          deflt _ = Nothing
 
 runHolex :: (Eq k) => Holex k v a -> [(k,v)] -> Either [HolexError k v] a
 runHolex expr kvs =
@@ -104,25 +104,40 @@ runHolex expr kvs =
                 in (e',used',errs')
 
 fill1 :: (Eq k) => Holex k v a -> k -> v -> Writer (Sum Int) (Holex k v a)
-fill1 expr@(Const _) _ _ = return expr
-fill1 (Apply exprf exprx) k v = do
-    exprf' <- fill1 exprf k v
-    exprx' <- fill1 exprx k v
-    return $ exprf' <*> exprx'
-fill1 (TryApply exprf exprx) k v = do
-    exprf' <- fill1 exprf k v
-    exprx' <- fill1 exprx k v
-    return $ case (exprf',exprx') of
-        (Const f,Const x) -> case (f x) of
-                                Left err -> TryApplyFailed err
-                                Right y -> Const y
-        _ -> TryApply exprf' exprx'
-fill1 expr@(TryApplyFailed _) _ _ = return expr
-fill1 expr@(Hole key f) k v
-    | key == k = do
-        tell (Sum 1)
-        return $ Const (f v)
-    | otherwise = return expr
-fill1 (Default v' expr) k v = do
-    expr' <- fill1 expr k v
-    return $ defaultTo v' expr'
+fill1 expr k v = recursivelyM fill expr
+    where fill (Hole key f)
+            | key == k = do
+                tell (Sum 1)
+                return $ Just $ Const (f v)
+            | otherwise = return Nothing
+          fill _ = return Nothing
+
+recursively :: (Eq k)
+    => (forall b. Holex k v b -> Maybe (Holex k v b))
+    -> Holex k v a
+    -> Holex k v a
+recursively f expr = runIdentity $ recursivelyM (return . f) expr
+
+recursivelyM :: (Eq k, Monad m)
+    => (forall b. Holex k v b -> m (Maybe (Holex k v b)))
+    -> Holex k v a
+    -> m (Holex k v a)
+recursivelyM f expr = do
+    result <- f expr
+    case result of
+        Just expr' ->
+            return expr'
+        Nothing ->
+            case expr of
+                Apply exprf exprx -> do
+                    exprf' <- recursivelyM f exprf
+                    exprx' <- recursivelyM f exprx
+                    return $ exprf' <*> exprx'
+                TryApply exprf exprx -> do
+                    exprf' <- recursivelyM f exprf
+                    exprx' <- recursivelyM f exprx
+                    return $ tryApply exprf' exprx'
+                Default v exprx -> do
+                    exprx' <- recursivelyM f exprx
+                    return $ defaultTo v exprx'
+                _ -> return expr
