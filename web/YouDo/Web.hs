@@ -96,9 +96,8 @@ app baseuri mv_db = do
         [(GET, dbAction mv_db
             (Const ())
             (const getYoudos)
-            (\yds -> do
-                status ok200
-                text $ LT.pack $ show yds)
+            (\yds -> do status ok200
+                        text $ LT.pack $ show yds)
         ),(POST, dbAction mv_db
             (YoudoData <$> parse "assignerid"
                        <*> parse "assigneeid"
@@ -117,27 +116,26 @@ app baseuri mv_db = do
             (YoudoID <$> parse "id")
             getYoudo
             (\yds -> case yds of
-                [] -> do status notFound404
                 [yd] -> do status ok200
                            json (WebYoudo baseuri yd)
+                [] -> status notFound404
                 _ -> raise "multiple youdos found!")
         )]
     resource "/0/youdos/:id/versions"
         [(GET, dbAction mv_db
             (YoudoID <$> parse "id")
             getYoudoVersions
-            (\ydvers -> do
-                status ok200
-                json $ map (WebYoudo baseuri) ydvers)
+            (\ydvers -> do status ok200
+                           json $ map (WebYoudo baseuri) ydvers)
         )]
     resource "/0/youdos/:id/:txnid"
         [(GET, dbAction mv_db
             (YoudoVersionID <$> parse "id" <*> parse "txnid")
             getYoudoVersion
             (\youdos -> case youdos of
-                [] -> do status notFound404
                 [yd] -> do status ok200
                            json (WebYoudo baseuri yd)
+                [] -> do status notFound404
                 _ -> raise "multiple youdos found!")
         ),(POST, dbAction mv_db
             (YoudoUpdate <$> (YoudoVersionID <$> parse "id"
@@ -171,9 +169,8 @@ resource route acts =
         matchAny route $ do
             status methodNotAllowed405
             setHeader "Allow" $ LT.pack allowedMethods
-            text ""
 
-type RequestParser a = Holex LT.Text ParamValue a
+type RequestParser = Holex LT.Text ParamValue
 
 dbAction :: (DB b)
     => MVar b
