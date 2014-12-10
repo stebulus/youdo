@@ -28,12 +28,12 @@ import Options.Applicative (option, strOption, flag', auto, long, short,
 import qualified Options.Applicative as Opt
 import Web.Scotty (scottyOpts, ScottyM, get, matchAny, status, header,
     addroute, RoutePattern, params, text, json, Options(..), setHeader,
-    ActionM, raise)
+    ActionM, raise, Parsable(..))
 import YouDo.DB
 import qualified YouDo.DB.Mock as Mock
 import YouDo.DB.PostgreSQL(DBConnection(..))
-import YouDo.Holex (runHolex, parse, optional, defaultTo, Holex(..),
-    HolexError(..))
+import YouDo.Holex (runHolex, hole, optional, defaultTo, Holex(..),
+    HolexError(..), tryApply)
 
 data DBOption = InMemory | Postgres String
 data YDOptions = YDOptions { port :: Int
@@ -227,6 +227,12 @@ fromParams expr = do
             case mimeType contenttype of
                 Application "x-www-form-urlencoded" -> bodyData expr
                 _ -> left $ LT.concat ["Don't know how to handle Content-Type: ", hdr]
+
+parse :: (Eq k, Parsable a) => k -> Holex k LT.Text a
+parse k = tryApply (Const (\x -> case parseParam x of
+                                    Left err -> Left (ParseError k x err)
+                                    Right val -> Right val))
+                   $ hole k
 
 bodyData :: Holex LT.Text LT.Text a -> EitherT LT.Text ActionM a
 bodyData holex = do

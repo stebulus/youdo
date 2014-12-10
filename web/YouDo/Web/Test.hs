@@ -29,7 +29,7 @@ import Network.Wai.Internal (Request(..), ResponseReceived(..))
 import Web.Scotty (scottyApp)
 import YouDo.Holex
 import YouDo.Test (plainTest)
-import YouDo.Web (app, withDB, DBOption(..))
+import YouDo.Web (app, withDB, DBOption(..), parse)
 
 tests :: IO [Test]
 tests = return

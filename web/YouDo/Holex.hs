@@ -5,7 +5,6 @@ import Control.Monad.Writer.Lazy (Writer, runWriter, tell)
 import Data.List (foldl')
 import Data.Monoid (Sum(..))
 import Data.Text.Lazy (Text)
-import Web.Scotty (Parsable(..))
 
 -- An expression with named holes.
 -- k is the type of the names; v is the type of the values that fill
@@ -40,12 +39,6 @@ hole k = Hole k id
 check :: (Eq k) => (a->Bool) -> Text -> Holex k v a -> Holex k v a
 check good err expr =
     tryApply (Const (\x -> if good x then Right x else Left (CustomError err))) expr
-
-parse :: (Eq k, Parsable a) => k -> Holex k Text a
-parse k = tryApply (Const (\x -> case parseParam x of
-                                    Left err -> Left (ParseError k x err)
-                                    Right val -> Right val))
-                   $ hole k
 
 optional :: (Eq k) => Holex k v a -> Holex k v (Maybe a)
 optional expr = defaultTo Nothing (Just <$> expr)
