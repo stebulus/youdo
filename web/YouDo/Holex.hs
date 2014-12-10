@@ -8,8 +8,9 @@ import Data.Monoid (Sum(..), Monoid(..))
 import Data.Text.Lazy (Text)
 
 -- An expression with named holes.
--- k is the type of the names; v is the type of the values that fill
--- holes; a is the type of the expression.
+--   k - the type of the names
+--   v - the type of the values that fill holes
+--   a - the type of the entire expression
 data (Eq k) => Holex k v a
     = Const a
     | forall b. Apply (Holex k v (b->a)) (Holex k v b)
@@ -32,16 +33,20 @@ data HolexError k v = MissingKey k
                     | CustomError Text
     deriving (Show, Eq)
 
+-- Create a hole named k.
 hole :: (Eq k) => k -> Holex k v v
 hole k = Hole k id
 
+-- Verify that the subexpression satisfies the given condition.
 check :: (Eq k) => (a->Bool) -> Text -> Holex k v a -> Holex k v a
 check good err expr =
     tryApply (Const (\x -> if good x then Right x else Left (CustomError err))) expr
 
+-- If the subexpression cannot be evaluated, evaluate to Nothing.
 optional :: (Eq k) => Holex k v a -> Holex k v (Maybe a)
 optional expr = defaultTo Nothing (Just <$> expr)
 
+-- Apply a function which might report failure.
 tryApply :: (Eq k) => (Holex k v (b->Either (HolexError k v) a)) -> Holex k v b
     -> Holex k v a
 tryApply (Const f) (Const x) =
@@ -50,10 +55,12 @@ tryApply (Const f) (Const x) =
         Right b -> Const b
 tryApply f expr = TryApply f expr
 
+-- If the subexpression cannot be evaluated, evaluate to the given value.
 defaultTo :: (Eq k) => a -> Holex k v a -> Holex k v a
 defaultTo _ expr@(Const _) = expr
 defaultTo v expr = Default v expr
 
+-- Evaluate the expression using the given values.
 runHolex :: (Eq k) => Holex k v a -> [(k,v)] -> Either [HolexError k v] a
 runHolex expr kvs =
     case (valueWithDefaults, allErrs) of
@@ -82,6 +89,7 @@ runHolex expr kvs =
                             else errs
                 in (e',used',errs')
 
+-- Fill in holes having the given name; write the number of holes filled.
 fill1 :: (Eq k) => Holex k v a -> k -> v -> Writer (Sum Int) (Holex k v a)
 fill1 expr k v = recursivelyM fill expr
     where fill (Hole key f)
@@ -91,17 +99,25 @@ fill1 expr k v = recursivelyM fill expr
             | otherwise = return Nothing
           fill _ = return Nothing
 
+-- Replace any nodes created with `defaultTo` with their default values,
+-- if they haven't already evaluated to something else.
 setDefaults :: (Eq k) => Holex k v a -> Holex k v a
 setDefaults expr = recursively deflt expr
     where deflt (Default v _) = Just $ Const v
           deflt _ = Nothing
 
+-- Recursively apply the given function to the Holex.  If the function
+-- returns Nothing, continue recursively to the children of the node
+-- if it has any, or keep it as-is if it has none.  If the function
+-- returns a Just, replace the current node with the contents of the
+-- Just; do not recurse into the new children.
 recursively :: (Eq k)
     => (forall b. Holex k v b -> Maybe (Holex k v b))
     -> Holex k v a
     -> Holex k v a
 recursively f expr = runIdentity $ recursivelyM (return . f) expr
 
+-- Recursively apply the given function to the Holex, in a monad.
 recursivelyM :: (Eq k, Monad m)
     => (forall b. Holex k v b -> m (Maybe (Holex k v b)))
     -> Holex k v a
@@ -126,16 +142,22 @@ recursivelyM f expr = do
                     return $ defaultTo v exprx'
                 _ -> return expr
 
+-- The names of the (unfilled) holes in the given expression.
 keys :: (Eq k) => Holex k v a -> [k]
 keys expr = accumulate key expr
     where key (Hole k _) = Just [k]
           key _ = Nothing
 
+-- The errors from `tryApply` nodes that failed.
 errors :: (Eq k) => Holex k v a -> [HolexError k v]
 errors expr = accumulate err expr
     where err (TryApplyFailed e) = Just [e]
           err _ = Nothing
 
+-- Apply the given function to the nodes of the expression,
+-- accumulating the results.  If the function returns Nothing,
+-- recurse into the node's children.  If the function returns a Just,
+-- accumulate that value and do not recurse into the children.
 accumulate :: (Eq k, Monoid n)
     => (forall b. Holex k v b -> Maybe n)
     -> Holex k v a
