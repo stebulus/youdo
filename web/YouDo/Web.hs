@@ -110,35 +110,38 @@ app baseuri mv_db = do
                 setHeader "Location" url
                 text $ LT.concat ["created at ", url, "\r\n"]
         )]
-    resource "/0/youdos/:id" [(GET, statusErrors $ do
-        ydid <- failWith badRequest400 $ fromRequest $ YoudoID <$> parse "id"
-        failWith internalServerError500 $ do
-            yds <- liftIO $ withMVar mv_db $ getYoudo ydid
-            case yds of
-                [] -> do status notFound404
-                         text $ LT.concat ["no youdo with id ", LT.pack $ show ydid]
-                [yd] -> do status ok200
-                           json (WebYoudo baseuri yd)
-                _ -> do raise $ LT.concat ["multiple youdos with id ", LT.pack $ show ydid]
+    resource "/0/youdos/:id"
+        [(GET, statusErrors $ do
+            ydid <- failWith badRequest400 $ fromRequest $ YoudoID <$> parse "id"
+            failWith internalServerError500 $ do
+                yds <- liftIO $ withMVar mv_db $ getYoudo ydid
+                case yds of
+                    [] -> do status notFound404
+                             text $ LT.concat ["no youdo with id ", LT.pack $ show ydid]
+                    [yd] -> do status ok200
+                               json (WebYoudo baseuri yd)
+                    _ -> do raise $ LT.concat ["multiple youdos with id ", LT.pack $ show ydid]
         )]
-    resource "/0/youdos/:id/versions" [(GET, statusErrors $ do
-        ydid <- failWith badRequest400 $ fromRequest $ YoudoID <$> parse "id"
-        failWith internalServerError500 $ do
-            ydvers <- liftIO $ withMVar mv_db $ getYoudoVersions ydid
-            status ok200
-            json $ map (WebYoudo baseuri) ydvers
+    resource "/0/youdos/:id/versions"
+        [(GET, statusErrors $ do
+            ydid <- failWith badRequest400 $ fromRequest $ YoudoID <$> parse "id"
+            failWith internalServerError500 $ do
+                ydvers <- liftIO $ withMVar mv_db $ getYoudoVersions ydid
+                status ok200
+                json $ map (WebYoudo baseuri) ydvers
         )]
-    resource "/0/youdos/:id/:txnid" [(GET, statusErrors $ do
-        ydver <- failWith badRequest400 $ fromRequest $
-            YoudoVersionID <$> parse "id" <*> parse "txnid"
-        failWith internalServerError500 $ do
-            youdos <- liftIO $ withMVar mv_db $ getYoudoVersion ydver
-            case youdos of
-                [] -> do status notFound404
-                         text $ LT.concat ["no youdo with ", LT.pack $ show ydver]
-                [yd] -> do status ok200
-                           json (WebYoudo baseuri yd)
-                _ -> raise $ LT.concat ["multiple youdos with ", LT.pack $ show ydver]
+    resource "/0/youdos/:id/:txnid"
+        [(GET, statusErrors $ do
+            ydver <- failWith badRequest400 $ fromRequest $
+                YoudoVersionID <$> parse "id" <*> parse "txnid"
+            failWith internalServerError500 $ do
+                youdos <- liftIO $ withMVar mv_db $ getYoudoVersion ydver
+                case youdos of
+                    [] -> do status notFound404
+                             text $ LT.concat ["no youdo with ", LT.pack $ show ydver]
+                    [yd] -> do status ok200
+                               json (WebYoudo baseuri yd)
+                    _ -> raise $ LT.concat ["multiple youdos with ", LT.pack $ show ydver]
         ),(POST, statusErrors $ do
             ydupd <- failWith badRequest400 $ fromRequest $
                 YoudoUpdate <$> (YoudoVersionID <$> parse "id"
