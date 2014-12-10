@@ -32,16 +32,6 @@ data HolexError k v = MissingKey k
                     | CustomError Text
     deriving (Show, Eq)
 
-keys :: (Eq k) => Holex k v a -> [k]
-keys expr = accumulate key expr
-    where key (Hole k _) = Just [k]
-          key _ = Nothing
-
-errors :: (Eq k) => Holex k v a -> [HolexError k v]
-errors expr = accumulate err expr
-    where err (TryApplyFailed e) = Just [e]
-          err _ = Nothing
-
 hole :: (Eq k) => k -> Holex k v v
 hole k = Hole k id
 
@@ -63,11 +53,6 @@ tryApply f expr = TryApply f expr
 defaultTo :: (Eq k) => a -> Holex k v a -> Holex k v a
 defaultTo _ expr@(Const _) = expr
 defaultTo v expr = Default v expr
-
-setDefaults :: (Eq k) => Holex k v a -> Holex k v a
-setDefaults expr = recursively deflt expr
-    where deflt (Default v _) = Just $ Const v
-          deflt _ = Nothing
 
 runHolex :: (Eq k) => Holex k v a -> [(k,v)] -> Either [HolexError k v] a
 runHolex expr kvs =
@@ -106,6 +91,11 @@ fill1 expr k v = recursivelyM fill expr
             | otherwise = return Nothing
           fill _ = return Nothing
 
+setDefaults :: (Eq k) => Holex k v a -> Holex k v a
+setDefaults expr = recursively deflt expr
+    where deflt (Default v _) = Just $ Const v
+          deflt _ = Nothing
+
 recursively :: (Eq k)
     => (forall b. Holex k v b -> Maybe (Holex k v b))
     -> Holex k v a
@@ -135,6 +125,16 @@ recursivelyM f expr = do
                     exprx' <- recursivelyM f exprx
                     return $ defaultTo v exprx'
                 _ -> return expr
+
+keys :: (Eq k) => Holex k v a -> [k]
+keys expr = accumulate key expr
+    where key (Hole k _) = Just [k]
+          key _ = Nothing
+
+errors :: (Eq k) => Holex k v a -> [HolexError k v]
+errors expr = accumulate err expr
+    where err (TryApplyFailed e) = Just [e]
+          err _ = Nothing
 
 accumulate :: (Eq k, Monoid n)
     => (forall b. Holex k v b -> Maybe n)
