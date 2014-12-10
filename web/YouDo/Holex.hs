@@ -18,6 +18,13 @@ data (Eq k) => Holex k v a
     | Hole k (v->a)
     | Default a (Holex k v a)
 
+data HolexError k v = MissingKey k
+                    | UnusedKey k
+                    | DuplicateValue k v
+                    | ParseError k v Text
+                    | CustomError Text
+    deriving (Show, Eq)
+
 keys :: (Eq k) => Holex k v a -> [k]
 keys expr = accumulate key expr
     where key (Hole k _) = Just [k]
@@ -56,13 +63,6 @@ instance (Eq k) => Applicative (Holex k v) where
     pure = Const
     Const f <*> Const x = Const (f x)
     u <*> v = Apply u v
-
-data HolexError k v = MissingKey k
-                    | UnusedKey k
-                    | DuplicateValue k v
-                    | ParseError k v Text
-                    | CustomError Text
-    deriving (Show, Eq)
 
 setDefaults :: (Eq k) => Holex k v a -> Holex k v a
 setDefaults expr = recursively deflt expr
