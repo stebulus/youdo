@@ -93,79 +93,74 @@ app :: DB a => URI -> MVar a -> ScottyM ()
 app baseuri mv_db = do
     get "/" $ text "placeholder"
     resource "/0/youdos"
-        [(GET, do
-            youdos <- liftIO $ withMVar mv_db getYoudos
-            text $ LT.pack $ show youdos
-        ),(POST, statusErrors $ do
-            yd <- failWith badRequest400 $ fromRequest $
-                    YoudoData <$> parse "assignerid"
-                              <*> parse "assigneeid"
-                              <*> defaultTo "" (parse "description")
-                              <*> defaultTo (DueDate Nothing) (parse "duedate")
-                              <*> defaultTo False (parse "completed")
-            failWith internalServerError500 $ do
-                ydid <- liftIO $ withMVar mv_db $ postYoudo yd
+        [(GET, dbAction mv_db
+            (Const ())
+            (const getYoudos)
+            (\yds -> do
+                status ok200
+                text $ LT.pack $ show yds)
+        ),(POST, dbAction mv_db
+            (YoudoData <$> parse "assignerid"
+                       <*> parse "assigneeid"
+                       <*> defaultTo "" (parse "description")
+                       <*> defaultTo (DueDate Nothing) (parse "duedate")
+                       <*> defaultTo False (parse "completed"))
+            postYoudo
+            (\ydid -> do
                 let url = LT.pack $ youdoURL baseuri ydid
                 status created201
                 setHeader "Location" url
-                text $ LT.concat ["created at ", url, "\r\n"]
+                text $ LT.concat ["created at ", url, "\r\n"])
         )]
     resource "/0/youdos/:id"
-        [(GET, statusErrors $ do
-            ydid <- failWith badRequest400 $ fromRequest $ YoudoID <$> parse "id"
-            failWith internalServerError500 $ do
-                yds <- liftIO $ withMVar mv_db $ getYoudo ydid
-                case yds of
-                    [] -> do status notFound404
-                             text $ LT.concat ["no youdo with id ", LT.pack $ show ydid]
-                    [yd] -> do status ok200
-                               json (WebYoudo baseuri yd)
-                    _ -> do raise $ LT.concat ["multiple youdos with id ", LT.pack $ show ydid]
+        [(GET, dbAction mv_db
+            (YoudoID <$> parse "id")
+            getYoudo
+            (\yds -> case yds of
+                [] -> do status notFound404
+                [yd] -> do status ok200
+                           json (WebYoudo baseuri yd)
+                _ -> raise "multiple youdos found!")
         )]
     resource "/0/youdos/:id/versions"
-        [(GET, statusErrors $ do
-            ydid <- failWith badRequest400 $ fromRequest $ YoudoID <$> parse "id"
-            failWith internalServerError500 $ do
-                ydvers <- liftIO $ withMVar mv_db $ getYoudoVersions ydid
+        [(GET, dbAction mv_db
+            (YoudoID <$> parse "id")
+            getYoudoVersions
+            (\ydvers -> do
                 status ok200
-                json $ map (WebYoudo baseuri) ydvers
+                json $ map (WebYoudo baseuri) ydvers)
         )]
     resource "/0/youdos/:id/:txnid"
-        [(GET, statusErrors $ do
-            ydver <- failWith badRequest400 $ fromRequest $
-                YoudoVersionID <$> parse "id" <*> parse "txnid"
-            failWith internalServerError500 $ do
-                youdos <- liftIO $ withMVar mv_db $ getYoudoVersion ydver
-                case youdos of
-                    [] -> do status notFound404
-                             text $ LT.concat ["no youdo with ", LT.pack $ show ydver]
-                    [yd] -> do status ok200
-                               json (WebYoudo baseuri yd)
-                    _ -> raise $ LT.concat ["multiple youdos with ", LT.pack $ show ydver]
-        ),(POST, statusErrors $ do
-            ydupd <- failWith badRequest400 $ fromRequest $
-                YoudoUpdate <$> (YoudoVersionID <$> parse "id"
-                                                <*> parse "txnid")
-                            <*> optional (parse "assignerid")
-                            <*> optional (parse "assigneeid")
-                            <*> optional (parse "description")
-                            <*> optional (parse "duedate")
-                            <*> optional (parse "completed")
-            failWith internalServerError500 $ do
-                result <- liftIO $ withMVar mv_db $ updateYoudo ydupd
-                case result of
-                    OldVersion newver ->
-                        do status badRequest400
-                           text $ LT.concat
-                                [ "cannot modify old version; modify "
-                                , LT.pack $ youdoVersionURL baseuri newver
-                                ]
-                    Failure err -> raise $ LT.pack err
-                    Success ydver ->
-                        let url = LT.pack $ youdoVersionURL baseuri ydver
-                        in do status created201
-                              setHeader "Location" url
-                              text $ LT.concat ["created at ", url, "\r\n"]
+        [(GET, dbAction mv_db
+            (YoudoVersionID <$> parse "id" <*> parse "txnid")
+            getYoudoVersion
+            (\youdos -> case youdos of
+                [] -> do status notFound404
+                [yd] -> do status ok200
+                           json (WebYoudo baseuri yd)
+                _ -> raise "multiple youdos found!")
+        ),(POST, dbAction mv_db
+            (YoudoUpdate <$> (YoudoVersionID <$> parse "id"
+                                             <*> parse "txnid")
+                         <*> optional (parse "assignerid")
+                         <*> optional (parse "assigneeid")
+                         <*> optional (parse "description")
+                         <*> optional (parse "duedate")
+                         <*> optional (parse "completed"))
+            updateYoudo
+            (\result -> case result of
+                OldVersion newver ->
+                    do status badRequest400
+                       text $ LT.concat
+                            [ "cannot modify old version; modify "
+                            , LT.pack $ youdoVersionURL baseuri newver
+                            ]
+                Failure err -> raise $ LT.pack err
+                Success ydver ->
+                    let url = LT.pack $ youdoVersionURL baseuri ydver
+                    in do status created201
+                          setHeader "Location" url
+                          text $ LT.concat ["created at ", url, "\r\n"])
         )]
 
 resource :: RoutePattern -> [(StdMethod, ActionM ())] -> ScottyM ()
@@ -177,6 +172,20 @@ resource route acts =
             status methodNotAllowed405
             setHeader "Allow" $ LT.pack allowedMethods
             text ""
+
+type RequestParser a = Holex LT.Text ParamValue a
+
+dbAction :: (DB b)
+    => MVar b
+    -> RequestParser a
+    -> (a -> b -> IO c)
+    -> (c -> ActionM ())
+    -> ActionM ()
+dbAction mv_db expr work resp =
+    statusErrors $ do
+        a <- failWith badRequest400 $ fromRequest $ expr
+        c <- liftIO $ withMVar mv_db $ work a
+        failWith internalServerError500 $ resp c
 
 -- Perform the given action, annotating any failures with the given status.
 failWith :: Status -> ActionM a -> ActionT ErrorWithStatus IO a
