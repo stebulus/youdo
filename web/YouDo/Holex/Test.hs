@@ -16,7 +16,7 @@ tests = return
     , plainTest "Holex fill1" $ do
         let expr :: Holex String Int Int
             expr = (+) <$> hole "a" <*> ((*) <$> hole "b" <*> hole "a")
-        map (getSum . snd . runWriter . (\k -> fill1 expr k 3)) ["a","b","c"]
+        map (getSum . snd . runWriter . (\k -> fill1 k 3 expr)) ["a","b","c"]
             ~= [2,1,0]
     , plainTest "Holex errors" $ do
         let expr :: Holex String Int Int

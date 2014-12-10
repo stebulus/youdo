@@ -76,7 +76,7 @@ runHolex expr kvs =
                     -- but compute missing key errors from valueWithDefaults
                     -- so that absent keys with default values are not errors.)
           kv1 (!e,!used,!errs) (k,v) =
-                let (e',n) = runWriter $ fill1 e k v
+                let (e',n) = runWriter $ fill1 k v e
                     noMatch = getSum n == 0
                     duplicate = k `elem` used
                     used' = if duplicate || noMatch
@@ -90,8 +90,8 @@ runHolex expr kvs =
                 in (e',used',errs')
 
 -- Fill in holes having the given name; write the number of holes filled.
-fill1 :: (Eq k) => Holex k v a -> k -> v -> Writer (Sum Int) (Holex k v a)
-fill1 expr k v = recursivelyM fill expr
+fill1 :: (Eq k) => k -> v -> Holex k v a -> Writer (Sum Int) (Holex k v a)
+fill1 k v = recursivelyM fill
     where fill (Hole key f)
             | key == k = do
                 tell (Sum 1)
