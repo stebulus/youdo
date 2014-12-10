@@ -10,6 +10,7 @@ import Control.Monad.Trans.Either (EitherT(..), left, right, hoistEither,
     bimapEitherT)
 import Control.Monad.IO.Class (liftIO, MonadIO)
 import Data.Aeson (toJSON, ToJSON(..), Value(..), (.=))
+import Data.Aeson.Types (parseEither)
 import qualified Data.Aeson as A
 import Data.ByteString.Char8 (pack)
 import qualified Data.HashMap.Strict as M
@@ -216,7 +217,7 @@ youdoVersionURL baseuri (YoudoVersionID (YoudoID yd) (TransactionID txn))
         nullURI { uriPath = "0/youdos/" ++ (show yd) ++ "/" ++ (show txn) }
         `relativeTo` baseuri
 
-fromParams :: Holex LT.Text LT.Text a -> EitherT LT.Text ActionM a
+fromParams :: Holex LT.Text ParamValue a -> EitherT LT.Text ActionM a
 fromParams expr = do
     maybehdr <- lift $ Web.Scotty.header "Content-Type"
     case maybehdr of
@@ -228,16 +229,29 @@ fromParams expr = do
                 Application "x-www-form-urlencoded" -> bodyData expr
                 _ -> left $ LT.concat ["Don't know how to handle Content-Type: ", hdr]
 
-parse :: (Eq k, Parsable a) => k -> Holex k LT.Text a
-parse k = tryApply (Const (\x -> case parseParam x of
-                                    Left err -> Left (ParseError k x err)
-                                    Right val -> Right val))
-                   $ hole k
+parse :: (Eq k, Parsable a, A.FromJSON a) => k -> Holex k ParamValue a
+parse k = tryApply
+    (Const (\x ->
+        case x of
+            ScottyParam txt ->
+                case parseParam txt of
+                    Left err -> Left (ParseError k x err)
+                    Right val -> Right val
+            JSONField jsonval ->
+                case parseEither A.parseJSON jsonval of
+                    Left err -> Left (ParseError k x (LT.pack err))
+                    Right val -> Right val))
+    $ hole k
 
-bodyData :: Holex LT.Text LT.Text a -> EitherT LT.Text ActionM a
+data ParamValue = ScottyParam LT.Text
+                | JSONField Value
+    deriving (Eq, Show)
+
+bodyData :: Holex LT.Text ParamValue a -> EitherT LT.Text ActionM a
 bodyData holex = do
     ps <- lift params
-    bimapEitherT showHolexErrors id $ hoistEither $ runHolex holex ps
+    bimapEitherT showHolexErrors id $ hoistEither $
+        runHolex holex [(k, ScottyParam v) | (k,v)<-ps]
 
 showHolexError :: (Show k) => HolexError k v -> LT.Text
 showHolexError (MissingKey k) = LT.concat [ "missing mandatory parameter "

@@ -2,7 +2,7 @@
 module YouDo.DB where
 import Prelude hiding (id)
 import Control.Applicative ((<$>), (<*>))
-import Data.Aeson (ToJSON(..), (.=), object, Value(..))
+import Data.Aeson (ToJSON(..), FromJSON(..), (.=), object, Value(..))
 import qualified Data.Text.Lazy as LT
 import Data.Time (UTCTime)
 import Data.Time.ISO8601 (parseISO8601)
@@ -18,6 +18,8 @@ instance ToField YoudoID where
     toField (YoudoID n) = toField n
 instance ToJSON YoudoID where
     toJSON (YoudoID n) = toJSON n
+instance FromJSON YoudoID where
+    parseJSON x = YoudoID <$> parseJSON x
 instance Parsable YoudoID where
     parseParam x = YoudoID <$> parseParam x
 
@@ -26,6 +28,8 @@ instance FromField TransactionID where
     fromField fld = (fmap.fmap) TransactionID $ fromField fld
 instance Parsable TransactionID where
     parseParam x = TransactionID <$> parseParam x
+instance FromJSON TransactionID where
+    parseJSON x = TransactionID <$> parseJSON x
 
 data YoudoVersionID = YoudoVersionID
     { youdoid :: YoudoID
@@ -39,6 +43,8 @@ instance ToField UserID where
     toField (UserID n) = toField n
 instance ToJSON UserID where
     toJSON (UserID n) = toJSON n
+instance FromJSON UserID where
+    parseJSON x = UserID <$> parseJSON x
 instance Parsable UserID where
     parseParam x = UserID <$> parseParam x
 
@@ -71,6 +77,11 @@ instance Parsable DueDate where
 instance ToJSON DueDate where
     toJSON (DueDate Nothing) = Null
     toJSON (DueDate (Just t)) = toJSON t
+instance FromJSON DueDate where
+    parseJSON x = DueDate <$> (possibleDate <$> parseJSON x)
+        where possibleDate s = if s == ""
+                                then Nothing
+                                else parseISO8601 s
 instance FromField DueDate where
     fromField fld = (fmap.fmap) DueDate $ fromField fld
 instance ToField DueDate where

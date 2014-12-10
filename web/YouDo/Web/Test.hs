@@ -16,7 +16,6 @@ import Data.List (sort)
 import Data.Maybe (fromJust)
 import Data.Monoid ((<>), Monoid(..))
 import qualified Data.Text as T
-import qualified Data.Text.Lazy as LT
 import Distribution.TestSuite (Test(..), TestInstance(..), Progress(..),
     Result(..))
 import Network.HTTP.Types (Status, ResponseHeaders, ok200, created201,
@@ -29,7 +28,7 @@ import Network.Wai.Internal (Request(..), ResponseReceived(..))
 import Web.Scotty (scottyApp)
 import YouDo.Holex
 import YouDo.Test (plainTest)
-import YouDo.Web (app, withDB, DBOption(..), parse)
+import YouDo.Web (app, withDB, DBOption(..), parse, ParamValue(..))
 
 tests :: IO [Test]
 tests = return
@@ -155,12 +154,23 @@ tests = return
         M.lookup "duedate" obj5 ~= Just Null
         M.lookup "completed" obj5 ~= Just (Bool True)
         M.lookup "url" obj5 ~= (Just $ String $ T.pack ydurl)
-    , plainTest "Holex parsing" $ do
-        let expr :: Holex String LT.Text Int
+    , plainTest "Holex parsing from Scotty parameters" $ do
+        let expr :: Holex String ParamValue Int
             expr = (+) <$> (parse "a") <*> (parse "b")
-            val = runHolex expr [("a", "1"), ("b", "-3")]
-            val' = runHolex expr [("a", "1"), ("b", "q")]
-        (val,val') ~= (Right (-2), Left [ParseError "b" "q" "readEither: no parse"])
+            val = runHolex expr [("a", ScottyParam "1"), ("b", ScottyParam "-3")]
+            val' = runHolex expr [("a", ScottyParam "1"), ("b", ScottyParam "q")]
+        (val,val') ~= (Right (-2),
+            Left [ParseError "b" (ScottyParam "q") "readEither: no parse"])
+    , plainTest "Holex parsing from JSON fields" $ do
+        let expr :: Holex String ParamValue Int
+            expr = (+) <$> (parse "a") <*> (parse "b")
+            val = runHolex expr [("a", JSONField (Number 1)),
+                                 ("b", JSONField (Number (-3)))]
+            val' = runHolex expr [("a", JSONField (Number 1)),
+                                  ("b", JSONField (String "q"))]
+        (val,val') ~= (Right (-2),
+            Left [ParseError "b" (JSONField (String "q"))
+                "when expecting a Int, encountered String instead"])
     ]
 
 unintersperse :: (Eq a) => a -> [a] -> [[a]]
