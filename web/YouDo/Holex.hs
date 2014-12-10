@@ -79,9 +79,9 @@ runHolex expr kvs =
                 let (e',n) = runWriter $ fill1 e k v
                     noMatch = getSum n == 0
                     duplicate = k `elem` used
-                    used' = if not (duplicate || noMatch)
-                            then k:used
-                            else used
+                    used' = if duplicate || noMatch
+                            then used
+                            else k:used
                     errs' = if duplicate
                             then (DuplicateValue k v):errs
                             else if noMatch
