@@ -1,4 +1,4 @@
-{-# LANGUAGE ExistentialQuantification, RankNTypes #-}
+{-# LANGUAGE ExistentialQuantification, RankNTypes, BangPatterns #-}
 module YouDo.Holex where
 import Control.Applicative ((<$>), Applicative(..))
 import Control.Monad.Writer.Lazy (Writer, runWriter, tell)
@@ -75,7 +75,7 @@ runHolex expr kvs =
                     -- so that parse errors are not suppressed by defaulting;
                     -- but compute missing key errors from valueWithDefaults
                     -- so that absent keys with default values are not errors.)
-          kv1 (e,used,errs) (k,v) =
+          kv1 (!e,!used,!errs) (k,v) =
                 let (e',n) = runWriter $ fill1 e k v
                     noMatch = getSum n == 0
                     duplicate = k `elem` used
