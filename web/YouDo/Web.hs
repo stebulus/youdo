@@ -5,9 +5,7 @@ import Codec.MIME.Parse (parseMIMEType)
 import Control.Applicative ((<$>), (<*>), (<|>))
 import Control.Concurrent.MVar (MVar, newMVar, withMVar)
 import Control.Exception (bracket)
-import Control.Monad.Trans.Class (lift)
-import Control.Monad.Trans.Either (EitherT(..), left, right, hoistEither,
-    bimapEitherT)
+import Control.Monad.Error (mapErrorT, throwError)
 import Control.Monad.IO.Class (liftIO, MonadIO)
 import Data.Aeson (toJSON, ToJSON(..), Value(..), (.=))
 import Data.Aeson.Types (parseEither)
@@ -21,7 +19,7 @@ import qualified Data.Text as ST
 import qualified Data.Text.Lazy as LT
 import Database.PostgreSQL.Simple (close, connectPostgreSQL)
 import Network.HTTP.Types (ok200, created201, badRequest400, notFound404,
-    methodNotAllowed405, internalServerError500, StdMethod(..))
+    methodNotAllowed405, internalServerError500, Status, StdMethod(..))
 import Network.URI (URI(..), URIAuth(..), relativeTo, nullURI)
 import Network.Wai.Handler.Warp (setPort, setHost, defaultSettings)
 import Options.Applicative (option, strOption, flag', auto, long, short,
@@ -30,6 +28,8 @@ import qualified Options.Applicative as Opt
 import Web.Scotty (scottyOpts, ScottyM, get, matchAny, status, header,
     addroute, RoutePattern, params, text, json, Options(..), setHeader,
     ActionM, raise, Parsable(..), body)
+import Web.Scotty.Internal.Types (ActionT(..), ActionError(..),
+    ScottyError(..))
 import YouDo.DB
 import qualified YouDo.DB.Mock as Mock
 import YouDo.DB.PostgreSQL(DBConnection(..))
@@ -96,64 +96,51 @@ app baseuri mv_db = do
         [(GET, do
             youdos <- liftIO $ withMVar mv_db getYoudos
             text $ LT.pack $ show youdos
-        ),(POST, do
-            err_url <- runEitherT $ do
-                yd <- fromRequest $
+        ),(POST, statusErrors $ do
+            yd <- failWith badRequest400 $ fromRequest $
                     YoudoData <$> parse "assignerid"
                               <*> parse "assigneeid"
                               <*> defaultTo "" (parse "description")
                               <*> defaultTo (DueDate Nothing) (parse "duedate")
                               <*> defaultTo False (parse "completed")
+            failWith internalServerError500 $ do
                 ydid <- liftIO $ withMVar mv_db $ postYoudo yd
-                return $ LT.pack $ youdoURL baseuri ydid
-            case err_url of
-                Left err -> do status badRequest400
-                               text err
-                Right url -> do status created201
-                                setHeader "Location" url
-                                text $ LT.concat ["created at ", url, "\r\n"]
+                let url = LT.pack $ youdoURL baseuri ydid
+                status created201
+                setHeader "Location" url
+                text $ LT.concat ["created at ", url, "\r\n"]
         )]
-    resource "/0/youdos/:id" [(GET, do
-        err_ydid <- runEitherT $ fromRequest $ YoudoID <$> parse "id"
-        case err_ydid of
-            Left err -> do status badRequest400
-                           text err
-            Right ydid -> do
-                yds <- liftIO $ withMVar mv_db $ getYoudo ydid
-                case yds of
-                    [] -> do status notFound404
-                             text $ LT.concat ["no youdo with id ", LT.pack $ show ydid]
-                    [yd] -> do status ok200
-                               json (WebYoudo baseuri yd)
-                    _ -> do status internalServerError500
-                            text $ LT.concat ["multiple youdos with id ", LT.pack $ show ydid]
+    resource "/0/youdos/:id" [(GET, statusErrors $ do
+        ydid <- failWith badRequest400 $ fromRequest $ YoudoID <$> parse "id"
+        failWith internalServerError500 $ do
+            yds <- liftIO $ withMVar mv_db $ getYoudo ydid
+            case yds of
+                [] -> do status notFound404
+                         text $ LT.concat ["no youdo with id ", LT.pack $ show ydid]
+                [yd] -> do status ok200
+                           json (WebYoudo baseuri yd)
+                _ -> do raise $ LT.concat ["multiple youdos with id ", LT.pack $ show ydid]
         )]
-    resource "/0/youdos/:id/versions" [(GET, do
-        ydid' <- runEitherT $ fromRequest $ YoudoID <$> parse "id"
-        case ydid' of
-            Left err -> do status badRequest400
-                           text err
-            Right ydid -> do
-                ydvers <- liftIO $ withMVar mv_db $ getYoudoVersions ydid
-                status ok200
-                json $ map (WebYoudo baseuri) ydvers
+    resource "/0/youdos/:id/versions" [(GET, statusErrors $ do
+        ydid <- failWith badRequest400 $ fromRequest $ YoudoID <$> parse "id"
+        failWith internalServerError500 $ do
+            ydvers <- liftIO $ withMVar mv_db $ getYoudoVersions ydid
+            status ok200
+            json $ map (WebYoudo baseuri) ydvers
         )]
-    resource "/0/youdos/:id/:txnid" [(GET, do
-        ydver <- runEitherT $ fromRequest $ YoudoVersionID <$> parse "id" <*> parse "txnid"
-        case ydver of
-            Left err -> do status badRequest400
-                           text err
-            Right ver -> do
-                youdos <- liftIO $ withMVar mv_db $ getYoudoVersion ver
-                case youdos of
-                    [] -> do status notFound404
-                             text $ LT.concat ["no youdo with ", LT.pack $ show ver]
-                    [yd] -> do status ok200
-                               json (WebYoudo baseuri yd)
-                    _ -> do status internalServerError500
-                            text $ LT.concat ["multiple youdos with ", LT.pack $ show ver]
-        ),(POST, do
-            ydupd <- runEitherT $ fromRequest $
+    resource "/0/youdos/:id/:txnid" [(GET, statusErrors $ do
+        ydver <- failWith badRequest400 $ fromRequest $
+            YoudoVersionID <$> parse "id" <*> parse "txnid"
+        failWith internalServerError500 $ do
+            youdos <- liftIO $ withMVar mv_db $ getYoudoVersion ydver
+            case youdos of
+                [] -> do status notFound404
+                         text $ LT.concat ["no youdo with ", LT.pack $ show ydver]
+                [yd] -> do status ok200
+                           json (WebYoudo baseuri yd)
+                _ -> raise $ LT.concat ["multiple youdos with ", LT.pack $ show ydver]
+        ),(POST, statusErrors $ do
+            ydupd <- failWith badRequest400 $ fromRequest $
                 YoudoUpdate <$> (YoudoVersionID <$> parse "id"
                                                 <*> parse "txnid")
                             <*> optional (parse "assignerid")
@@ -161,23 +148,21 @@ app baseuri mv_db = do
                             <*> optional (parse "description")
                             <*> optional (parse "duedate")
                             <*> optional (parse "completed")
-            case ydupd of
-                Left err -> do status badRequest400
-                               text err
-                Right upd -> do result <- liftIO $ withMVar mv_db $ updateYoudo upd
-                                case result of
-                                    OldVersion newver ->
-                                        do status badRequest400
-                                           text $ LT.concat
-                                                [ "cannot modify old version; modify "
-                                                , LT.pack $ youdoVersionURL baseuri newver
-                                                ]
-                                    Failure err -> raise $ LT.pack err
-                                    Success ydver ->
-                                        let url = LT.pack $ youdoVersionURL baseuri ydver
-                                        in do status created201
-                                              setHeader "Location" url
-                                              text $ LT.concat ["created at ", url, "\r\n"]
+            failWith internalServerError500 $ do
+                result <- liftIO $ withMVar mv_db $ updateYoudo ydupd
+                case result of
+                    OldVersion newver ->
+                        do status badRequest400
+                           text $ LT.concat
+                                [ "cannot modify old version; modify "
+                                , LT.pack $ youdoVersionURL baseuri newver
+                                ]
+                    Failure err -> raise $ LT.pack err
+                    Success ydver ->
+                        let url = LT.pack $ youdoVersionURL baseuri ydver
+                        in do status created201
+                              setHeader "Location" url
+                              text $ LT.concat ["created at ", url, "\r\n"]
         )]
 
 resource :: RoutePattern -> [(StdMethod, ActionM ())] -> ScottyM ()
@@ -189,6 +174,50 @@ resource route acts =
             status methodNotAllowed405
             setHeader "Allow" $ LT.pack allowedMethods
             text ""
+
+-- Perform the given action, annotating any failures with the given status.
+failWith :: Status -> ActionM a -> ActionT ErrorWithStatus IO a
+failWith stat act =
+    ActionT $ mapErrorT
+        (\m -> do
+            eith <- m
+            return $ case eith of
+                Left (ActionError msg) ->
+                    Left $ ActionError $ ErrorWithStatus stat msg
+                Left Next -> Left Next
+                Left (Redirect msg) -> Left $ Redirect msg
+                Right x -> Right x)
+        (runAM act)
+
+catchActionError :: (ScottyError e, Monad m)
+    => ActionT e m a -> ActionT e' m (Either (ActionError e) a)
+catchActionError act =
+    ActionT $ mapErrorT
+        (\mea -> do
+            ea <- mea
+            return $ Right ea)
+        (runAM act)
+
+withFail :: (ScottyError e, ScottyError e', Monad m)
+    => (e -> ActionT e' m a) -> ActionT e m a -> ActionT e' m a
+withFail f act = do
+    eith <- catchActionError act
+    case eith of
+        Right a -> return a
+        Left (ActionError e) -> f e
+        Left (Redirect msg) -> throwError (Redirect msg)
+        Left Next -> throwError Next
+
+statusErrors :: ActionT ErrorWithStatus IO () -> ActionM ()
+statusErrors = withFail report
+    where report (ErrorWithStatus stat msg) =
+                do status stat
+                   text msg
+
+data ErrorWithStatus = ErrorWithStatus Status LT.Text
+instance ScottyError ErrorWithStatus where
+    stringError msg = ErrorWithStatus internalServerError500 (LT.pack msg)
+    showError (ErrorWithStatus _ msg) = msg
 
 data WebYoudo = WebYoudo URI Youdo
 instance ToJSON WebYoudo where
@@ -217,36 +246,38 @@ youdoVersionURL baseuri (YoudoVersionID (YoudoID yd) (TransactionID txn))
         nullURI { uriPath = "0/youdos/" ++ (show yd) ++ "/" ++ (show txn) }
         `relativeTo` baseuri
 
-fromRequest :: Holex LT.Text ParamValue a -> EitherT LT.Text ActionM a
+fromRequest :: Holex LT.Text ParamValue a -> ActionM a
 fromRequest expr = do
     kvs <- requestData
-    bimapEitherT showHolexErrors id $ hoistEither $ runHolex expr kvs
+    case runHolex expr kvs of
+        Left errs -> raise $ showHolexErrors errs
+        Right a -> return a
 
-requestData :: EitherT LT.Text ActionM [(LT.Text, ParamValue)]
+requestData :: ActionM [(LT.Text, ParamValue)]
 requestData = do
-    ps <- lift params
+    ps <- params
     let paramdata = [(k, ScottyParam v) | (k,v)<-ps]
     bodydata <- do
-        maybehdr <- lift $ Web.Scotty.header "Content-Type"
+        maybehdr <- Web.Scotty.header "Content-Type"
         case maybehdr of
             Nothing -> return []
             Just hdr -> do
-                contenttype <- (return $ parseMIMEType $ LT.toStrict hdr)
-                    `maybeError` (LT.concat ["Incomprehensible Content-Type: ", hdr])
-                case mimeType contenttype of
-                    Application "x-www-form-urlencoded" ->
+                let contenttype = parseMIMEType $ LT.toStrict hdr
+                case mimeType <$> contenttype of
+                    Just (Application "x-www-form-urlencoded") ->
                         -- form data is already in params
                         return []
-                    Application "json" -> do
-                        bod <- lift body
+                    Just (Application "json") -> do
+                        bod <- body
                         case A.eitherDecode' bod of
                             Left err ->
-                                left (LT.pack err)
+                                raise (LT.pack err)
                             Right (Object obj) ->
                                 return [(LT.fromStrict k, JSONField v) | (k,v)<-M.toList obj]
                             Right _ ->
-                                left "json payload is not an object"
-                    _ -> left $ LT.concat ["Don't know how to handle Content-Type: ", hdr]
+                                raise "json payload is not an object"
+                    Nothing -> raise $ LT.concat ["Incomprehensible Content-Type: ", hdr]
+                    _ -> raise $ LT.concat ["Don't know how to handle Content-Type: ", hdr]
     return $ paramdata ++ bodydata
 
 parse :: (Eq k, Parsable a, A.FromJSON a) => k -> Holex k ParamValue a
@@ -287,10 +318,3 @@ showHolexError (CustomError e) = LT.pack (show e)
 showHolexErrors :: (Show k) => [HolexError k v] -> LT.Text
 showHolexErrors es = LT.concat [ LT.concat [ showHolexError e, "\r\n" ]
                                | e<-es ]
-
-maybeError :: (Monad m) => m (Maybe a) -> b -> EitherT b m a
-maybeError mma err = do
-    ma <- lift mma
-    case ma of
-        Nothing -> left err
-        Just x -> right x
