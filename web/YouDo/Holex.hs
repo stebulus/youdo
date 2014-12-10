@@ -4,7 +4,7 @@ import Control.Applicative ((<$>), Applicative(..))
 import Control.Monad.Writer.Lazy (Writer, runWriter, tell)
 import Data.Functor.Identity (Identity(..))
 import Data.List (foldl')
-import Data.Monoid (Sum(..))
+import Data.Monoid (Sum(..), Monoid(..))
 import Data.Text.Lazy (Text)
 
 -- An expression with named holes.
@@ -19,20 +19,14 @@ data (Eq k) => Holex k v a
     | Default a (Holex k v a)
 
 keys :: (Eq k) => Holex k v a -> [k]
-keys (Const _) = []
-keys (Apply exprf exprx) = keys exprf ++ keys exprx
-keys (TryApply exprf exprx) = keys exprf ++ keys exprx
-keys (TryApplyFailed _) = []
-keys (Hole k _) = [k]
-keys (Default _ expr) = keys expr
+keys expr = accumulate key expr
+    where key (Hole k _) = Just [k]
+          key _ = Nothing
 
 errors :: (Eq k) => Holex k v a -> [HolexError k v]
-errors (Const _) = []
-errors (Apply exprf exprx) = errors exprf ++ errors exprx
-errors (TryApply exprf exprx) = errors exprf ++ errors exprx
-errors (TryApplyFailed e) = [e]
-errors (Hole _ _) = []
-errors (Default _ expr) = errors expr
+errors expr = accumulate err expr
+    where err (TryApplyFailed e) = Just [e]
+          err _ = Nothing
 
 hole :: (Eq k) => k -> Holex k v v
 hole k = Hole k id
@@ -141,3 +135,19 @@ recursivelyM f expr = do
                     exprx' <- recursivelyM f exprx
                     return $ defaultTo v exprx'
                 _ -> return expr
+
+accumulate :: (Eq k, Monoid n)
+    => (forall b. Holex k v b -> Maybe n)
+    -> Holex k v a
+    -> n
+accumulate f expr =
+    case f expr of
+        Just n -> n
+        Nothing -> case expr of
+                        Apply exprf exprx ->
+                            accumulate f exprf `mappend` accumulate f exprx
+                        TryApply exprf exprx ->
+                            accumulate f exprf `mappend` accumulate f exprx
+                        Default _ exprx ->
+                            accumulate f exprx
+                        _ -> mempty
