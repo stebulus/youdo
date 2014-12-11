@@ -31,6 +31,24 @@ instance Parsable TransactionID where
 instance FromJSON TransactionID where
     parseJSON x = TransactionID <$> parseJSON x
 
+data UserVersionID = UserVersionID
+    { userid :: UserID
+    , usertxnid :: TransactionID
+    } deriving (Show, Eq)
+
+data YoudoUser = YoudoUser
+    { userVersion :: UserVersionID
+    , user :: YoudoUserData
+    } deriving (Show, Eq)
+instance ToJSON YoudoUser where
+    toJSON yduser = object
+        [ "id" .= userid (userVersion yduser)
+        , "name" .= name (user yduser)
+        ]
+
+data YoudoUserData = YoudoUserData { name :: String }
+    deriving (Show, Eq)
+
 data YoudoVersionID = YoudoVersionID
     { youdoid :: YoudoID
     , youdotxnid :: TransactionID
@@ -108,6 +126,9 @@ class DB a where
     postYoudo :: YoudoData -> a -> IO YoudoID
     updateYoudo :: YoudoUpdate -> a -> IO YoudoUpdateResult
     getYoudos :: a -> IO [Youdo]
+    getUser :: UserID -> a -> IO [YoudoUser]
+    getUserVersion :: UserVersionID -> a -> IO [YoudoUser]
+    getUserVersions :: UserID -> a -> IO [YoudoUser]
 
 data YoudoUpdateResult = Success YoudoVersionID
                        | Failure String

@@ -160,6 +160,28 @@ app baseuri mv_db = do
                           setHeader "Location" url
                           text $ LT.concat ["created at ", url, "\r\n"])
         )]
+    resource "/0/users/:id"
+        [(GET, dbAction mv_db
+            (parse "id")
+            getUser
+            (\users -> case users of
+                [u] -> do status ok200
+                          json (WebYoudoUser baseuri u)
+                [] -> status notFound404
+                _ -> do status internalServerError500
+                        text "multiple users found!")
+        )]
+    resource "/0/users/:id/:txnid"
+        [(GET, dbAction mv_db
+            (UserVersionID <$> parse "id" <*> parse "txnid")
+            getUserVersion
+            (\users -> case users of
+                [u] -> do status ok200
+                          json (WebYoudoUser baseuri u)
+                [] -> status notFound404
+                _ -> do status internalServerError500
+                        text "multiple users found!")
+        )]
 
 resource :: RoutePattern -> [(StdMethod, ActionM ())] -> ScottyM ()
 resource route acts =
@@ -244,6 +266,17 @@ instance ToJSON WebYoudoVersionID where
     toJSON (WebYoudoVersionID baseuri ydver) =
         A.String $ ST.pack $ youdoVersionURL baseuri ydver
 
+data WebYoudoUser = WebYoudoUser URI YoudoUser
+instance ToJSON WebYoudoUser where
+    toJSON (WebYoudoUser baseuri yduser) = Object augmentedmap
+        where augmentedmap = foldl' (flip (uncurry M.insert)) origmap
+                    [ "url" .= youdoUserURL baseuri (userid (userVersion yduser))
+                    , "thisVersion" .= youdoUserVersionURL baseuri (userVersion yduser)
+                    ]
+              origmap = case toJSON yduser of
+                            Object m -> m
+                            _ -> error "YoudoUser didn't become a JSON object"
+
 youdoURL :: URI -> YoudoID -> String
 youdoURL baseuri (YoudoID n) = show $
     nullURI { uriPath = "0/youdos/" ++ (show n) }
@@ -253,6 +286,17 @@ youdoVersionURL :: URI -> YoudoVersionID -> String
 youdoVersionURL baseuri (YoudoVersionID (YoudoID yd) (TransactionID txn))
     = show $
         nullURI { uriPath = "0/youdos/" ++ (show yd) ++ "/" ++ (show txn) }
+        `relativeTo` baseuri
+
+youdoUserURL :: URI -> UserID -> String
+youdoUserURL baseuri (UserID n) = show $
+    nullURI { uriPath = "0/users/" ++ (show n) }
+    `relativeTo` baseuri
+
+youdoUserVersionURL :: URI -> UserVersionID -> String
+youdoUserVersionURL baseuri (UserVersionID (UserID u) (TransactionID txn))
+    = show $
+        nullURI { uriPath = "0/users/" ++ (show u) ++ "/" ++ (show txn) }
         `relativeTo` baseuri
 
 fromRequest :: Holex LT.Text ParamValue a -> ActionM a

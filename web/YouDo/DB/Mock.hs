@@ -4,10 +4,13 @@ import Prelude hiding (id)
 import Control.Applicative ((<$>))
 import Control.Concurrent.MVar (MVar, withMVar, modifyMVar, newMVar)
 import Data.Maybe (listToMaybe)
-import YouDo.DB (YoudoID(..), YoudoVersionID(..), Youdo(..), TransactionID(..),
-    YoudoData(..), YoudoUpdate(..), YoudoUpdateResult(..), DB(..))
+import YouDo.DB
 
-data BareMockDB = BareMockDB { youdos :: [Youdo], lasttxn :: TransactionID }
+data BareMockDB = BareMockDB
+    { youdos :: [Youdo]
+    , users :: [YoudoUser]
+    , lasttxn :: TransactionID
+    }
 data MockDB = MockDB { mvar :: MVar BareMockDB }
 
 instance DB MockDB where
@@ -54,6 +57,12 @@ instance DB MockDB where
                                                 }
                                            , Success $ version newyd
                                            )
+    getUser uid db = withMVar (mvar db) $ \db' ->
+        return $ [u | u<-users db', userid (userVersion u) == uid]
+    getUserVersion verid db = withMVar (mvar db) $ \db' ->
+        return $ [u | u<-users db', userVersion u == verid]
+    getUserVersions verid db = withMVar (mvar db) $ \db' ->
+        return $ [u | u<-users db', userid (userVersion u) == verid]
 
 doUpdate :: YoudoUpdate -> YoudoData -> YoudoData
 doUpdate upd yd =
@@ -76,5 +85,11 @@ doUpdate upd yd =
 
 empty :: IO MockDB
 empty = do
-    mv <- newMVar $ BareMockDB { youdos = [], lasttxn = TransactionID 0 }
+    mv <- newMVar $ BareMockDB
+            { youdos = []
+            , users = [YoudoUser (UserVersionID (UserID 0)
+                                                (TransactionID 0))
+                                 (YoudoUserData "yddb")]
+            , lasttxn = TransactionID 0
+            }
     return $ MockDB mv
