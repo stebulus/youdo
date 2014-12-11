@@ -228,9 +228,9 @@ catchActionError act =
             return $ Right ea)
         (runAM act)
 
-withFail :: (ScottyError e, ScottyError e', Monad m)
-    => (e -> ActionT e' m a) -> ActionT e m a -> ActionT e' m a
-withFail f act = do
+bindError :: (ScottyError e, ScottyError e', Monad m)
+    => ActionT e m a -> (e -> ActionT e' m a) -> ActionT e' m a
+bindError act f = do
     eith <- catchActionError act
     case eith of
         Right a -> return a
@@ -239,7 +239,7 @@ withFail f act = do
         Left Next -> throwError Next
 
 statusErrors :: ActionT ErrorWithStatus IO () -> ActionM ()
-statusErrors = withFail report
+statusErrors = (`bindError` report)
     where report (ErrorWithStatus stat msg) =
                 do status stat
                    text msg
