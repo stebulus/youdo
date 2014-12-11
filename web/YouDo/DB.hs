@@ -11,6 +11,17 @@ import Database.PostgreSQL.Simple.FromRow (FromRow(..), field)
 import Database.PostgreSQL.Simple.ToField (ToField(..))
 import Web.Scotty (Parsable(..))
 
+class DB a where
+    getYoudo :: YoudoID -> a -> IO [Youdo]
+    getYoudoVersion :: VersionedID YoudoID -> a -> IO [Youdo]
+    getYoudoVersions :: YoudoID -> a -> IO [Youdo]
+    postYoudo :: YoudoData -> a -> IO YoudoID
+    updateYoudo :: YoudoUpdate -> a -> IO YoudoUpdateResult
+    getYoudos :: a -> IO [Youdo]
+    getUser :: UserID -> a -> IO [User]
+    getUserVersion :: VersionedID UserID -> a -> IO [User]
+    getUserVersions :: UserID -> a -> IO [User]
+
 data VersionedID a = VersionedID
     { thingid :: a
     , txnid :: TransactionID
@@ -111,17 +122,6 @@ instance FromField DueDate where
     fromField fld = (fmap.fmap) DueDate $ fromField fld
 instance ToField DueDate where
     toField (DueDate t) = toField t
-
-class DB a where
-    getYoudo :: YoudoID -> a -> IO [Youdo]
-    getYoudoVersion :: VersionedID YoudoID -> a -> IO [Youdo]
-    getYoudoVersions :: YoudoID -> a -> IO [Youdo]
-    postYoudo :: YoudoData -> a -> IO YoudoID
-    updateYoudo :: YoudoUpdate -> a -> IO YoudoUpdateResult
-    getYoudos :: a -> IO [Youdo]
-    getUser :: UserID -> a -> IO [User]
-    getUserVersion :: VersionedID UserID -> a -> IO [User]
-    getUserVersions :: UserID -> a -> IO [User]
 
 data YoudoUpdateResult = Success (VersionedID YoudoID)
                        | Failure String
