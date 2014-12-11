@@ -17,11 +17,11 @@ class (Monad m) => DB k v m d where
     get :: k -> d -> m [Versioned k v]
     getVersion :: VersionedID k -> d -> m [Versioned k v]
     getVersions :: k -> d -> m [Versioned k v]
+    post :: v -> d -> m k
 
 class ( DB YoudoID YoudoData IO a
       , DB UserID UserData IO a)
       => YoudoDB a where
-    postYoudo :: YoudoData -> a -> IO YoudoID
     updateYoudo :: YoudoUpdate -> a -> IO (UpdateResult YoudoID)
     getYoudos :: a -> IO [Youdo]
 

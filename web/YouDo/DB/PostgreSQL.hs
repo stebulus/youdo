@@ -12,14 +12,7 @@ instance DB YoudoID YoudoData IO DBConnection where
               "select id, txnid, assignerid, assigneeid, description, duedate, completed \
               \from youdo where id = ?"
               (Only ydid)
-instance DB UserID UserData IO DBConnection where
-    get uid (DBConnection conn) =
-        query conn
-              "select id, name from yd_user where id = ?"
-              (Only uid)
-
-instance YoudoDB DBConnection where
-    postYoudo yd (DBConnection conn) = do
+    post yd (DBConnection conn) = do
         withTransaction conn $ do
             _ <- execute conn
                     ("insert into transaction (yd_userid, yd_ipaddr, yd_useragent) \
@@ -33,6 +26,13 @@ instance YoudoDB DBConnection where
                 duedate yd, completed yd)
                 :: IO [Only YoudoID]
             return $ fromOnly $ head ids
+instance DB UserID UserData IO DBConnection where
+    get uid (DBConnection conn) =
+        query conn
+              "select id, name from yd_user where id = ?"
+              (Only uid)
+
+instance YoudoDB DBConnection where
     getYoudos (DBConnection conn) = query_ conn
         "select id, assignerid, assigneeid, description, duedate, completed \
         \from youdo"

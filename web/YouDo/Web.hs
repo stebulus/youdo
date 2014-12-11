@@ -103,7 +103,7 @@ app baseuri mv_db = do
                        <*> defaultTo "" (parse "description")
                        <*> defaultTo (DueDate Nothing) (parse "duedate")
                        <*> defaultTo False (parse "completed"))
-            postYoudo
+            post
             (\ydid -> do
                 let url = LT.pack $ youdoURL baseuri ydid
                 status created201

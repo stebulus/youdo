@@ -21,18 +21,7 @@ instance DB YoudoID YoudoData IO MockDB where
         return $ [yd | yd<-youdos db', thingid (version yd) == ydid]
     getVersion ydver db = withMVar (mvar db) $ \db' ->
         return $ [yd | yd<-youdos db', version yd == ydver]
-instance DB UserID UserData IO MockDB where
-    get uid db = withMVar (mvar db) $ \db' ->
-        return $ [u | u<-users db', thingid (version u) == uid]
-    getVersion verid db = withMVar (mvar db) $ \db' ->
-        return $ [u | u<-users db', version u == verid]
-    getVersions verid db = withMVar (mvar db) $ \db' ->
-        return $ [u | u<-users db', thingid (version u) == verid]
-
-instance YoudoDB MockDB where
-    getYoudos db = withMVar (mvar db) $ \db' ->
-        return $ youdos db'
-    postYoudo yd db = modifyMVar (mvar db) $ \db' -> do
+    post yd db = modifyMVar (mvar db) $ \db' -> do
         let newid = YoudoID $
                 1 + case thingid . version <$> (listToMaybe $ youdos db') of
                         Nothing -> 0
@@ -45,6 +34,30 @@ instance YoudoDB MockDB where
                      }
                , newid
                )
+instance DB UserID UserData IO MockDB where
+    get uid db = withMVar (mvar db) $ \db' ->
+        return $ [u | u<-users db', thingid (version u) == uid]
+    getVersion verid db = withMVar (mvar db) $ \db' ->
+        return $ [u | u<-users db', version u == verid]
+    getVersions verid db = withMVar (mvar db) $ \db' ->
+        return $ [u | u<-users db', thingid (version u) == verid]
+    post ud db = modifyMVar (mvar db) $ \db' -> do
+        let newid = UserID $
+                1 + case thingid . version <$> (listToMaybe $ users db') of
+                        Nothing -> 0
+                        Just (UserID n) -> n
+            newtxn = TransactionID $
+                1 + case lasttxn db' of TransactionID n -> n
+        return ( db' { users = Versioned (VersionedID newid newtxn) ud
+                               : (users db')
+                     , lasttxn = newtxn
+                     }
+               , newid
+               )
+
+instance YoudoDB MockDB where
+    getYoudos db = withMVar (mvar db) $ \db' ->
+        return $ youdos db'
     updateYoudo upd db = modifyMVar (mvar db) $ \db' -> do
         let oldyd = listToMaybe
                 [yd | yd<-youdos db'
