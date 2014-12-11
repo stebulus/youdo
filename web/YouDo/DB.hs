@@ -1,4 +1,5 @@
-{-# LANGUAGE OverloadedStrings, FlexibleInstances, TypeSynonymInstances #-}
+{-# LANGUAGE OverloadedStrings, FlexibleInstances, FlexibleContexts,
+    TypeSynonymInstances, MultiParamTypeClasses #-}
 module YouDo.DB where
 import Prelude hiding (id)
 import Control.Applicative ((<$>), (<*>))
@@ -11,16 +12,18 @@ import Database.PostgreSQL.Simple.FromRow (FromRow(..), field)
 import Database.PostgreSQL.Simple.ToField (ToField(..))
 import Web.Scotty (Parsable(..))
 
-class YoudoDB a where
-    getYoudo :: YoudoID -> a -> IO [Youdo]
-    getYoudoVersion :: VersionedID YoudoID -> a -> IO [Youdo]
-    getYoudoVersions :: YoudoID -> a -> IO [Youdo]
+-- d contains versioned key value pairs (k,v), in monad m
+class (Monad m) => DB k v m d where
+    get :: k -> d -> m [Versioned k v]
+    getVersion :: VersionedID k -> d -> m [Versioned k v]
+    getVersions :: k -> d -> m [Versioned k v]
+
+class ( DB YoudoID YoudoData IO a
+      , DB UserID UserData IO a)
+      => YoudoDB a where
     postYoudo :: YoudoData -> a -> IO YoudoID
     updateYoudo :: YoudoUpdate -> a -> IO (UpdateResult YoudoID)
     getYoudos :: a -> IO [Youdo]
-    getUser :: UserID -> a -> IO [User]
-    getUserVersion :: VersionedID UserID -> a -> IO [User]
-    getUserVersions :: UserID -> a -> IO [User]
 
 data VersionedID a = VersionedID
     { thingid :: a
@@ -82,6 +85,9 @@ data YoudoUpdate = YoudoUpdate { oldVersion :: VersionedID YoudoID
                                } deriving (Show)
 
 type User = Versioned UserID UserData
+instance FromRow User where
+    fromRow = Versioned <$> (VersionedID <$> field <*> field)
+                        <*> (UserData <$> field)
 instance ToJSON User where
     toJSON yduser = object
         [ "id" .= thingid (version yduser)

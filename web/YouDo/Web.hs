@@ -113,7 +113,7 @@ app baseuri mv_db = do
     resource "/0/youdos/:id"
         [(GET, dbAction mv_db
             (YoudoID <$> parse "id")
-            getYoudo
+            get
             (\yds -> case yds of
                 [yd] -> do status ok200
                            json (WebYoudo baseuri yd)
@@ -123,14 +123,14 @@ app baseuri mv_db = do
     resource "/0/youdos/:id/versions"
         [(GET, dbAction mv_db
             (YoudoID <$> parse "id")
-            getYoudoVersions
+            getVersions
             (\ydvers -> do status ok200
                            json $ map (WebYoudo baseuri) ydvers)
         )]
     resource "/0/youdos/:id/:txnid"
         [(GET, dbAction mv_db
             (VersionedID <$> parse "id" <*> parse "txnid")
-            getYoudoVersion
+            getVersion
             (\youdos -> case youdos of
                 [yd] -> do status ok200
                            json (WebYoudo baseuri yd)
@@ -162,7 +162,7 @@ app baseuri mv_db = do
     resource "/0/users/:id"
         [(GET, dbAction mv_db
             (parse "id")
-            getUser
+            get
             (\users -> case users of
                 [u] -> do status ok200
                           json (WebYoudoUser baseuri u)
@@ -173,7 +173,7 @@ app baseuri mv_db = do
     resource "/0/users/:id/:txnid"
         [(GET, dbAction mv_db
             (VersionedID <$> parse "id" <*> parse "txnid")
-            getUserVersion
+            getVersion
             (\users -> case users of
                 [u] -> do status ok200
                           json (WebYoudoUser baseuri u)

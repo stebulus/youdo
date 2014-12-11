@@ -1,3 +1,4 @@
+{-# LANGUAGE MultiParamTypeClasses #-}
 module YouDo.DB.Mock where
 
 import Prelude hiding (id)
@@ -13,13 +14,22 @@ data BareMockDB = BareMockDB
     }
 data MockDB = MockDB { mvar :: MVar BareMockDB }
 
-instance YoudoDB MockDB where
-    getYoudo ydid db = withMVar (mvar db) $ \db' ->
+instance DB YoudoID YoudoData IO MockDB where
+    get ydid db = withMVar (mvar db) $ \db' ->
         return $ [yd | yd<-youdos db', thingid (version yd) == ydid]
-    getYoudoVersions ydid db = withMVar (mvar db) $ \db' ->
+    getVersions ydid db = withMVar (mvar db) $ \db' ->
         return $ [yd | yd<-youdos db', thingid (version yd) == ydid]
-    getYoudoVersion ydver db = withMVar (mvar db) $ \db' ->
+    getVersion ydver db = withMVar (mvar db) $ \db' ->
         return $ [yd | yd<-youdos db', version yd == ydver]
+instance DB UserID UserData IO MockDB where
+    get uid db = withMVar (mvar db) $ \db' ->
+        return $ [u | u<-users db', thingid (version u) == uid]
+    getVersion verid db = withMVar (mvar db) $ \db' ->
+        return $ [u | u<-users db', version u == verid]
+    getVersions verid db = withMVar (mvar db) $ \db' ->
+        return $ [u | u<-users db', thingid (version u) == verid]
+
+instance YoudoDB MockDB where
     getYoudos db = withMVar (mvar db) $ \db' ->
         return $ youdos db'
     postYoudo yd db = modifyMVar (mvar db) $ \db' -> do
@@ -53,12 +63,6 @@ instance YoudoDB MockDB where
                                                 }
                                            , Success $ version newyd
                                            )
-    getUser uid db = withMVar (mvar db) $ \db' ->
-        return $ [u | u<-users db', thingid (version u) == uid]
-    getUserVersion verid db = withMVar (mvar db) $ \db' ->
-        return $ [u | u<-users db', version u == verid]
-    getUserVersions verid db = withMVar (mvar db) $ \db' ->
-        return $ [u | u<-users db', thingid (version u) == verid]
 
 doUpdate :: YoudoUpdate -> YoudoData -> YoudoData
 doUpdate upd yd =
