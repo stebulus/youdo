@@ -16,7 +16,7 @@ class DB a where
     getYoudoVersion :: VersionedID YoudoID -> a -> IO [Youdo]
     getYoudoVersions :: YoudoID -> a -> IO [Youdo]
     postYoudo :: YoudoData -> a -> IO YoudoID
-    updateYoudo :: YoudoUpdate -> a -> IO YoudoUpdateResult
+    updateYoudo :: YoudoUpdate -> a -> IO (UpdateResult YoudoID)
     getYoudos :: a -> IO [Youdo]
     getUser :: UserID -> a -> IO [User]
     getUserVersion :: VersionedID UserID -> a -> IO [User]
@@ -123,6 +123,6 @@ instance FromField DueDate where
 instance ToField DueDate where
     toField (DueDate t) = toField t
 
-data YoudoUpdateResult = Success (VersionedID YoudoID)
-                       | Failure String
-                       | OldVersion (VersionedID YoudoID)
+data UpdateResult a = Success (VersionedID a)
+                    | Failure String
+                    | OldVersion (VersionedID a)
