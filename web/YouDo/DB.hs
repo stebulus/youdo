@@ -11,6 +11,16 @@ import Database.PostgreSQL.Simple.FromRow (FromRow(..), field)
 import Database.PostgreSQL.Simple.ToField (ToField(..))
 import Web.Scotty (Parsable(..))
 
+data VersionedID a = VersionedID
+    { thingid :: a
+    , txnid :: TransactionID
+    } deriving (Show, Eq)
+
+data Versioned a b = Versioned
+    { version :: VersionedID a
+    , thing :: b
+    } deriving (Show, Eq)
+
 newtype YoudoID = YoudoID Int deriving (Show, Eq)
 instance FromField YoudoID where
     fromField fld = (fmap.fmap) YoudoID $ fromField fld
@@ -30,16 +40,6 @@ instance Parsable TransactionID where
     parseParam x = TransactionID <$> parseParam x
 instance FromJSON TransactionID where
     parseJSON x = TransactionID <$> parseJSON x
-
-data VersionedID a = VersionedID
-    { thingid :: a
-    , txnid :: TransactionID
-    } deriving (Show, Eq)
-
-data Versioned a b = Versioned
-    { version :: VersionedID a
-    , thing :: b
-    } deriving (Show, Eq)
 
 type Youdo = Versioned YoudoID YoudoData
 type User = Versioned UserID UserData
