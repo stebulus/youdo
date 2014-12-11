@@ -21,6 +21,14 @@ data Versioned a b = Versioned
     , thing :: b
     } deriving (Show, Eq)
 
+newtype TransactionID = TransactionID Int deriving (Show, Eq)
+instance FromField TransactionID where
+    fromField fld = (fmap.fmap) TransactionID $ fromField fld
+instance Parsable TransactionID where
+    parseParam x = TransactionID <$> parseParam x
+instance FromJSON TransactionID where
+    parseJSON x = TransactionID <$> parseJSON x
+
 type Youdo = Versioned YoudoID YoudoData
 instance FromRow Youdo where
     fromRow = Versioned <$> (VersionedID <$> field <*> field)
@@ -83,14 +91,6 @@ instance Parsable UserID where
 
 data UserData = UserData { name :: String }
     deriving (Show, Eq)
-
-newtype TransactionID = TransactionID Int deriving (Show, Eq)
-instance FromField TransactionID where
-    fromField fld = (fmap.fmap) TransactionID $ fromField fld
-instance Parsable TransactionID where
-    parseParam x = TransactionID <$> parseParam x
-instance FromJSON TransactionID where
-    parseJSON x = TransactionID <$> parseJSON x
 
 -- This newtype avoids orphan instances.
 newtype DueDate = DueDate { toMaybeTime :: Maybe UTCTime } deriving (Show)
