@@ -62,24 +62,12 @@ data YoudoUpdate = YoudoUpdate { oldVersion :: VersionedID YoudoID
                                , newCompleted :: Maybe Bool
                                } deriving (Show)
 
-newtype TransactionID = TransactionID Int deriving (Show, Eq)
-instance FromField TransactionID where
-    fromField fld = (fmap.fmap) TransactionID $ fromField fld
-instance Parsable TransactionID where
-    parseParam x = TransactionID <$> parseParam x
-instance FromJSON TransactionID where
-    parseJSON x = TransactionID <$> parseJSON x
-
 type User = Versioned UserID UserData
-
 instance ToJSON User where
     toJSON yduser = object
         [ "id" .= thingid (version yduser)
         , "name" .= name (thing yduser)
         ]
-
-data UserData = UserData { name :: String }
-    deriving (Show, Eq)
 
 newtype UserID = UserID Int deriving (Show, Eq)
 instance FromField UserID where
@@ -92,6 +80,17 @@ instance FromJSON UserID where
     parseJSON x = UserID <$> parseJSON x
 instance Parsable UserID where
     parseParam x = UserID <$> parseParam x
+
+data UserData = UserData { name :: String }
+    deriving (Show, Eq)
+
+newtype TransactionID = TransactionID Int deriving (Show, Eq)
+instance FromField TransactionID where
+    fromField fld = (fmap.fmap) TransactionID $ fromField fld
+instance Parsable TransactionID where
+    parseParam x = TransactionID <$> parseParam x
+instance FromJSON TransactionID where
+    parseJSON x = TransactionID <$> parseJSON x
 
 -- This newtype avoids orphan instances.
 newtype DueDate = DueDate { toMaybeTime :: Maybe UTCTime } deriving (Show)
