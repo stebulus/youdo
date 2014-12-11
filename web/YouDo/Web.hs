@@ -25,7 +25,7 @@ import Network.Wai.Handler.Warp (setPort, setHost, defaultSettings)
 import Options.Applicative (option, strOption, flag', auto, long, short,
     metavar, help, execParser, Parser, fullDesc, helper, info)
 import qualified Options.Applicative as Opt
-import Web.Scotty (scottyOpts, ScottyM, get, matchAny, status, header,
+import Web.Scotty (scottyOpts, ScottyM, matchAny, status, header,
     addroute, RoutePattern, params, text, json, Options(..), setHeader,
     ActionM, raise, Parsable(..), body)
 import Web.Scotty.Internal.Types (ActionT(..), ActionError(..),
@@ -91,7 +91,6 @@ withDB (Postgres connstr) f =
 
 app :: YoudoDB a => URI -> MVar a -> ScottyM ()
 app baseuri mv_db = do
-    get "/" $ text "placeholder"
     resource "/0/youdos"
         [(GET, dbAction mv_db
             (Const ())

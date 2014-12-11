@@ -32,11 +32,7 @@ import YouDo.Web (app, withDB, DBOption(..), parse, ParamValue(..))
 
 tests :: IO [Test]
 tests = return
-    [ serverTest "silly" $ \req -> do
-        (stat, _, bod) <- liftIO $ req $ get "http://example.com/"
-        stat ~= ok200
-        bod ~= "placeholder"
-    , serverTest "new youdo, form data" $ \req -> do
+    [ serverTest "new youdo, form data" $ \req -> do
         (stat, headers, _) <- liftIO $ req
             $ post "http://example.com/0/youdos"
             <> body "assignerid=0&assigneeid=0&description=blah&duedate=&completed=false"
