@@ -266,12 +266,12 @@ instance ToJSON WebYoudoVersionID where
     toJSON (WebYoudoVersionID baseuri ydver) =
         A.String $ ST.pack $ youdoVersionURL baseuri ydver
 
-data WebYoudoUser = WebYoudoUser URI YoudoUser
+data WebYoudoUser = WebYoudoUser URI User
 instance ToJSON WebYoudoUser where
     toJSON (WebYoudoUser baseuri yduser) = Object augmentedmap
         where augmentedmap = foldl' (flip (uncurry M.insert)) origmap
-                    [ "url" .= youdoUserURL baseuri (objectid (userVersion yduser))
-                    , "thisVersion" .= youdoUserVersionURL baseuri (userVersion yduser)
+                    [ "url" .= youdoUserURL baseuri (objectid (version yduser))
+                    , "thisVersion" .= youdoUserVersionURL baseuri (version yduser)
                     ]
               origmap = case toJSON yduser of
                             Object m -> m

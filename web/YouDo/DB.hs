@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings, FlexibleInstances, TypeSynonymInstances #-}
 module YouDo.DB where
 import Prelude hiding (id)
 import Control.Applicative ((<$>), (<*>))
@@ -36,17 +36,21 @@ data VersionedID a = VersionedID
     , txnid :: TransactionID
     } deriving (Show, Eq)
 
-data YoudoUser = YoudoUser
-    { userVersion :: VersionedID UserID
-    , user :: YoudoUserData
+data Versioned a b = Versioned
+    { version :: VersionedID a
+    , thing :: b
     } deriving (Show, Eq)
-instance ToJSON YoudoUser where
+
+type Youdo = Versioned YoudoID YoudoData
+type User = Versioned UserID UserData
+
+instance ToJSON User where
     toJSON yduser = object
-        [ "id" .= objectid (userVersion yduser)
-        , "name" .= name (user yduser)
+        [ "id" .= objectid (version yduser)
+        , "name" .= name (thing yduser)
         ]
 
-data YoudoUserData = YoudoUserData { name :: String }
+data UserData = UserData { name :: String }
     deriving (Show, Eq)
 
 newtype UserID = UserID Int deriving (Show, Eq)
@@ -60,10 +64,6 @@ instance FromJSON UserID where
     parseJSON x = UserID <$> parseJSON x
 instance Parsable UserID where
     parseParam x = UserID <$> parseParam x
-
-data Youdo = Youdo { version :: VersionedID YoudoID
-                   , youdo :: YoudoData
-                   } deriving (Show)
 
 data YoudoData = YoudoData { assignerid :: UserID
                            , assigneeid :: UserID
@@ -101,17 +101,17 @@ instance ToField DueDate where
     toField (DueDate t) = toField t
 
 instance FromRow Youdo where
-    fromRow = Youdo <$> (VersionedID <$> field <*> field)
+    fromRow = Versioned <$> (VersionedID <$> field <*> field)
         <*> (YoudoData <$> field <*> field <*> field <*> field <*> field)
 
 instance ToJSON Youdo where
     toJSON yd = object
         [ "id" .= objectid (version yd)
-        , "assignerid" .= assignerid (youdo yd)
-        , "assigneeid" .= assigneeid (youdo yd)
-        , "description" .= description (youdo yd)
-        , "duedate" .= duedate (youdo yd)
-        , "completed" .= completed (youdo yd)
+        , "assignerid" .= assignerid (thing yd)
+        , "assigneeid" .= assigneeid (thing yd)
+        , "description" .= description (thing yd)
+        , "duedate" .= duedate (thing yd)
+        , "completed" .= completed (thing yd)
         ]
 
 class DB a where
@@ -121,9 +121,9 @@ class DB a where
     postYoudo :: YoudoData -> a -> IO YoudoID
     updateYoudo :: YoudoUpdate -> a -> IO YoudoUpdateResult
     getYoudos :: a -> IO [Youdo]
-    getUser :: UserID -> a -> IO [YoudoUser]
-    getUserVersion :: VersionedID UserID -> a -> IO [YoudoUser]
-    getUserVersions :: UserID -> a -> IO [YoudoUser]
+    getUser :: UserID -> a -> IO [User]
+    getUserVersion :: VersionedID UserID -> a -> IO [User]
+    getUserVersions :: UserID -> a -> IO [User]
 
 data YoudoUpdateResult = Success (VersionedID YoudoID)
                        | Failure String
