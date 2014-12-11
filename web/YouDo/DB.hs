@@ -21,6 +21,20 @@ data Versioned a b = Versioned
     , thing :: b
     } deriving (Show, Eq)
 
+type Youdo = Versioned YoudoID YoudoData
+instance FromRow Youdo where
+    fromRow = Versioned <$> (VersionedID <$> field <*> field)
+        <*> (YoudoData <$> field <*> field <*> field <*> field <*> field)
+instance ToJSON Youdo where
+    toJSON yd = object
+        [ "id" .= thingid (version yd)
+        , "assignerid" .= assignerid (thing yd)
+        , "assigneeid" .= assigneeid (thing yd)
+        , "description" .= description (thing yd)
+        , "duedate" .= duedate (thing yd)
+        , "completed" .= completed (thing yd)
+        ]
+
 newtype YoudoID = YoudoID Int deriving (Show, Eq)
 instance FromField YoudoID where
     fromField fld = (fmap.fmap) YoudoID $ fromField fld
@@ -33,6 +47,21 @@ instance FromJSON YoudoID where
 instance Parsable YoudoID where
     parseParam x = YoudoID <$> parseParam x
 
+data YoudoData = YoudoData { assignerid :: UserID
+                           , assigneeid :: UserID
+                           , description :: String
+                           , duedate :: DueDate
+                           , completed :: Bool
+                           } deriving (Show)
+
+data YoudoUpdate = YoudoUpdate { oldVersion :: VersionedID YoudoID
+                               , newAssignerid :: Maybe UserID
+                               , newAssigneeid :: Maybe UserID
+                               , newDescription :: Maybe String
+                               , newDuedate :: Maybe DueDate
+                               , newCompleted :: Maybe Bool
+                               } deriving (Show)
+
 newtype TransactionID = TransactionID Int deriving (Show, Eq)
 instance FromField TransactionID where
     fromField fld = (fmap.fmap) TransactionID $ fromField fld
@@ -41,7 +70,6 @@ instance Parsable TransactionID where
 instance FromJSON TransactionID where
     parseJSON x = TransactionID <$> parseJSON x
 
-type Youdo = Versioned YoudoID YoudoData
 type User = Versioned UserID UserData
 
 instance ToJSON User where
@@ -65,21 +93,6 @@ instance FromJSON UserID where
 instance Parsable UserID where
     parseParam x = UserID <$> parseParam x
 
-data YoudoData = YoudoData { assignerid :: UserID
-                           , assigneeid :: UserID
-                           , description :: String
-                           , duedate :: DueDate
-                           , completed :: Bool
-                           } deriving (Show)
-
-data YoudoUpdate = YoudoUpdate { oldVersion :: VersionedID YoudoID
-                               , newAssignerid :: Maybe UserID
-                               , newAssigneeid :: Maybe UserID
-                               , newDescription :: Maybe String
-                               , newDuedate :: Maybe DueDate
-                               , newCompleted :: Maybe Bool
-                               } deriving (Show)
-
 -- This newtype avoids orphan instances.
 newtype DueDate = DueDate { toMaybeTime :: Maybe UTCTime } deriving (Show)
 instance Parsable DueDate where
@@ -99,20 +112,6 @@ instance FromField DueDate where
     fromField fld = (fmap.fmap) DueDate $ fromField fld
 instance ToField DueDate where
     toField (DueDate t) = toField t
-
-instance FromRow Youdo where
-    fromRow = Versioned <$> (VersionedID <$> field <*> field)
-        <*> (YoudoData <$> field <*> field <*> field <*> field <*> field)
-
-instance ToJSON Youdo where
-    toJSON yd = object
-        [ "id" .= thingid (version yd)
-        , "assignerid" .= assignerid (thing yd)
-        , "assigneeid" .= assigneeid (thing yd)
-        , "description" .= description (thing yd)
-        , "duedate" .= duedate (thing yd)
-        , "completed" .= completed (thing yd)
-        ]
 
 class DB a where
     getYoudo :: YoudoID -> a -> IO [Youdo]
