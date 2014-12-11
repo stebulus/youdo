@@ -254,7 +254,7 @@ data WebYoudo = WebYoudo URI Youdo
 instance ToJSON WebYoudo where
     toJSON (WebYoudo baseuri yd) = Object augmentedmap
         where augmentedmap = foldl' (flip (uncurry M.insert)) origmap
-                    [ "url" .= youdoURL baseuri (objectid (version yd))
+                    [ "url" .= youdoURL baseuri (thingid (version yd))
                     , "thisVersion" .= youdoVersionURL baseuri (version yd)
                     ]
               origmap = case toJSON yd of
@@ -270,7 +270,7 @@ data WebYoudoUser = WebYoudoUser URI User
 instance ToJSON WebYoudoUser where
     toJSON (WebYoudoUser baseuri yduser) = Object augmentedmap
         where augmentedmap = foldl' (flip (uncurry M.insert)) origmap
-                    [ "url" .= youdoUserURL baseuri (objectid (version yduser))
+                    [ "url" .= youdoUserURL baseuri (thingid (version yduser))
                     , "thisVersion" .= youdoUserVersionURL baseuri (version yduser)
                     ]
               origmap = case toJSON yduser of

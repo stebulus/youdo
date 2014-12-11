@@ -32,7 +32,7 @@ instance FromJSON TransactionID where
     parseJSON x = TransactionID <$> parseJSON x
 
 data VersionedID a = VersionedID
-    { objectid :: a
+    { thingid :: a
     , txnid :: TransactionID
     } deriving (Show, Eq)
 
@@ -46,7 +46,7 @@ type User = Versioned UserID UserData
 
 instance ToJSON User where
     toJSON yduser = object
-        [ "id" .= objectid (version yduser)
+        [ "id" .= thingid (version yduser)
         , "name" .= name (thing yduser)
         ]
 
@@ -106,7 +106,7 @@ instance FromRow Youdo where
 
 instance ToJSON Youdo where
     toJSON yd = object
-        [ "id" .= objectid (version yd)
+        [ "id" .= thingid (version yd)
         , "assignerid" .= assignerid (thing yd)
         , "assigneeid" .= assigneeid (thing yd)
         , "description" .= description (thing yd)
