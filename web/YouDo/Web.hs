@@ -82,14 +82,14 @@ mainOpts YDOptions { port = p, db = dbopt } =
                       }
                    $ app baseuri mvdb
 
-withDB :: DBOption -> (forall a. DB a => a -> IO b) -> IO b
+withDB :: DBOption -> (forall a. YoudoDB a => a -> IO b) -> IO b
 withDB InMemory f = Mock.empty >>= f
 withDB (Postgres connstr) f =
     bracket (DBConnection <$> connectPostgreSQL (pack connstr))
             (\(DBConnection conn) -> close conn)
             f
 
-app :: DB a => URI -> MVar a -> ScottyM ()
+app :: YoudoDB a => URI -> MVar a -> ScottyM ()
 app baseuri mv_db = do
     get "/" $ text "placeholder"
     resource "/0/youdos"
@@ -194,7 +194,7 @@ resource route acts =
 
 type RequestParser = Holex LT.Text ParamValue
 
-dbAction :: (DB b)
+dbAction :: (YoudoDB b)
     => MVar b
     -> RequestParser a
     -> (a -> b -> IO c)

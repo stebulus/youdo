@@ -3,10 +3,10 @@ module YouDo.DB.PostgreSQL where
 
 import Database.PostgreSQL.Simple (query, query_, execute, withTransaction,
     Only(..), Connection, Query)
-import YouDo.DB (YoudoID(..), YoudoData(..), DB(..))
+import YouDo.DB
 
 newtype DBConnection = DBConnection Connection
-instance DB DBConnection where
+instance YoudoDB DBConnection where
     getYoudo ydid (DBConnection conn) =
         query conn
               "select id, txnid, assignerid, assigneeid, description, duedate, completed \

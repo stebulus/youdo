@@ -11,7 +11,7 @@ import Database.PostgreSQL.Simple.FromRow (FromRow(..), field)
 import Database.PostgreSQL.Simple.ToField (ToField(..))
 import Web.Scotty (Parsable(..))
 
-class DB a where
+class YoudoDB a where
     getYoudo :: YoudoID -> a -> IO [Youdo]
     getYoudoVersion :: VersionedID YoudoID -> a -> IO [Youdo]
     getYoudoVersions :: YoudoID -> a -> IO [Youdo]

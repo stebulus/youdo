@@ -13,7 +13,7 @@ data BareMockDB = BareMockDB
     }
 data MockDB = MockDB { mvar :: MVar BareMockDB }
 
-instance DB MockDB where
+instance YoudoDB MockDB where
     getYoudo ydid db = withMVar (mvar db) $ \db' ->
         return $ [yd | yd<-youdos db', thingid (version yd) == ydid]
     getYoudoVersions ydid db = withMVar (mvar db) $ \db' ->
