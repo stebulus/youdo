@@ -31,28 +31,23 @@ instance Parsable TransactionID where
 instance FromJSON TransactionID where
     parseJSON x = TransactionID <$> parseJSON x
 
-data UserVersionID = UserVersionID
-    { userid :: UserID
-    , usertxnid :: TransactionID
+data VersionedID a = VersionedID
+    { objectid :: a
+    , txnid :: TransactionID
     } deriving (Show, Eq)
 
 data YoudoUser = YoudoUser
-    { userVersion :: UserVersionID
+    { userVersion :: VersionedID UserID
     , user :: YoudoUserData
     } deriving (Show, Eq)
 instance ToJSON YoudoUser where
     toJSON yduser = object
-        [ "id" .= userid (userVersion yduser)
+        [ "id" .= objectid (userVersion yduser)
         , "name" .= name (user yduser)
         ]
 
 data YoudoUserData = YoudoUserData { name :: String }
     deriving (Show, Eq)
-
-data YoudoVersionID = YoudoVersionID
-    { youdoid :: YoudoID
-    , youdotxnid :: TransactionID
-    } deriving (Show, Eq)
 
 newtype UserID = UserID Int deriving (Show, Eq)
 instance FromField UserID where
@@ -66,7 +61,7 @@ instance FromJSON UserID where
 instance Parsable UserID where
     parseParam x = UserID <$> parseParam x
 
-data Youdo = Youdo { version :: YoudoVersionID
+data Youdo = Youdo { version :: VersionedID YoudoID
                    , youdo :: YoudoData
                    } deriving (Show)
 
@@ -77,7 +72,7 @@ data YoudoData = YoudoData { assignerid :: UserID
                            , completed :: Bool
                            } deriving (Show)
 
-data YoudoUpdate = YoudoUpdate { oldVersion :: YoudoVersionID
+data YoudoUpdate = YoudoUpdate { oldVersion :: VersionedID YoudoID
                                , newAssignerid :: Maybe UserID
                                , newAssigneeid :: Maybe UserID
                                , newDescription :: Maybe String
@@ -106,12 +101,12 @@ instance ToField DueDate where
     toField (DueDate t) = toField t
 
 instance FromRow Youdo where
-    fromRow = Youdo <$> (YoudoVersionID <$> field <*> field)
+    fromRow = Youdo <$> (VersionedID <$> field <*> field)
         <*> (YoudoData <$> field <*> field <*> field <*> field <*> field)
 
 instance ToJSON Youdo where
     toJSON yd = object
-        [ "id" .= youdoid (version yd)
+        [ "id" .= objectid (version yd)
         , "assignerid" .= assignerid (youdo yd)
         , "assigneeid" .= assigneeid (youdo yd)
         , "description" .= description (youdo yd)
@@ -121,15 +116,15 @@ instance ToJSON Youdo where
 
 class DB a where
     getYoudo :: YoudoID -> a -> IO [Youdo]
-    getYoudoVersion :: YoudoVersionID -> a -> IO [Youdo]
+    getYoudoVersion :: VersionedID YoudoID -> a -> IO [Youdo]
     getYoudoVersions :: YoudoID -> a -> IO [Youdo]
     postYoudo :: YoudoData -> a -> IO YoudoID
     updateYoudo :: YoudoUpdate -> a -> IO YoudoUpdateResult
     getYoudos :: a -> IO [Youdo]
     getUser :: UserID -> a -> IO [YoudoUser]
-    getUserVersion :: UserVersionID -> a -> IO [YoudoUser]
+    getUserVersion :: VersionedID UserID -> a -> IO [YoudoUser]
     getUserVersions :: UserID -> a -> IO [YoudoUser]
 
-data YoudoUpdateResult = Success YoudoVersionID
+data YoudoUpdateResult = Success (VersionedID YoudoID)
                        | Failure String
-                       | OldVersion YoudoVersionID
+                       | OldVersion (VersionedID YoudoID)

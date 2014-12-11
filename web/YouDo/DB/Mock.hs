@@ -15,22 +15,22 @@ data MockDB = MockDB { mvar :: MVar BareMockDB }
 
 instance DB MockDB where
     getYoudo ydid db = withMVar (mvar db) $ \db' ->
-        return $ [yd | yd<-youdos db', youdoid (version yd) == ydid]
+        return $ [yd | yd<-youdos db', objectid (version yd) == ydid]
     getYoudoVersions ydid db = withMVar (mvar db) $ \db' ->
-        return $ [yd | yd<-youdos db', youdoid (version yd) == ydid]
+        return $ [yd | yd<-youdos db', objectid (version yd) == ydid]
     getYoudoVersion ydver db = withMVar (mvar db) $ \db' ->
         return $ [yd | yd<-youdos db', version yd == ydver]
     getYoudos db = withMVar (mvar db) $ \db' ->
         return $ youdos db'
     postYoudo yd db = modifyMVar (mvar db) $ \db' -> do
         let newid = YoudoID $
-                1 + case youdoid . version <$> (listToMaybe $ youdos db') of
+                1 + case objectid . version <$> (listToMaybe $ youdos db') of
                         Nothing -> 0
                         Just (YoudoID n) -> n
             newtxn = TransactionID $
                 1 + case lasttxn db' of TransactionID n -> n
         return ( db' { youdos = Youdo
-                        { version = (YoudoVersionID newid newtxn)
+                        { version = (VersionedID newid newtxn)
                         , youdo = yd
                         } : (youdos db')
                      , lasttxn = newtxn
@@ -40,13 +40,13 @@ instance DB MockDB where
     updateYoudo upd db = modifyMVar (mvar db) $ \db' -> do
         let oldyd = listToMaybe
                 [yd | yd<-youdos db'
-                    , youdoid (version yd) == youdoid (oldVersion upd)]
+                    , objectid (version yd) == objectid (oldVersion upd)]
         case oldyd of
             Nothing -> return (db', Failure $ "no youdo with " ++ (show $ oldVersion upd))
             Just theyd -> if version theyd /= oldVersion upd
                             then return (db', OldVersion $ version theyd)
-                            else let newyd = Youdo { version = YoudoVersionID
-                                                        (youdoid (version theyd))
+                            else let newyd = Youdo { version = VersionedID
+                                                        (objectid (version theyd))
                                                         newtxn
                                                    , youdo = doUpdate upd (youdo theyd)
                                                    }
@@ -58,11 +58,11 @@ instance DB MockDB where
                                            , Success $ version newyd
                                            )
     getUser uid db = withMVar (mvar db) $ \db' ->
-        return $ [u | u<-users db', userid (userVersion u) == uid]
+        return $ [u | u<-users db', objectid (userVersion u) == uid]
     getUserVersion verid db = withMVar (mvar db) $ \db' ->
         return $ [u | u<-users db', userVersion u == verid]
     getUserVersions verid db = withMVar (mvar db) $ \db' ->
-        return $ [u | u<-users db', userid (userVersion u) == verid]
+        return $ [u | u<-users db', objectid (userVersion u) == verid]
 
 doUpdate :: YoudoUpdate -> YoudoData -> YoudoData
 doUpdate upd yd =
@@ -87,8 +87,8 @@ empty :: IO MockDB
 empty = do
     mv <- newMVar $ BareMockDB
             { youdos = []
-            , users = [YoudoUser (UserVersionID (UserID 0)
-                                                (TransactionID 0))
+            , users = [YoudoUser (VersionedID (UserID 0)
+                                              (TransactionID 0))
                                  (YoudoUserData "yddb")]
             , lasttxn = TransactionID 0
             }

@@ -130,7 +130,7 @@ app baseuri mv_db = do
         )]
     resource "/0/youdos/:id/:txnid"
         [(GET, dbAction mv_db
-            (YoudoVersionID <$> parse "id" <*> parse "txnid")
+            (VersionedID <$> parse "id" <*> parse "txnid")
             getYoudoVersion
             (\youdos -> case youdos of
                 [yd] -> do status ok200
@@ -138,8 +138,8 @@ app baseuri mv_db = do
                 [] -> do status notFound404
                 _ -> raise "multiple youdos found!")
         ),(POST, dbAction mv_db
-            (YoudoUpdate <$> (YoudoVersionID <$> parse "id"
-                                             <*> parse "txnid")
+            (YoudoUpdate <$> (VersionedID <$> parse "id"
+                                          <*> parse "txnid")
                          <*> optional (parse "assignerid")
                          <*> optional (parse "assigneeid")
                          <*> optional (parse "description")
@@ -173,7 +173,7 @@ app baseuri mv_db = do
         )]
     resource "/0/users/:id/:txnid"
         [(GET, dbAction mv_db
-            (UserVersionID <$> parse "id" <*> parse "txnid")
+            (VersionedID <$> parse "id" <*> parse "txnid")
             getUserVersion
             (\users -> case users of
                 [u] -> do status ok200
@@ -254,14 +254,14 @@ data WebYoudo = WebYoudo URI Youdo
 instance ToJSON WebYoudo where
     toJSON (WebYoudo baseuri yd) = Object augmentedmap
         where augmentedmap = foldl' (flip (uncurry M.insert)) origmap
-                    [ "url" .= youdoURL baseuri (youdoid (version yd))
+                    [ "url" .= youdoURL baseuri (objectid (version yd))
                     , "thisVersion" .= youdoVersionURL baseuri (version yd)
                     ]
               origmap = case toJSON yd of
                             Object m -> m
                             _ -> error "Youdo didn't become a JSON object"
 
-data WebYoudoVersionID = WebYoudoVersionID URI YoudoVersionID
+data WebYoudoVersionID = WebYoudoVersionID URI (VersionedID YoudoID)
 instance ToJSON WebYoudoVersionID where
     toJSON (WebYoudoVersionID baseuri ydver) =
         A.String $ ST.pack $ youdoVersionURL baseuri ydver
@@ -270,7 +270,7 @@ data WebYoudoUser = WebYoudoUser URI YoudoUser
 instance ToJSON WebYoudoUser where
     toJSON (WebYoudoUser baseuri yduser) = Object augmentedmap
         where augmentedmap = foldl' (flip (uncurry M.insert)) origmap
-                    [ "url" .= youdoUserURL baseuri (userid (userVersion yduser))
+                    [ "url" .= youdoUserURL baseuri (objectid (userVersion yduser))
                     , "thisVersion" .= youdoUserVersionURL baseuri (userVersion yduser)
                     ]
               origmap = case toJSON yduser of
@@ -282,8 +282,8 @@ youdoURL baseuri (YoudoID n) = show $
     nullURI { uriPath = "0/youdos/" ++ (show n) }
     `relativeTo` baseuri
 
-youdoVersionURL :: URI -> YoudoVersionID -> String
-youdoVersionURL baseuri (YoudoVersionID (YoudoID yd) (TransactionID txn))
+youdoVersionURL :: URI -> VersionedID YoudoID -> String
+youdoVersionURL baseuri (VersionedID (YoudoID yd) (TransactionID txn))
     = show $
         nullURI { uriPath = "0/youdos/" ++ (show yd) ++ "/" ++ (show txn) }
         `relativeTo` baseuri
@@ -293,8 +293,8 @@ youdoUserURL baseuri (UserID n) = show $
     nullURI { uriPath = "0/users/" ++ (show n) }
     `relativeTo` baseuri
 
-youdoUserVersionURL :: URI -> UserVersionID -> String
-youdoUserVersionURL baseuri (UserVersionID (UserID u) (TransactionID txn))
+youdoUserVersionURL :: URI -> VersionedID UserID -> String
+youdoUserVersionURL baseuri (VersionedID (UserID u) (TransactionID txn))
     = show $
         nullURI { uriPath = "0/users/" ++ (show u) ++ "/" ++ (show txn) }
         `relativeTo` baseuri
