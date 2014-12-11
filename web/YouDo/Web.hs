@@ -112,7 +112,7 @@ app baseuri mv_db = do
         )]
     resource "/0/youdos/:id"
         [(GET, dbAction mv_db
-            (YoudoID <$> parse "id")
+            (parse "id")
             get
             (\yds -> case yds of
                 [yd] -> do status ok200
@@ -122,7 +122,7 @@ app baseuri mv_db = do
         )]
     resource "/0/youdos/:id/versions"
         [(GET, dbAction mv_db
-            (YoudoID <$> parse "id")
+            (parse "id")
             getVersions
             (\ydvers -> do status ok200
                            json $ map (WebYoudo baseuri) ydvers)
