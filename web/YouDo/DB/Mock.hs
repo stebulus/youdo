@@ -25,8 +25,7 @@ instance DB YoudoID YoudoData YoudoUpdate IO MockYoudoDB where
     getVersion ydver db = withMVar (mvar $ ymock db) $ \db' ->
         return $ one $ [yd | yd<-youdos db', version yd == ydver]
     getAll db = withMVar (mvar $ ymock db) $ \db' ->
-        return $ GetResult $ Result $ Right
-               $ nubBy ((==) `on` thingid . version) $ youdos db'
+        return $ success $ nubBy ((==) `on` thingid . version) $ youdos db'
     post yd db = modifyMVar (mvar $ ymock db) $ \db' -> do
         let newid = YoudoID $
                 1 + case thingid . version <$> (listToMaybe $ youdos db') of
@@ -38,17 +37,16 @@ instance DB YoudoID YoudoData YoudoUpdate IO MockYoudoDB where
         return ( db' { youdos = newy : (youdos db')
                      , lasttxn = newtxn
                      }
-               , PostResult $ Result $ Right $ newy
+               , success newy
                )
     update upd db = modifyMVar (mvar $ ymock db) $ \db' -> do
         let oldyd = listToMaybe
                 [yd | yd<-youdos db'
                     , thingid (version yd) == thingid (oldVersion upd)]
         case oldyd of
-            Nothing -> return (db', UpdateResult $ Result $ Left $ SpecialError $ NotFound_Upd)
+            Nothing -> return (db', notFound)
             Just theyd -> if version theyd /= oldVersion upd
-                            then return (db', UpdateResult $ Result $ Left $ SpecialError
-                                              $ NewerVersion $ theyd)
+                            then return (db', newerVersion theyd)
                             else let newyd = Versioned
                                         (VersionedID (thingid (version theyd)) newtxn)
                                         (doUpdate upd (thing theyd))
@@ -57,7 +55,7 @@ instance DB YoudoID YoudoData YoudoUpdate IO MockYoudoDB where
                                  in return (db' { youdos = newyd : (youdos db')
                                                 , lasttxn = newtxn
                                                 }
-                                           , UpdateResult $ Result $ Right $ newyd
+                                           , success newyd
                                            )
 
 newtype MockUserDB = MockUserDB { umock :: MockDB }
@@ -79,17 +77,16 @@ instance DB UserID UserData UserUpdate IO MockUserDB where
         return ( db' { users = newu : (users db')
                      , lasttxn = newtxn
                      }
-               , PostResult $ Result $ Right newu
+               , success newu
                )
     update upd db = modifyMVar (mvar $ umock db) $ \db' -> do
         let oldu = listToMaybe
                 [u | u<-users db'
                     , thingid (version u) == thingid (oldUserVersion upd)]
         case oldu of
-            Nothing -> return (db', UpdateResult $ Result $ Left $ SpecialError NotFound_Upd)
+            Nothing -> return (db', notFound)
             Just theu -> if version theu /= oldUserVersion upd
-                            then return (db', UpdateResult $ Result $ Left $ SpecialError
-                                              $ NewerVersion $ theu)
+                            then return (db', newerVersion theu)
                             else let newu = Versioned
                                         (VersionedID (thingid (version theu)) newtxn)
                                         (doUpdate upd (thing theu))
@@ -98,7 +95,7 @@ instance DB UserID UserData UserUpdate IO MockUserDB where
                                  in return (db' { users = newu : (users db')
                                                 , lasttxn = newtxn
                                                 }
-                                           , UpdateResult $ Result $ Right $ newu
+                                           , success newu
                                            )
 
 class Updater u d where

@@ -1,5 +1,5 @@
-{-# LANGUAGE OverloadedStrings, FlexibleInstances, MultiParamTypeClasses,
-    FunctionalDependencies #-}
+{-# LANGUAGE OverloadedStrings, FlexibleInstances, FlexibleContexts,
+    MultiParamTypeClasses, FunctionalDependencies #-}
 module YouDo.Types where
 import Control.Applicative ((<$>), (<*>))
 import Data.Aeson (ToJSON(..), FromJSON(..), (.=), object, Value(..))
@@ -27,35 +27,44 @@ class (Monad m, NamedResource k)
     dbResourceName :: d -> Maybe k -> String
     dbResourceName _ x = resourceName x
 
+class Result r a | r->a where
+    notFound :: r
+    failure :: LT.Text -> r
+    success :: a -> r
+
 data NotFound = NotFound
-data Error e = SpecialError e
-             | Error LT.Text
-newtype Result e a = Result (Either (Error e) a)
-instance Functor (Result e) where
-    fmap f (Result eith) = Result (fmap f eith)
-newtype GetResult a = GetResult (Result NotFound a)
-instance Functor GetResult where
-    fmap f (GetResult r) = GetResult (fmap f r)
+type GetResult a = Either NotFound (Either LT.Text a)
+instance Result (GetResult a) a where
+    notFound = Left NotFound
+    failure msg = Right $ Left msg
+    success x = Right $ Right x
 
-data UpdateError a = NewerVersion a
-                   | NotFound_Upd  -- ick.
-newtype UpdateResult b a = UpdateResult (Result (UpdateError b) a)
-instance Functor (UpdateResult b) where
-    fmap f (UpdateResult r) = UpdateResult (fmap f r)
+data NewerVersion a = NewerVersion a
+type UpdateResult b a = Either (NewerVersion b) (GetResult a)
+instance Result (UpdateResult b a) a where
+    notFound = Right $ notFound
+    failure = Right . failure
+    success = Right . success
+newerVersion :: b -> UpdateResult b a
+newerVersion x = Left $ NewerVersion x
 
-newtype InvalidObject = InvalidObject [LT.Text]
-newtype PostResult a = PostResult (Result InvalidObject a)
-instance Functor PostResult where
-    fmap f (PostResult r) = PostResult (fmap f r)
+data InvalidObject = InvalidObject [LT.Text]
+type PostResult a = Either InvalidObject (GetResult a)
+instance Result (PostResult a) a where
+    notFound = Right $ notFound
+    failure = Right . failure
+    success = Right . success
+invalidObject :: [LT.Text] -> PostResult a
+invalidObject errs = Left $ InvalidObject errs
 
-one :: [a] -> GetResult a
-one [x] = GetResult $ Result $ Right x
-one [] = GetResult $ Result $ Left $ SpecialError NotFound
-one _ = GetResult $ Result $ Left $ Error "multiple objects found!"
+one :: (Result r a) => [a] -> r
+one [x] = success $ x
+one [] = notFound
+one _ = failure "multiple objects found!"
 
-some :: [a] -> GetResult [a]
-some [] = GetResult $ Result $ Left $ SpecialError NotFound
-some x = GetResult $ Result $ Right x
+some :: (Result r [a]) => [a] -> r
+some [] = notFound
+some x = success x
 
 data VersionedID a = VersionedID
     { thingid :: a

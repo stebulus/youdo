@@ -12,7 +12,7 @@ instance DB YoudoID YoudoData YoudoUpdate IO PostgresYoudoDB where
               "select id, txnid, assignerid, assigneeid, description, duedate, completed \
               \from youdo where id = ?"
               (Only ydid)
-    getAll (PostgresYoudoDB conn) = GetResult <$> Result <$> Right <$> query_ conn
+    getAll (PostgresYoudoDB conn) = success <$> query_ conn
         "select id, assignerid, assigneeid, description, duedate, completed \
         \from youdo"
     post yd (PostgresYoudoDB conn) = do
@@ -29,7 +29,7 @@ instance DB YoudoID YoudoData YoudoUpdate IO PostgresYoudoDB where
                 (assignerid yd, assigneeid yd, description yd,
                 duedate yd, completed yd)
                 :: IO [Youdo]
-            return $ PostResult $ Result $ Right $ head ids
+            return $ one ids
 newtype PostgresUserDB = PostgresUserDB Connection
 instance DB UserID UserData UserUpdate IO PostgresUserDB where
     get uid (PostgresUserDB conn) =

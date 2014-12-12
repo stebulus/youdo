@@ -29,7 +29,7 @@ import Web.Scotty (scottyApp)
 import YouDo.DB.Mock
 import YouDo.Holex
 import YouDo.Test (plainTest)
-import YouDo.Types hiding (get, post)
+import YouDo.Types hiding (get, post, success, failure)
 import YouDo.Web (app)
 
 tests :: IO [Test]

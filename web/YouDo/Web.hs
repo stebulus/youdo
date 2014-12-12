@@ -160,40 +160,34 @@ instance (NamedResource k, Show k, ToJSON v)
          => WebResult [Versioned k v] where
     report baseuri xs = json $ map (WebVersioned baseuri) xs
 instance (WebResult a) => WebResult (GetResult a) where
-    report baseuri (GetResult (Result (Right a))) =
+    report baseuri (Right (Right a)) =
         do status ok200
            report baseuri a
-    report _ (GetResult (Result (Left (SpecialError NotFound)))) =
+    report _ (Left NotFound) =
         status notFound404
-    report _ (GetResult (Result (Left (Error msg)))) =
+    report _ (Right (Left msg)) =
         do status internalServerError500
            text msg
 instance (WebResult b, NamedResource k, Show k, ToJSON v)
          => WebResult (UpdateResult b (Versioned k v)) where
-    report baseuri (UpdateResult (Result (Right a))) =
+    report baseuri (Right (Right (Right a))) =
         do status created201
            setHeader "Location" $ LT.pack $ show $ resourceVersionURL baseuri (version a)
            report baseuri a
-    report _ (UpdateResult (Result (Left (SpecialError NotFound_Upd)))) =
-        status notFound404
-    report baseuri (UpdateResult (Result (Left (SpecialError (NewerVersion b))))) =
+    report baseuri (Left (NewerVersion b)) =
         do status badRequest400
            report baseuri b
-    report _ (UpdateResult (Result (Left (Error msg)))) =
-        do status internalServerError500
-           text msg
+    report baseuri (Right gr) = report baseuri gr
 instance (NamedResource k, Show k, ToJSON v)
          => WebResult (PostResult (Versioned k v)) where
-    report baseuri (PostResult (Result (Right a))) =
+    report baseuri (Right (Right (Right a))) =
         do status created201
            setHeader "Location" $ LT.pack $ show $ resourceURL baseuri $ thingid $ version a
            report baseuri a
-    report _ (PostResult (Result (Left (SpecialError (InvalidObject msgs))))) =
+    report _ (Left (InvalidObject msgs)) =
         do status badRequest400
            text $ LT.concat [ LT.concat [msg, "\r\n"] | msg<-msgs ]
-    report _ (PostResult (Result (Left (Error msg)))) =
-        do status internalServerError500
-           text msg
+    report baseuri (Right gr) = report baseuri gr
 
 resource :: RoutePattern -> [(StdMethod, ActionM ())] -> ScottyM ()
 resource route acts =
