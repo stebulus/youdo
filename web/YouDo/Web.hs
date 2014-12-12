@@ -128,19 +128,19 @@ webdb baseuri mv db =
     let basepath = nullURI { uriPath = uriPath baseuri }
         rtype = dbResourceName db Nothing
         pat s = fromString $ show $ s `relative` basepath
+        onweb f = webfunc baseuri $ lock mv $ flip f db
     in do resource (pat rtype)
-            [(GET, webfunc baseuri (\() -> withMVar mv $ \_ -> getAll db)
-            ),(POST, webfunc baseuri (\x -> withMVar mv $ \_ -> post x db)
-            )]
+            [ (GET, onweb (\() -> getAll))
+            , (POST, onweb post)
+            ]
           resource (pat (rtype ++ "/:id"))
-            [(GET, webfunc baseuri (\x -> withMVar mv $ \_ -> get x db)
-            )]
+            [ (GET, onweb get) ]
           resource (pat (rtype ++ "/:id/versions"))
-            [(GET, webfunc baseuri (\x -> withMVar mv $ \_ -> getVersions x db))]
+            [ (GET, onweb getVersions) ]
           resource (pat (rtype ++ "/:id/:txnid"))
-            [(GET, webfunc baseuri (\x -> withMVar mv $ \_ -> getVersion x db)
-            ),(POST, webfunc baseuri (\x -> withMVar mv $ \_ -> update x db)
-            )]
+            [ (GET, onweb getVersion)
+            , (POST, onweb update)
+            ]
 
 webfunc :: (WebResult r, Default (RequestParser a))
            => URI -> (a -> IO r) -> ActionM ()
@@ -346,3 +346,6 @@ showHolexErrors es = LT.concat [ LT.concat [ showHolexError e, "\r\n" ]
 
 relative :: String -> URI -> URI
 relative s u = nullURI { uriPath = s } `relativeTo` u
+
+lock :: MVar a -> (b -> IO c) -> b -> IO c
+lock mv f x = withMVar mv $ const (f x)
