@@ -130,8 +130,11 @@ webdb baseuri mv db =
             [(GET, dbAction mv db
                 (Const ())
                 (const getAll)
-                (\yds -> do status ok200
-                            json $ map (WebVersioned baseuri) yds)
+                (\r -> case r of
+                    Right xs -> do status ok200
+                                   json $ map (WebVersioned baseuri) xs
+                    Left (SpecialError NotFound) -> status notFound404
+                    Left (Error msg) -> raise msg)
             ),(POST, dbAction mv db
                 def
                 post
@@ -156,18 +159,21 @@ webdb baseuri mv db =
             [(GET, dbAction mv db
                 (parse "id")
                 getVersions
-                (\xs -> do status ok200
-                           json $ map (WebVersioned baseuri) xs)
+                (\r -> case r of
+                    Right xs -> do status ok200
+                                   json $ map (WebVersioned baseuri) xs
+                    Left (SpecialError NotFound) -> status notFound404
+                    Left (Error msg) -> raise msg)
             )]
           resource (pat (rtype ++ "/:id/:txnid"))
             [(GET, dbAction mv db
                 def
                 getVersion
-                (\xs -> case xs of
-                    [x] -> do status ok200
-                              json (WebVersioned baseuri x)
-                    [] -> do status notFound404
-                    _ -> raise "multiple objects found!")
+                (\r -> case r of
+                    Right x -> do status ok200
+                                  json (WebVersioned baseuri x)
+                    Left (SpecialError NotFound) -> status notFound404
+                    Left (Error msg) -> raise msg)
             ),(POST, dbAction mv db
                 def
                 update

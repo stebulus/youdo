@@ -19,13 +19,28 @@ import YouDo.Holex
 class (Monad m, NamedResource k)
       => DB k v u m d | d->v, d->k, d->u, d->m where
     get :: k -> d -> m [Versioned k v]
-    getVersion :: VersionedID k -> d -> m [Versioned k v]
-    getVersions :: k -> d -> m [Versioned k v]
-    getAll :: d -> m [Versioned k v]
+    getVersion :: VersionedID k -> d -> m (GetResult (Versioned k v))
+    getVersions :: k -> d -> m (GetResult [Versioned k v])
+    getAll :: d -> m (GetResult [Versioned k v])
     post :: v -> d -> m k
     update :: u -> d -> m (UpdateResult k)
     dbResourceName :: d -> Maybe k -> String
     dbResourceName _ x = resourceName x
+
+data NotFound = NotFound
+data Error e = SpecialError e
+             | Error LT.Text
+type Result e a = Either (Error e) a
+type GetResult a = Result NotFound a
+
+one :: [a] -> GetResult a
+one [x] = Right x
+one [] = Left (SpecialError NotFound)
+one _ = Left (Error "multiple objects found!")
+
+some :: [a] -> GetResult [a]
+some [] = Left (SpecialError NotFound)
+some x = Right x
 
 data VersionedID a = VersionedID
     { thingid :: a

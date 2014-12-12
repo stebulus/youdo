@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings, MultiParamTypeClasses #-}
 module YouDo.DB.PostgreSQL where
-
+import Control.Applicative ((<$>))
 import Database.PostgreSQL.Simple (query, query_, execute, withTransaction,
     Only(..), Connection, Query)
 import YouDo.Types
@@ -12,7 +12,7 @@ instance DB YoudoID YoudoData YoudoUpdate IO PostgresYoudoDB where
               "select id, txnid, assignerid, assigneeid, description, duedate, completed \
               \from youdo where id = ?"
               (Only ydid)
-    getAll (PostgresYoudoDB conn) = query_ conn
+    getAll (PostgresYoudoDB conn) = Right <$> query_ conn
         "select id, assignerid, assigneeid, description, duedate, completed \
         \from youdo"
     post yd (PostgresYoudoDB conn) = do
