@@ -1,5 +1,13 @@
 {-# LANGUAGE OverloadedStrings #-}
-module YouDo.Web.Main where
+{- |
+Module      : YouDo.Web.Main
+Description : Command-line interface for YouDo web server
+Copyright   : (c) Steven Taschuk, 2014
+License     : GPL-3
+
+Command-line interface for the web server defined in "YouDo.Web".
+-}
+module YouDo.Web.Main (main, mainOpts, YDOptions(..), DBOption(..)) where
 
 import Control.Applicative
 import Control.Concurrent.MVar (newMVar)
@@ -18,10 +26,14 @@ import YouDo.DB.Mock
 import YouDo.DB.PostgreSQL
 import YouDo.Web (app)
 
-data DBOption = InMemory | Postgres String
-data YDOptions = YDOptions { port :: Int
-                           , dbopt :: DBOption
+-- | The kind of database to connect to.
+data DBOption = InMemory            -- ^A transient in-memory database; see "YouDo.DB.Mock"
+              | Postgres String     -- ^A PostgreSQL database; see "YouDo.DB.PostgreSQL"
+
+data YDOptions = YDOptions { port :: Int        -- ^What port to listen to.
+                           , dbopt :: DBOption  -- ^What kind of database to connect to.
                            }
+
 options :: Parser YDOptions
 options = YDOptions
     <$> option auto (long "port"
