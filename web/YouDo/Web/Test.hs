@@ -256,7 +256,7 @@ serverTest testName f = Test $ TestInstance
         db <- empty
         mv <- newMVar ()
         waiApp <- scottyApp $ app (fromJust $ parseURI "http://example.com")
-                                  (MockYoudoDB db) (MockUserDB db) db mv
+                                  (MockYoudoDB db) (MockUserDB db) mv
         result <- runEitherT $ f $ request waiApp
         return $ Finished $ case result of
             Left msg -> Fail msg

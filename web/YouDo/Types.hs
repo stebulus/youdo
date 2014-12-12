@@ -21,13 +21,11 @@ class (Monad m, NamedResource k)
     get :: k -> d -> m [Versioned k v]
     getVersion :: VersionedID k -> d -> m [Versioned k v]
     getVersions :: k -> d -> m [Versioned k v]
+    getAll :: d -> m [Versioned k v]
     post :: v -> d -> m k
     update :: u -> d -> m (UpdateResult k)
     dbResourceName :: d -> Maybe k -> String
     dbResourceName _ x = resourceName x
-
-class ExtraDB a where
-    getYoudos :: a -> IO [Youdo]
 
 data VersionedID a = VersionedID
     { thingid :: a
@@ -151,6 +149,8 @@ instance Parsable UserID where
 
 data UserData = UserData { name :: String }
     deriving (Show, Eq)
+instance (IsString k, Eq k) => Default (Holex k ParamValue UserData) where
+    def = UserData <$> parse "name"
 
 data UserUpdate = UserUpdate { oldUserVersion :: VersionedID UserID
                              , newName :: Maybe String

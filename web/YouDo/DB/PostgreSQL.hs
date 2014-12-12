@@ -12,6 +12,9 @@ instance DB YoudoID YoudoData YoudoUpdate IO PostgresYoudoDB where
               "select id, txnid, assignerid, assigneeid, description, duedate, completed \
               \from youdo where id = ?"
               (Only ydid)
+    getAll (PostgresYoudoDB conn) = query_ conn
+        "select id, assignerid, assigneeid, description, duedate, completed \
+        \from youdo"
     post yd (PostgresYoudoDB conn) = do
         withTransaction conn $ do
             _ <- execute conn
@@ -32,9 +35,3 @@ instance DB UserID UserData UserUpdate IO PostgresUserDB where
         query conn
               "select id, name from yd_user where id = ?"
               (Only uid)
-
-newtype PostgresDB = PostgresDB Connection
-instance ExtraDB PostgresDB where
-    getYoudos (PostgresDB conn) = query_ conn
-        "select id, assignerid, assigneeid, description, duedate, completed \
-        \from youdo"

@@ -83,26 +83,24 @@ mainOpts YDOptions { port = p, db = dbopt } = do
     case dbopt of
         InMemory -> do
             db <- empty
-            scotty $ app baseuri (MockYoudoDB db) (MockUserDB db) db mv
+            scotty $ app baseuri (MockYoudoDB db) (MockUserDB db) mv
         Postgres connstr -> do
             bracket (connectPostgreSQL (pack connstr))
                     (\conn -> close conn)
                     (\conn -> scotty $ app baseuri
                                            (PostgresYoudoDB conn)
                                            (PostgresUserDB conn)
-                                           (PostgresDB conn)
                                            mv)
 
 app :: ( DB YoudoID YoudoData YoudoUpdate IO ydb
        , DB UserID UserData UserUpdate IO udb
-       , ExtraDB d
-       ) => URI -> ydb -> udb -> d -> MVar () -> ScottyM ()
-app baseuri ydb udb db mv = do
+       ) => URI -> ydb -> udb -> MVar () -> ScottyM ()
+app baseuri ydb udb mv = do
     let apibase = "./0/" `relative` baseuri
     resource "/0/youdos"
-        [(GET, dbAction' mv db
+        [(GET, dbAction mv ydb
             (Const ())
-            (const getYoudos)
+            (const getAll)
             (\yds -> do status ok200
                         text $ LT.pack $ show yds)
         ),(POST, dbAction mv ydb
@@ -189,18 +187,6 @@ dbAction :: (DB k v u IO d)
     -> (c -> ActionM ())
     -> ActionM ()
 dbAction mv db expr work resp =
-    statusErrors $ do
-        a <- failWith badRequest400 $ fromRequest $ expr
-        c <- liftIO $ withMVar mv $ \_ -> work a db
-        failWith internalServerError500 $ resp c
-dbAction' :: (ExtraDB d)
-    => MVar ()
-    -> d
-    -> RequestParser a
-    -> (a -> d -> IO c)
-    -> (c -> ActionM ())
-    -> ActionM ()
-dbAction' mv db expr work resp =
     statusErrors $ do
         a <- failWith badRequest400 $ fromRequest $ expr
         c <- liftIO $ withMVar mv $ \_ -> work a db

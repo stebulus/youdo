@@ -4,6 +4,8 @@ module YouDo.DB.Mock where
 import Prelude hiding (id)
 import Control.Applicative ((<$>))
 import Control.Concurrent.MVar (MVar, withMVar, modifyMVar, newMVar)
+import Data.Function (on)
+import Data.List (nubBy)
 import Data.Maybe (listToMaybe)
 import YouDo.Types
 
@@ -22,6 +24,8 @@ instance DB YoudoID YoudoData YoudoUpdate IO MockYoudoDB where
         return $ [yd | yd<-youdos db', thingid (version yd) == ydid]
     getVersion ydver db = withMVar (mvar $ ymock db) $ \db' ->
         return $ [yd | yd<-youdos db', version yd == ydver]
+    getAll db = withMVar (mvar $ ymock db) $ \db' ->
+        return $ nubBy ((==) `on` thingid . version) $ youdos db'
     post yd db = modifyMVar (mvar $ ymock db) $ \db' -> do
         let newid = YoudoID $
                 1 + case thingid . version <$> (listToMaybe $ youdos db') of
@@ -93,10 +97,6 @@ instance DB UserID UserData UserUpdate IO MockUserDB where
                                                 }
                                            , Success $ version newu
                                            )
-
-instance ExtraDB MockDB where
-    getYoudos db = withMVar (mvar db) $ \db' ->
-        return $ youdos db'
 
 class Updater u d where
     doUpdate :: u -> d -> d
