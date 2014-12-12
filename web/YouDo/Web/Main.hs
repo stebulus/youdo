@@ -2,21 +2,17 @@
 module YouDo.Web.Main where
 
 import Control.Applicative
-import Control.Concurrent.MVar (MVar, newMVar, withMVar)
+import Control.Concurrent.MVar (newMVar)
 import Control.Exception (bracket)
 import Data.ByteString.Char8 (pack)
 import Data.Default
 import Data.Monoid ((<>))
 import Database.PostgreSQL.Simple (close, connectPostgreSQL)
-import Network.URI (URI(..), URIAuth(..), relativeTo, nullURI)
+import Network.URI (URI(..), URIAuth(..), nullURI)
 import Network.Wai.Handler.Warp (setPort, setHost, defaultSettings)
 import Options.Applicative (option, strOption, flag', auto, long, short,
     metavar, help, execParser, Parser, fullDesc, helper, info, header)
-import Web.Scotty (scottyOpts, ScottyM, matchAny, status, header,
-    addroute, RoutePattern, params, text, json, Options(..), setHeader,
-    ActionM, raise, Parsable(..), body)
-import Web.Scotty.Internal.Types (ActionT(..), ActionError(..),
-    ScottyError(..))
+import Web.Scotty (scottyOpts, Options(..))
 
 import YouDo.DB.Mock
 import YouDo.DB.PostgreSQL
@@ -45,7 +41,7 @@ options = YDOptions
 main :: IO ()
 main = execParser opts >>= mainOpts
     where opts = info (helper <*> options)
-            (fullDesc <> Options.Applicative.header "ydserver - a YouDo web server")
+            (fullDesc <> header "ydserver - a YouDo web server")
 
 mainOpts :: YDOptions -> IO ()
 mainOpts opts = do
