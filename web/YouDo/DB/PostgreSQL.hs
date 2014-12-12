@@ -1,8 +1,11 @@
 {-# LANGUAGE OverloadedStrings, MultiParamTypeClasses #-}
 module YouDo.DB.PostgreSQL where
+
 import Control.Applicative ((<$>))
 import Database.PostgreSQL.Simple (query, query_, execute, withTransaction,
     Only(..), Connection, Query)
+
+import YouDo.DB
 import YouDo.Types
 
 newtype PostgresYoudoDB = PostgresYoudoDB Connection

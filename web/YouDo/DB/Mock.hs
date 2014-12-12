@@ -5,6 +5,8 @@ import Control.Concurrent.MVar (MVar, withMVar, modifyMVar, newMVar)
 import Data.Function (on)
 import Data.List (nubBy)
 import Data.Maybe (listToMaybe, fromMaybe)
+
+import YouDo.DB
 import YouDo.Types
 
 data BareMockDB = BareMockDB
