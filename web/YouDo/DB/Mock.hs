@@ -5,7 +5,7 @@ import Prelude hiding (id)
 import Control.Applicative ((<$>))
 import Control.Concurrent.MVar (MVar, withMVar, modifyMVar, newMVar)
 import Data.Maybe (listToMaybe)
-import YouDo.DB
+import YouDo.Types
 
 data BareMockDB = BareMockDB
     { youdos :: [Youdo]

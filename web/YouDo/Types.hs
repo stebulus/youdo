@@ -1,7 +1,6 @@
-{-# LANGUAGE OverloadedStrings, FlexibleInstances, FlexibleContexts,
-    TypeSynonymInstances, MultiParamTypeClasses, FunctionalDependencies #-}
-module YouDo.DB where
-import Prelude hiding (id)
+{-# LANGUAGE OverloadedStrings, FlexibleInstances, MultiParamTypeClasses,
+    FunctionalDependencies #-}
+module YouDo.Types where
 import Control.Applicative ((<$>), (<*>))
 import Data.Aeson (ToJSON(..), FromJSON(..), (.=), object, Value(..))
 import Data.Aeson.Types (parseEither)
@@ -122,7 +121,6 @@ parse k = tryApply
 data ParamValue = ScottyParam LT.Text
                 | JSONField Value
     deriving (Eq, Show)
-
 
 type User = Versioned UserID UserData
 instance NamedResource UserID where

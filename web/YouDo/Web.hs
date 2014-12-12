@@ -31,11 +31,11 @@ import Web.Scotty (scottyOpts, ScottyM, matchAny, status, header,
     ActionM, raise, Parsable(..), body)
 import Web.Scotty.Internal.Types (ActionT(..), ActionError(..),
     ScottyError(..))
-import YouDo.DB
 import YouDo.DB.Mock
 import YouDo.DB.PostgreSQL
 import YouDo.Holex (runHolex, hole, optional, defaultTo, Holex(..),
     HolexError(..), tryApply)
+import YouDo.Types
 
 data DBOption = InMemory | Postgres String
 data YDOptions = YDOptions { port :: Int

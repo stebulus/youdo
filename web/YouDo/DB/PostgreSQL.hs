@@ -3,7 +3,7 @@ module YouDo.DB.PostgreSQL where
 
 import Database.PostgreSQL.Simple (query, query_, execute, withTransaction,
     Only(..), Connection, Query)
-import YouDo.DB
+import YouDo.Types
 
 newtype PostgresYoudoDB = PostgresYoudoDB Connection
 instance DB YoudoID YoudoData YoudoUpdate IO PostgresYoudoDB where

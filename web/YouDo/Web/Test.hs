@@ -26,10 +26,10 @@ import Network.Wai (Application, responseToStream, RequestBodyLength(..), reques
     defaultRequest)
 import Network.Wai.Internal (Request(..), ResponseReceived(..))
 import Web.Scotty (scottyApp)
-import YouDo.DB (parse, ParamValue(..))
 import YouDo.DB.Mock
 import YouDo.Holex
 import YouDo.Test (plainTest)
+import YouDo.Types hiding (get, post)
 import YouDo.Web (app)
 
 tests :: IO [Test]
@@ -261,7 +261,7 @@ serverTest testName f = Test $ TestInstance
         return $ Finished $ case result of
             Left msg -> Fail msg
             Right _ -> Pass
-    , name = testName
+    , Distribution.TestSuite.name = testName
     , tags = []
     , options = []
     , setOption = \_ _ -> Left "no options supported"
