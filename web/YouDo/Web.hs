@@ -97,6 +97,7 @@ app :: ( DB YoudoID YoudoData IO ydb
        , YoudoDB d
        ) => URI -> ydb -> udb -> d -> MVar () -> ScottyM ()
 app baseuri ydb udb db mv = do
+    let apibase = "./0/" `relative` baseuri
     resource "/0/youdos"
         [(GET, dbAction' mv db
             (Const ())
@@ -122,7 +123,7 @@ app baseuri ydb udb db mv = do
             get
             (\yds -> case yds of
                 [yd] -> do status ok200
-                           json (WebYoudo baseuri yd)
+                           json (WebVersioned apibase yd)
                 [] -> status notFound404
                 _ -> raise "multiple youdos found!")
         )]
@@ -131,7 +132,7 @@ app baseuri ydb udb db mv = do
             (parse "id")
             getVersions
             (\ydvers -> do status ok200
-                           json $ map (WebYoudo baseuri) ydvers)
+                           json $ map (WebVersioned apibase) ydvers)
         )]
     resource "/0/youdos/:id/:txnid"
         [(GET, dbAction mv ydb
@@ -139,7 +140,7 @@ app baseuri ydb udb db mv = do
             getVersion
             (\youdos -> case youdos of
                 [yd] -> do status ok200
-                           json (WebYoudo baseuri yd)
+                           json (WebVersioned apibase yd)
                 [] -> do status notFound404
                 _ -> raise "multiple youdos found!")
         ),(POST, dbAction' mv db
@@ -171,7 +172,7 @@ app baseuri ydb udb db mv = do
             get
             (\users -> case users of
                 [u] -> do status ok200
-                          json (WebYoudoUser baseuri u)
+                          json (WebVersioned apibase u)
                 [] -> status notFound404
                 _ -> do status internalServerError500
                         text "multiple users found!")
@@ -182,7 +183,7 @@ app baseuri ydb udb db mv = do
             getVersion
             (\users -> case users of
                 [u] -> do status ok200
-                          json (WebYoudoUser baseuri u)
+                          json (WebVersioned apibase u)
                 [] -> status notFound404
                 _ -> do status internalServerError500
                         text "multiple users found!")
@@ -268,32 +269,20 @@ instance ScottyError ErrorWithStatus where
     stringError msg = ErrorWithStatus internalServerError500 (LT.pack msg)
     showError (ErrorWithStatus _ msg) = msg
 
-data WebYoudo = WebYoudo URI Youdo
-instance ToJSON WebYoudo where
-    toJSON (WebYoudo baseuri yd) = Object augmentedmap
+data WebVersioned k v = WebVersioned URI (Versioned k v)
+instance (Show k, NamedResource v, ToJSON v) => ToJSON (WebVersioned k v) where
+    toJSON (WebVersioned baseuri ver) = Object augmentedmap
         where augmentedmap = foldl' (flip (uncurry M.insert)) origmap
-                    [ "url" .= youdoURL baseuri (thingid (version yd))
-                    , "thisVersion" .= youdoVersionURL baseuri (version yd)
+                    [ "url" .= show (objurl `relative` baseuri)
+                    , "thisVersion" .= show (verurl `relative` baseuri)
                     ]
-              origmap = case toJSON yd of
+              verurl = objurl ++ "/" ++ (show verid)
+              objurl = resourceName (Just (thing ver)) ++ "/" ++ (show vid)
+              vid = thingid $ version ver
+              verid = txnid $ version ver
+              origmap = case toJSON (thing ver) of
                             Object m -> m
-                            _ -> error "Youdo didn't become a JSON object"
-
-data WebYoudoVersionID = WebYoudoVersionID URI (VersionedID YoudoID)
-instance ToJSON WebYoudoVersionID where
-    toJSON (WebYoudoVersionID baseuri ydver) =
-        A.String $ ST.pack $ youdoVersionURL baseuri ydver
-
-data WebYoudoUser = WebYoudoUser URI User
-instance ToJSON WebYoudoUser where
-    toJSON (WebYoudoUser baseuri yduser) = Object augmentedmap
-        where augmentedmap = foldl' (flip (uncurry M.insert)) origmap
-                    [ "url" .= youdoUserURL baseuri (thingid (version yduser))
-                    , "thisVersion" .= youdoUserVersionURL baseuri (version yduser)
-                    ]
-              origmap = case toJSON yduser of
-                            Object m -> m
-                            _ -> error "YoudoUser didn't become a JSON object"
+                            _ -> error "data did not encode as JSON object"
 
 youdoURL :: URI -> YoudoID -> String
 youdoURL baseuri (YoudoID n) = show $
@@ -304,17 +293,6 @@ youdoVersionURL :: URI -> VersionedID YoudoID -> String
 youdoVersionURL baseuri (VersionedID (YoudoID yd) (TransactionID txn))
     = show $
         nullURI { uriPath = "0/youdos/" ++ (show yd) ++ "/" ++ (show txn) }
-        `relativeTo` baseuri
-
-youdoUserURL :: URI -> UserID -> String
-youdoUserURL baseuri (UserID n) = show $
-    nullURI { uriPath = "0/users/" ++ (show n) }
-    `relativeTo` baseuri
-
-youdoUserVersionURL :: URI -> VersionedID UserID -> String
-youdoUserVersionURL baseuri (VersionedID (UserID u) (TransactionID txn))
-    = show $
-        nullURI { uriPath = "0/users/" ++ (show u) ++ "/" ++ (show txn) }
         `relativeTo` baseuri
 
 fromRequest :: Holex LT.Text ParamValue a -> ActionM a
@@ -389,3 +367,6 @@ showHolexError (CustomError e) = LT.pack (show e)
 showHolexErrors :: (Show k) => [HolexError k v] -> LT.Text
 showHolexErrors es = LT.concat [ LT.concat [ showHolexError e, "\r\n" ]
                                | e<-es ]
+
+relative :: String -> URI -> URI
+relative s u = nullURI { uriPath = s } `relativeTo` u

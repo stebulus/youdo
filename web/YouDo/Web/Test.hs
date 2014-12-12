@@ -47,7 +47,6 @@ tests = return
         lookup (mk "Content-Type") headers'
             ~= Just "application/json; charset=utf-8"
         obj <- hoistEither (eitherDecode bod :: Either String Object)
-        M.lookup "id" obj ~= Just (Number 1)
         M.lookup "assignerid" obj ~= Just (Number 0)
         M.lookup "assigneeid" obj ~= Just (Number 0)
         M.lookup "description" obj ~= Just (String "blah")
@@ -73,7 +72,6 @@ tests = return
         lookup (mk "Content-Type") headers'
             ~= Just "application/json; charset=utf-8"
         obj <- hoistEither (eitherDecode bod :: Either String Object)
-        M.lookup "id" obj ~= Just (Number 1)
         M.lookup "assignerid" obj ~= Just (Number 0)
         M.lookup "assigneeid" obj ~= Just (Number 0)
         M.lookup "description" obj ~= Just (String "blah")
@@ -99,7 +97,6 @@ tests = return
         lookup (mk "Content-Type") headers'
             ~= Just "application/json; charset=utf-8"
         obj <- hoistEither (eitherDecode bod :: Either String Object)
-        M.lookup "id" obj ~= Just (Number 1)
         M.lookup "assignerid" obj ~= Just (Number 0)
         M.lookup "assigneeid" obj ~= Just (Number 0)
         M.lookup "description" obj ~= Just (String "blah")
@@ -124,7 +121,6 @@ tests = return
         lookup (mk "Content-Type") headers'
             ~= Just "application/json; charset=utf-8"
         obj <- hoistEither (eitherDecode bod :: Either String Object)
-        M.lookup "id" obj ~= Just (Number 1)
         M.lookup "assignerid" obj ~= Just (Number 0)
         M.lookup "assigneeid" obj ~= Just (Number 0)
         M.lookup "description" obj ~= Just (String "blah")
@@ -196,7 +192,6 @@ tests = return
         (stat5, _, bod5) <- liftIO $ req $ get $ T.unpack urltext5
         stat5 ~= ok200
         obj5 <- hoistEither (eitherDecode bod5 :: Either String Object)
-        M.lookup "id" obj5 ~= Just (Number 1)
         M.lookup "assignerid" obj5 ~= Just (Number 0)
         M.lookup "assigneeid" obj5 ~= Just (Number 0)
         M.lookup "description" obj5 ~= Just (String "blah")

@@ -33,7 +33,12 @@ data Versioned a b = Versioned
     , thing :: b
     } deriving (Show, Eq)
 
-newtype TransactionID = TransactionID Int deriving (Show, Eq)
+class NamedResource v where
+    resourceName :: Maybe v -> String
+
+newtype TransactionID = TransactionID Int deriving (Eq)
+instance Show TransactionID where
+    show (TransactionID n) = show n
 instance FromField TransactionID where
     fromField fld = (fmap.fmap) TransactionID $ fromField fld
 instance Parsable TransactionID where
@@ -42,20 +47,23 @@ instance FromJSON TransactionID where
     parseJSON x = TransactionID <$> parseJSON x
 
 type Youdo = Versioned YoudoID YoudoData
+instance NamedResource YoudoData where
+    resourceName = const "youdos"
 instance FromRow Youdo where
     fromRow = Versioned <$> (VersionedID <$> field <*> field)
         <*> (YoudoData <$> field <*> field <*> field <*> field <*> field)
-instance ToJSON Youdo where
+instance ToJSON YoudoData where
     toJSON yd = object
-        [ "id" .= thingid (version yd)
-        , "assignerid" .= assignerid (thing yd)
-        , "assigneeid" .= assigneeid (thing yd)
-        , "description" .= description (thing yd)
-        , "duedate" .= duedate (thing yd)
-        , "completed" .= completed (thing yd)
+        [ "assignerid" .= assignerid yd
+        , "assigneeid" .= assigneeid yd
+        , "description" .= description yd
+        , "duedate" .= duedate yd
+        , "completed" .= completed yd
         ]
 
-newtype YoudoID = YoudoID Int deriving (Show, Eq)
+newtype YoudoID = YoudoID Int deriving (Eq)
+instance Show YoudoID where
+    show (YoudoID n) = show n
 instance FromField YoudoID where
     fromField fld = (fmap.fmap) YoudoID $ fromField fld
 instance ToField YoudoID where
@@ -83,14 +91,13 @@ data YoudoUpdate = YoudoUpdate { oldVersion :: VersionedID YoudoID
                                } deriving (Show)
 
 type User = Versioned UserID UserData
+instance NamedResource UserData where
+    resourceName = const "users"
 instance FromRow User where
     fromRow = Versioned <$> (VersionedID <$> field <*> field)
                         <*> (UserData <$> field)
-instance ToJSON User where
-    toJSON yduser = object
-        [ "id" .= thingid (version yduser)
-        , "name" .= name (thing yduser)
-        ]
+instance ToJSON UserData where
+    toJSON yduser = object [ "name" .= name yduser ]
 
 newtype UserID = UserID Int deriving (Show, Eq)
 instance FromField UserID where
