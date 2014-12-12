@@ -87,6 +87,12 @@ data YoudoData = YoudoData { assignerid :: UserID
                            , duedate :: DueDate
                            , completed :: Bool
                            } deriving (Show)
+instance (IsString k, Eq k) => Default (Holex k ParamValue YoudoData) where
+    def = YoudoData <$> parse "assignerid"
+                    <*> parse "assigneeid"
+                    <*> defaultTo "" (parse "description")
+                    <*> defaultTo (DueDate Nothing) (parse "duedate")
+                    <*> defaultTo False (parse "completed")
 
 data YoudoUpdate = YoudoUpdate { oldVersion :: VersionedID YoudoID
                                , newAssignerid :: Maybe UserID

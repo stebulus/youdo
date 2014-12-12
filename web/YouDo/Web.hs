@@ -106,11 +106,7 @@ app baseuri ydb udb db mv = do
             (\yds -> do status ok200
                         text $ LT.pack $ show yds)
         ),(POST, dbAction mv ydb
-            (YoudoData <$> parse "assignerid"
-                       <*> parse "assigneeid"
-                       <*> defaultTo "" (parse "description")
-                       <*> defaultTo (DueDate Nothing) (parse "duedate")
-                       <*> defaultTo False (parse "completed"))
+            def
             post
             (\ydid -> do
                 let url = LT.pack $ show $ resourceURL apibase ydid
