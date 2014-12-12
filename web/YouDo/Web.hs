@@ -118,7 +118,7 @@ app baseuri ydb udb db mv = do
                 setHeader "Location" url
                 text $ LT.concat ["created at ", url, "\r\n"])
         )]
-    genericResource apibase mv ydb
+    webdb apibase mv ydb
     resource "/0/youdos/:id/:txnid"
         [(GET, dbAction mv ydb
             (VersionedID <$> parse "id" <*> parse "txnid")
@@ -151,7 +151,7 @@ app baseuri ydb udb db mv = do
                           setHeader "Location" url
                           text $ LT.concat ["created at ", url, "\r\n"])
         )]
-    genericResource apibase mv udb
+    webdb apibase mv udb
     resource "/0/users/:id/:txnid"
         [(GET, dbAction mv udb
             (VersionedID <$> parse "id" <*> parse "txnid")
@@ -164,11 +164,11 @@ app baseuri ydb udb db mv = do
                         text "multiple users found!")
         )]
 
-genericResource :: ( NamedResource k, DB k v IO d
-                   , Parsable k, A.FromJSON k
-                   , Show k, ToJSON v
-                   ) => URI -> MVar () -> d -> ScottyM()
-genericResource baseuri mv db =
+webdb :: ( NamedResource k, DB k v IO d
+         , Parsable k, A.FromJSON k
+         , Show k, ToJSON v
+         ) => URI -> MVar () -> d -> ScottyM()
+webdb baseuri mv db =
     let resourcebase = (dbResourceName db Nothing ++ "/") `relative` baseuri
         s = uriPath $ ":id" `relative` resourcebase
     in do resource (fromString s)
