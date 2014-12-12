@@ -83,14 +83,37 @@ webfunc u f =
             r <- liftIO $ f a
             report u r
 
+{-
+    Reporting values to the web client.
+-}
+
+-- A value that can be reported.
 class WebResult r where
     report :: URI -> r -> ActionM ()
+
+-- Reporting versioned database objects as JSON.
 instance (NamedResource k, Show k, ToJSON v)
          => WebResult (Versioned k v) where
     report baseuri x = json $ WebVersioned baseuri x
 instance (NamedResource k, Show k, ToJSON v)
          => WebResult [Versioned k v] where
     report baseuri xs = json $ map (WebVersioned baseuri) xs
+data WebVersioned k v = WebVersioned URI (Versioned k v)
+instance (Show k, NamedResource k, ToJSON v) => ToJSON (WebVersioned k v) where
+    toJSON (WebVersioned baseuri ver) = Object augmentedmap
+        where augmentedmap = foldl' (flip (uncurry M.insert)) origmap
+                    [ "url" .= show (objurl `relative` baseuri)
+                    , "thisVersion" .= show (verurl `relative` baseuri)
+                    ]
+              verurl = objurl ++ "/" ++ (show verid)
+              objurl = resourceName (Just $ thingid $ version ver) ++ "/" ++ (show vid)
+              vid = thingid $ version ver
+              verid = txnid $ version ver
+              origmap = case toJSON (thing ver) of
+                            Object m -> m
+                            _ -> error "data did not encode as JSON object"
+
+-- Reporting results from methods of DB.
 instance (WebResult a) => WebResult (GetResult a) where
     report baseuri (Right (Right a)) =
         do status ok200
@@ -175,21 +198,6 @@ data ErrorWithStatus = ErrorWithStatus Status LT.Text
 instance ScottyError ErrorWithStatus where
     stringError msg = ErrorWithStatus internalServerError500 (LT.pack msg)
     showError (ErrorWithStatus _ msg) = msg
-
-data WebVersioned k v = WebVersioned URI (Versioned k v)
-instance (Show k, NamedResource k, ToJSON v) => ToJSON (WebVersioned k v) where
-    toJSON (WebVersioned baseuri ver) = Object augmentedmap
-        where augmentedmap = foldl' (flip (uncurry M.insert)) origmap
-                    [ "url" .= show (objurl `relative` baseuri)
-                    , "thisVersion" .= show (verurl `relative` baseuri)
-                    ]
-              verurl = objurl ++ "/" ++ (show verid)
-              objurl = resourceName (Just $ thingid $ version ver) ++ "/" ++ (show vid)
-              vid = thingid $ version ver
-              verid = txnid $ version ver
-              origmap = case toJSON (thing ver) of
-                            Object m -> m
-                            _ -> error "data did not encode as JSON object"
 
 resourceRelativeURLString :: (Show k, NamedResource k) => k -> String
 resourceRelativeURLString k = "./" ++ resourceName (Just k) ++ "/" ++ show k
