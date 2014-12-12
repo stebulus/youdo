@@ -270,14 +270,14 @@ instance ScottyError ErrorWithStatus where
     showError (ErrorWithStatus _ msg) = msg
 
 data WebVersioned k v = WebVersioned URI (Versioned k v)
-instance (Show k, NamedResource v, ToJSON v) => ToJSON (WebVersioned k v) where
+instance (Show k, NamedResource k, ToJSON v) => ToJSON (WebVersioned k v) where
     toJSON (WebVersioned baseuri ver) = Object augmentedmap
         where augmentedmap = foldl' (flip (uncurry M.insert)) origmap
                     [ "url" .= show (objurl `relative` baseuri)
                     , "thisVersion" .= show (verurl `relative` baseuri)
                     ]
               verurl = objurl ++ "/" ++ (show verid)
-              objurl = resourceName (Just (thing ver)) ++ "/" ++ (show vid)
+              objurl = resourceName (Just $ thingid $ version ver) ++ "/" ++ (show vid)
               vid = thingid $ version ver
               verid = txnid $ version ver
               origmap = case toJSON (thing ver) of

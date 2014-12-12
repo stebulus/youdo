@@ -33,8 +33,8 @@ data Versioned a b = Versioned
     , thing :: b
     } deriving (Show, Eq)
 
-class NamedResource v where
-    resourceName :: Maybe v -> String
+class NamedResource a where
+    resourceName :: Maybe a -> String
 
 newtype TransactionID = TransactionID Int deriving (Eq)
 instance Show TransactionID where
@@ -47,7 +47,7 @@ instance FromJSON TransactionID where
     parseJSON x = TransactionID <$> parseJSON x
 
 type Youdo = Versioned YoudoID YoudoData
-instance NamedResource YoudoData where
+instance NamedResource YoudoID where
     resourceName = const "youdos"
 instance FromRow Youdo where
     fromRow = Versioned <$> (VersionedID <$> field <*> field)
@@ -91,7 +91,7 @@ data YoudoUpdate = YoudoUpdate { oldVersion :: VersionedID YoudoID
                                } deriving (Show)
 
 type User = Versioned UserID UserData
-instance NamedResource UserData where
+instance NamedResource UserID where
     resourceName = const "users"
 instance FromRow User where
     fromRow = Versioned <$> (VersionedID <$> field <*> field)
