@@ -12,7 +12,7 @@ import Data.Aeson.Types (parseEither)
 import qualified Data.Aeson as A
 import Data.ByteString.Char8 (pack)
 import qualified Data.HashMap.Strict as M
-import Data.Default (def)
+import Data.Default
 import Data.List (foldl', intercalate)
 import Data.Monoid ((<>))
 import Data.String (IsString(..))
@@ -93,8 +93,8 @@ mainOpts YDOptions { port = p, db = dbopt } = do
                                            (PostgresDB conn)
                                            mv)
 
-app :: ( DB YoudoID YoudoData IO ydb
-       , DB UserID UserData IO udb
+app :: ( DB YoudoID YoudoData YoudoUpdate IO ydb
+       , DB UserID UserData UserUpdate IO udb
        , YoudoDB d
        ) => URI -> ydb -> udb -> d -> MVar () -> ScottyM ()
 app baseuri ydb udb db mv = do
@@ -119,54 +119,12 @@ app baseuri ydb udb db mv = do
                 text $ LT.concat ["created at ", url, "\r\n"])
         )]
     webdb apibase mv ydb
-    resource "/0/youdos/:id/:txnid"
-        [(GET, dbAction mv ydb
-            (VersionedID <$> parse "id" <*> parse "txnid")
-            getVersion
-            (\youdos -> case youdos of
-                [yd] -> do status ok200
-                           json (WebVersioned apibase yd)
-                [] -> do status notFound404
-                _ -> raise "multiple youdos found!")
-        ),(POST, dbAction' mv db
-            (YoudoUpdate <$> (VersionedID <$> parse "id"
-                                          <*> parse "txnid")
-                         <*> optional (parse "assignerid")
-                         <*> optional (parse "assigneeid")
-                         <*> optional (parse "description")
-                         <*> optional (parse "duedate")
-                         <*> optional (parse "completed"))
-            updateYoudo
-            (\result -> case result of
-                OldVersion newver ->
-                    do status badRequest400
-                       text $ LT.concat
-                            [ "cannot modify old version; modify "
-                            , LT.pack $ show $ resourceVersionURL apibase newver
-                            ]
-                Failure err -> raise $ LT.pack err
-                Success ydver ->
-                    let url = LT.pack $ show $ resourceVersionURL apibase ydver
-                    in do status created201
-                          setHeader "Location" url
-                          text $ LT.concat ["created at ", url, "\r\n"])
-        )]
     webdb apibase mv udb
-    resource "/0/users/:id/:txnid"
-        [(GET, dbAction mv udb
-            (VersionedID <$> parse "id" <*> parse "txnid")
-            getVersion
-            (\users -> case users of
-                [u] -> do status ok200
-                          json (WebVersioned apibase u)
-                [] -> status notFound404
-                _ -> do status internalServerError500
-                        text "multiple users found!")
-        )]
 
-webdb :: ( NamedResource k, DB k v IO d
+webdb :: ( NamedResource k, DB k v u IO d
          , Parsable k, A.FromJSON k
          , Show k, ToJSON v
+         , Default (RequestParser u)
          ) => URI -> MVar () -> d -> ScottyM()
 webdb baseuri mv db =
     let resourcebase = (dbResourceName db Nothing ++ "/") `relative` baseuri
@@ -189,6 +147,32 @@ webdb baseuri mv db =
                 (\xs -> do status ok200
                            json $ map (WebVersioned baseuri) xs)
             )]
+          resource (fromString $ s ++ "/:txnid")
+            [(GET, dbAction mv db
+                (VersionedID <$> parse "id" <*> parse "txnid")
+                getVersion
+                (\xs -> case xs of
+                    [x] -> do status ok200
+                              json (WebVersioned baseuri x)
+                    [] -> do status notFound404
+                    _ -> raise "multiple objects found!")
+            ),(POST, dbAction mv db
+                def
+                update
+                (\result -> case result of
+                    OldVersion newver ->
+                        do status badRequest400
+                           text $ LT.concat
+                                [ "cannot modify old version; modify "
+                                , LT.pack $ show $ resourceVersionURL baseuri newver
+                                ]
+                    Failure err -> raise $ LT.pack err
+                    Success ydver ->
+                        let url = LT.pack $ show $ resourceVersionURL baseuri ydver
+                        in do status created201
+                              setHeader "Location" url
+                              text $ LT.concat ["created at ", url, "\r\n"])
+            )]
 
 resource :: RoutePattern -> [(StdMethod, ActionM ())] -> ScottyM ()
 resource route acts =
@@ -201,7 +185,7 @@ resource route acts =
 
 type RequestParser = Holex LT.Text ParamValue
 
-dbAction :: (DB k v IO d)
+dbAction :: (DB k v u IO d)
     => MVar ()
     -> d
     -> RequestParser a
@@ -329,24 +313,6 @@ requestData = do
                     Nothing -> raise $ LT.concat ["Incomprehensible Content-Type: ", hdr]
                     _ -> raise $ LT.concat ["Don't know how to handle Content-Type: ", hdr]
     return $ paramdata ++ bodydata
-
-parse :: (Eq k, Parsable a, A.FromJSON a) => k -> Holex k ParamValue a
-parse k = tryApply
-    (Const (\x ->
-        case x of
-            ScottyParam txt ->
-                case parseParam txt of
-                    Left err -> Left (ParseError k x err)
-                    Right val -> Right val
-            JSONField jsonval ->
-                case parseEither A.parseJSON jsonval of
-                    Left err -> Left (ParseError k x (LT.pack err))
-                    Right val -> Right val))
-    $ hole k
-
-data ParamValue = ScottyParam LT.Text
-                | JSONField Value
-    deriving (Eq, Show)
 
 showHolexError :: (Show k) => HolexError k v -> LT.Text
 showHolexError (MissingKey k) = LT.concat [ "missing mandatory parameter "

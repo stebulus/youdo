@@ -4,6 +4,9 @@ module YouDo.DB where
 import Prelude hiding (id)
 import Control.Applicative ((<$>), (<*>))
 import Data.Aeson (ToJSON(..), FromJSON(..), (.=), object, Value(..))
+import Data.Aeson.Types (parseEither)
+import Data.Default
+import Data.String (IsString(..))
 import qualified Data.Text.Lazy as LT
 import Data.Time (UTCTime)
 import Data.Time.ISO8601 (parseISO8601)
@@ -11,18 +14,20 @@ import Database.PostgreSQL.Simple.FromField (FromField(..))
 import Database.PostgreSQL.Simple.FromRow (FromRow(..), field)
 import Database.PostgreSQL.Simple.ToField (ToField(..))
 import Web.Scotty (Parsable(..))
+import YouDo.Holex
 
 -- d contains versioned key value pairs (k,v), in monad m
-class (Monad m, NamedResource k) => DB k v m d | d->v, d->k, d->m where
+class (Monad m, NamedResource k)
+      => DB k v u m d | d->v, d->k, d->u, d->m where
     get :: k -> d -> m [Versioned k v]
     getVersion :: VersionedID k -> d -> m [Versioned k v]
     getVersions :: k -> d -> m [Versioned k v]
     post :: v -> d -> m k
+    update :: u -> d -> m (UpdateResult k)
     dbResourceName :: d -> Maybe k -> String
     dbResourceName _ x = resourceName x
 
 class YoudoDB a where
-    updateYoudo :: YoudoUpdate -> a -> IO (UpdateResult YoudoID)
     getYoudos :: a -> IO [Youdo]
 
 data VersionedID a = VersionedID
@@ -91,6 +96,33 @@ data YoudoUpdate = YoudoUpdate { oldVersion :: VersionedID YoudoID
                                , newDuedate :: Maybe DueDate
                                , newCompleted :: Maybe Bool
                                } deriving (Show)
+instance (IsString k, Eq k) => Default (Holex k ParamValue YoudoUpdate) where
+    def = YoudoUpdate <$> (VersionedID <$> parse "id"
+                                       <*> parse "txnid")
+                      <*> optional (parse "assignerid")
+                      <*> optional (parse "assigneeid")
+                      <*> optional (parse "description")
+                      <*> optional (parse "duedate")
+                      <*> optional (parse "completed")
+
+parse :: (Eq k, Parsable a, FromJSON a) => k -> Holex k ParamValue a
+parse k = tryApply
+    (Const (\x ->
+        case x of
+            ScottyParam txt ->
+                case parseParam txt of
+                    Left err -> Left (ParseError k x err)
+                    Right val -> Right val
+            JSONField jsonval ->
+                case parseEither parseJSON jsonval of
+                    Left err -> Left (ParseError k x (LT.pack err))
+                    Right val -> Right val))
+    $ hole k
+
+data ParamValue = ScottyParam LT.Text
+                | JSONField Value
+    deriving (Eq, Show)
+
 
 type User = Versioned UserID UserData
 instance NamedResource UserID where
@@ -115,6 +147,14 @@ instance Parsable UserID where
 
 data UserData = UserData { name :: String }
     deriving (Show, Eq)
+
+data UserUpdate = UserUpdate { oldUserVersion :: VersionedID UserID
+                             , newName :: Maybe String
+                             } deriving (Show, Eq)
+instance (IsString k, Eq k) => Default (Holex k ParamValue UserUpdate) where
+    def = UserUpdate <$> (VersionedID <$> parse "id"
+                                      <*> parse "txnid")
+                     <*> optional (parse "name")
 
 -- This newtype avoids orphan instances.
 newtype DueDate = DueDate { toMaybeTime :: Maybe UTCTime } deriving (Show)

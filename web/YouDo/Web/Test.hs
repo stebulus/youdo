@@ -26,10 +26,11 @@ import Network.Wai (Application, responseToStream, RequestBodyLength(..), reques
     defaultRequest)
 import Network.Wai.Internal (Request(..), ResponseReceived(..))
 import Web.Scotty (scottyApp)
+import YouDo.DB (parse, ParamValue(..))
 import YouDo.DB.Mock
 import YouDo.Holex
 import YouDo.Test (plainTest)
-import YouDo.Web (app, parse, ParamValue(..))
+import YouDo.Web (app)
 
 tests :: IO [Test]
 tests = return

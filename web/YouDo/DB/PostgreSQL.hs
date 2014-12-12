@@ -6,7 +6,7 @@ import Database.PostgreSQL.Simple (query, query_, execute, withTransaction,
 import YouDo.DB
 
 newtype PostgresYoudoDB = PostgresYoudoDB Connection
-instance DB YoudoID YoudoData IO PostgresYoudoDB where
+instance DB YoudoID YoudoData YoudoUpdate IO PostgresYoudoDB where
     get ydid (PostgresYoudoDB conn) =
         query conn
               "select id, txnid, assignerid, assigneeid, description, duedate, completed \
@@ -27,7 +27,7 @@ instance DB YoudoID YoudoData IO PostgresYoudoDB where
                 :: IO [Only YoudoID]
             return $ fromOnly $ head ids
 newtype PostgresUserDB = PostgresUserDB Connection
-instance DB UserID UserData IO PostgresUserDB where
+instance DB UserID UserData UserUpdate IO PostgresUserDB where
     get uid (PostgresUserDB conn) =
         query conn
               "select id, name from yd_user where id = ?"
