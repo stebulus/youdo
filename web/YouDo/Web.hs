@@ -1,6 +1,20 @@
 {-# LANGUAGE OverloadedStrings, RankNTypes, FlexibleContexts,
     FlexibleInstances #-}
-module YouDo.Web where
+{-|
+Module      : YouDo.Web
+Description : Web application for YouDo
+Copyright   : (c) Steven Taschuk, 2014
+License     : GPL-3
+-}
+module YouDo.Web (
+    -- * Web application
+    app, webdb, webfunc, resource,
+    -- * Interpreting requests
+    RequestParser,
+    -- * Reporting results
+    WebResult(..)
+) where
+
 import Codec.MIME.Type (mimeType, MIMEType(Application))
 import Codec.MIME.Parse (parseMIMEType)
 import Control.Applicative
@@ -22,40 +36,57 @@ import Web.Scotty (ScottyM, matchAny, status, header,
     ActionM, raise, Parsable(..), body)
 import Web.Scotty.Internal.Types (ActionT(..), ActionError(..),
     ScottyError(..))
+
 import YouDo.Holex
 import YouDo.Types
 
+-- | The Scotty application.
+-- Consists of 'webdb' interfaces for the given Youdo and User DB instances.
 app :: ( DB YoudoID YoudoData YoudoUpdate IO ydb
        , DB UserID UserData UserUpdate IO udb
-       ) => URI -> ydb -> udb -> MVar () -> ScottyM ()
+       ) => URI         -- ^The base URI of the app (without version number);
+                        -- should end with a slash.
+       -> ydb           -- ^A 'DB' instance for 'Youdo' objects.
+       -> udb           -- ^A 'DB' instance for 'User' objects.
+       -> MVar ()       -- ^All database access is under this MVar.
+       -> ScottyM ()
 app baseuri ydb udb mv = do
     let apibase = "./0/" `relative` baseuri
     webdb apibase mv ydb
     webdb apibase mv udb
 
--- A web interface to an instance of (DB k v u IO d).  The following
--- endpoints are created, relative to the given base URI (which should
--- probably end with a slash):
+-- | A web interface to an instance of 'DB'.
+-- The following endpoints are created, relative to the given base URI
+-- (which should probably end with a slash):
+--
+-- @
 --      GET objs                (list of all current objs)
 --      POST objs               (create new obj)
---      GET objs/:id            (current version of obj)
---      GET objs/:id/versions   (all versions of obj)
---      GET objs/:id/:txnid     (specified version of obj)
---      POST objs/:id/:txnid    (create new version of obj)
--- The name "objs" is obtained from the instance NamedResource k.
--- Requests that return objects return them in JSON format, using the
--- instances Show k and ToJSON v.  The :id parameter is interpreted
--- via the instance Parsable k.  (The FromJSON k instance would only
--- be used if the id were passed in the JSON request body, which it
--- shouldn't be.)  The request body, when needed, is interpreted via
--- default RequestParser for the appropriate type.
+--      GET objs\//id/             (current version of obj)
+--      GET objs\//id/\/versions    (all versions of obj)
+--      GET objs\//id/\//txnid/       (specified version of obj)
+--      POST objs\//id/\//txnid/      (create new version of obj)
+-- @
+--
+-- These correspond directly to the methods of 'DB'.  The name @objs@
+-- is obtained from the instance 'NamedResource' @k@.  Requests that
+-- return objects return them in JSON format, using the instances
+-- 'Show' @k@ and 'ToJSON' @v@.  The @/id/@ parameter is interpreted
+-- via the instance 'Parsable' @k@.  (The 'FromJSON' @k@ instance
+-- would only be used if the id were passed in the JSON request
+-- body, which it shouldn't be.)  The request body, when needed,
+-- is interpreted via default 'RequestParser' for the appropriate type.
 webdb :: ( NamedResource k, DB k v u IO d
          , Parsable k, A.FromJSON k
          , Show k, ToJSON v
          , Default (RequestParser k)
          , Default (RequestParser v)
          , Default (RequestParser u)
-         ) => URI -> MVar () -> d -> ScottyM()
+         ) => URI       -- ^The base URI of the API (including version number);
+                        -- should end with a slash.
+         -> MVar ()     -- ^All database access is under this MVar.
+         -> d           -- ^The database.
+         -> ScottyM()
 webdb baseuri mv db =
     let basepath = nullURI { uriPath = uriPath baseuri }
         rtype = dbResourceName db Nothing
@@ -74,8 +105,16 @@ webdb baseuri mv db =
             , (POST, onweb update)
             ]
 
+-- | A web interface to a function.
+-- A value of type @a@ is obtained from the HTTP request using the
+-- type's default 'RequestParser'; then the given function is used
+-- to obtain a 'WebResult', which is sent to the client.  If an error
+-- occurs parsing the request, a 400 (Bad Request) response is sent;
+-- errors in later phases cause 500 (Internal Server Error).
 webfunc :: (WebResult r, Default (RequestParser a))
-           => URI -> (a -> IO r) -> ActionM ()
+           => URI           -- ^The base URI of the app.
+           -> (a -> IO r)   -- ^The function to perform.
+           -> ActionM ()
 webfunc u f =
     statusErrors $ do
         a <- failWith badRequest400 $ fromRequest $ def
@@ -83,21 +122,24 @@ webfunc u f =
             r <- liftIO $ f a
             report u r
 
-{-
-    Reporting values to the web client.
--}
-
--- A value that can be reported.
+-- | A value that can be reported to a web client.
 class WebResult r where
-    report :: URI -> r -> ActionM ()
+    report :: URI               -- ^The base URI of the app.
+              -> r              -- ^The value to report.
+              -> ActionM ()     -- ^An action that reports that value.
 
--- Reporting versioned database objects as JSON.
+-- | Reporting versioned database objects as JSON.
 instance (NamedResource k, Show k, ToJSON v)
          => WebResult (Versioned k v) where
     report baseuri x = json $ WebVersioned baseuri x
+
+-- | Reporting lists of versioned database objects as JSON.
 instance (NamedResource k, Show k, ToJSON v)
          => WebResult [Versioned k v] where
     report baseuri xs = json $ map (WebVersioned baseuri) xs
+
+-- | Shim which augments JSON representations of 'Versioned' objects
+-- with @"url"@ and @"thisVersion"@ fields.
 data WebVersioned k v = WebVersioned URI (Versioned k v)
 instance (Show k, NamedResource k, ToJSON v) => ToJSON (WebVersioned k v) where
     toJSON (WebVersioned baseuri ver) = Object augmentedmap
@@ -113,7 +155,7 @@ instance (Show k, NamedResource k, ToJSON v) => ToJSON (WebVersioned k v) where
                             Object m -> m
                             _ -> error "data did not encode as JSON object"
 
--- Reporting results from methods of DB.
+-- | Reporting results from 'get' and other "getting" methods.
 instance (WebResult a) => WebResult (GetResult a) where
     report baseuri (Right (Right a)) =
         do status ok200
@@ -123,6 +165,8 @@ instance (WebResult a) => WebResult (GetResult a) where
     report _ (Right (Left msg)) =
         do status internalServerError500
            text msg
+
+-- | Reporting results from 'update'.
 instance (WebResult b, NamedResource k, Show k, ToJSON v)
          => WebResult (UpdateResult b (Versioned k v)) where
     report baseuri (Right (Right (Right a))) =
@@ -133,6 +177,8 @@ instance (WebResult b, NamedResource k, Show k, ToJSON v)
         do status badRequest400
            report baseuri b
     report baseuri (Right gr) = report baseuri gr
+
+-- | Reporting results from 'post'.
 instance (NamedResource k, Show k, ToJSON v)
          => WebResult (PostResult (Versioned k v)) where
     report baseuri (Right (Right (Right a))) =
@@ -144,7 +190,14 @@ instance (NamedResource k, Show k, ToJSON v)
            text $ LT.concat [ LT.concat [msg, "\r\n"] | msg<-msgs ]
     report baseuri (Right gr) = report baseuri gr
 
-resource :: RoutePattern -> [(StdMethod, ActionM ())] -> ScottyM ()
+-- | A web resource, with a complete list of its supported methods.
+-- Defining a resource this way causes a 405 (Method Not Allowed)
+-- responses when a request uses a method which is not in the
+-- given list.  (Scotty's default is 404 (Not Found), which is less
+-- appropriate.)
+resource :: RoutePattern                    -- ^Route to this resource.
+            -> [(StdMethod, ActionM ())]    -- ^Allowed methods and their actions.
+            -> ScottyM ()
 resource route acts =
     let allowedMethods = intercalate "," $ map (show . fst) acts
     in do
@@ -153,9 +206,11 @@ resource route acts =
             status methodNotAllowed405
             setHeader "Allow" $ LT.pack allowedMethods
 
+-- | A 'Holex' for parsing data from HTTP requests.
 type RequestParser = Holex LT.Text ParamValue
 
--- Perform the given action, annotating any failures with the given status.
+-- | Perform the given action, annotating any failures with the given
+-- HTTP status.
 failWith :: Status -> ActionM a -> ActionT ErrorWithStatus IO a
 failWith stat act =
     ActionT $ mapErrorT
@@ -169,6 +224,7 @@ failWith stat act =
                 Right x -> Right x)
         (runAM act)
 
+-- | Perform the given action, catching any Scotty exception raised.
 catchActionError :: (ScottyError e, Monad m)
     => ActionT e m a -> ActionT e' m (Either (ActionError e) a)
 catchActionError act =
@@ -178,6 +234,7 @@ catchActionError act =
             return $ Right ea)
         (runAM act)
 
+-- | Monadically alter the exception of a Scotty state.
 bindError :: (ScottyError e, ScottyError e', Monad m)
     => ActionT e m a -> (e -> ActionT e' m a) -> ActionT e' m a
 bindError act f = do
@@ -188,6 +245,7 @@ bindError act f = do
         Left (Redirect msg) -> throwError (Redirect msg)
         Left Next -> throwError Next
 
+-- | Report any error status to the web client.
 statusErrors :: ActionT ErrorWithStatus IO () -> ActionM ()
 statusErrors = (`bindError` reportStatus)
     where reportStatus (ErrorWithStatus stat msg) =
@@ -199,17 +257,21 @@ instance ScottyError ErrorWithStatus where
     stringError msg = ErrorWithStatus internalServerError500 (LT.pack msg)
     showError (ErrorWithStatus _ msg) = msg
 
+-- | The relative URL for a 'NamedResource' object.
 resourceRelativeURLString :: (Show k, NamedResource k) => k -> String
 resourceRelativeURLString k = "./" ++ resourceName (Just k) ++ "/" ++ show k
 
+-- | The URL for a 'NamedResource' object.
 resourceURL :: (Show k, NamedResource k) => URI -> k -> URI
 resourceURL baseuri k = resourceRelativeURLString k `relative` baseuri
 
+-- | The URL for a specific version of a 'NamedResource' object.
 resourceVersionURL :: (Show k, NamedResource k) => URI -> VersionedID k -> URI
 resourceVersionURL baseuri verk =
     (resourceRelativeURLString (thingid verk) ++ "/" ++ (show $ txnid $ verk))
     `relative` baseuri
 
+-- | Use the given 'Holex' to interpret the data in the HTTP request.
 fromRequest :: Holex LT.Text ParamValue a -> ActionM a
 fromRequest expr = do
     kvs <- requestData
@@ -217,6 +279,10 @@ fromRequest expr = do
         Left errs -> raise $ showHolexErrors errs
         Right a -> return a
 
+-- | Get HTTP request data as key-value pairs, including
+-- captures, query parameters, form data (in a request body of type
+-- @application/x-www-form-url-encoded@), and values of a JSON object
+-- (in a request body of type @application/json@).
 requestData :: ActionM [(LT.Text, ParamValue)]
 requestData = do
     ps <- params
@@ -244,6 +310,7 @@ requestData = do
                     _ -> raise $ LT.concat ["Don't know how to handle Content-Type: ", hdr]
     return $ paramdata ++ bodydata
 
+-- | English description of a 'HolexError'.
 showHolexError :: (Show k) => HolexError k v -> LT.Text
 showHolexError (MissingKey k) = LT.concat [ "missing mandatory parameter "
                                           , LT.pack (show k)
@@ -261,11 +328,15 @@ showHolexError (ParseError k _ msg) = LT.concat [ "cannot parse parameter "
                                                 ]
 showHolexError (CustomError e) = LT.pack (show e)
 
+-- | English description of a list of 'HolexError's.
 showHolexErrors :: (Show k) => [HolexError k v] -> LT.Text
 showHolexErrors es = LT.concat [ LT.concat [ showHolexError e, "\r\n" ]
                                | e<-es ]
 
-relative :: String -> URI -> URI
+-- | Dereference a relative URI path.  Usually used infix.
+relative :: String      -- ^The path.
+            -> URI      -- ^The base URI.
+            -> URI
 relative s u = nullURI { uriPath = s } `relativeTo` u
 
 lock :: MVar a -> (b -> IO c) -> b -> IO c
