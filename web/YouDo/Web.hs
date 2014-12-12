@@ -129,71 +129,69 @@ webdb baseuri mv db =
         rtype = dbResourceName db Nothing
         pat s = fromString $ show $ s `relative` basepath
     in do resource (pat rtype)
-            [(GET, webfunc (\() -> withMVar mv $ \_ ->
-                (fmap.fmap.fmap) (WebVersioned baseuri) $ getAll db)
-            ),(POST, webfunc (\x -> withMVar mv $ \_ -> do
-                r <- post x db
-                return (baseuri,r))
+            [(GET, webfunc baseuri (\() -> withMVar mv $ \_ -> getAll db)
+            ),(POST, webfunc baseuri (\x -> withMVar mv $ \_ -> post x db)
             )]
           resource (pat (rtype ++ "/:id"))
-            [(GET, webfunc (\x -> withMVar mv $ \_ ->
-                (fmap.fmap) (WebVersioned baseuri) $ get x db)
+            [(GET, webfunc baseuri (\x -> withMVar mv $ \_ -> get x db)
             )]
           resource (pat (rtype ++ "/:id/versions"))
-            [(GET, webfunc (\x -> withMVar mv $ \_ ->
-                (fmap.fmap.fmap) (WebVersioned baseuri) $ getVersions x db))]
+            [(GET, webfunc baseuri (\x -> withMVar mv $ \_ -> getVersions x db))]
           resource (pat (rtype ++ "/:id/:txnid"))
-            [(GET, webfunc (\x -> withMVar mv $ \_ ->
-                (fmap.fmap) (WebVersioned baseuri) $ getVersion x db)
-            ),(POST, webfunc (\x -> withMVar mv $ \_ -> do
-                u <- update x db
-                return (baseuri, u))
+            [(GET, webfunc baseuri (\x -> withMVar mv $ \_ -> getVersion x db)
+            ),(POST, webfunc baseuri (\x -> withMVar mv $ \_ -> update x db)
             )]
 
 webfunc :: (WebResult r, Default (RequestParser a))
-           => (a -> IO r) -> ActionM ()
-webfunc f =
+           => URI -> (a -> IO r) -> ActionM ()
+webfunc u f =
     statusErrors $ do
         a <- failWith badRequest400 $ fromRequest $ def
         failWith internalServerError500 $ do
             r <- liftIO $ f a
-            report r
+            report u r
 
 class WebResult r where
-    report :: r -> ActionM ()
-instance (ToJSON a) => WebResult (GetResult a) where
-    report (GetResult (Result (Right a))) =
+    report :: URI -> r -> ActionM ()
+instance (NamedResource k, Show k, ToJSON v)
+         => WebResult (Versioned k v) where
+    report baseuri x = json $ WebVersioned baseuri x
+instance (NamedResource k, Show k, ToJSON v)
+         => WebResult [Versioned k v] where
+    report baseuri xs = json $ map (WebVersioned baseuri) xs
+instance (WebResult a) => WebResult (GetResult a) where
+    report baseuri (GetResult (Result (Right a))) =
         do status ok200
-           json a
-    report (GetResult (Result (Left (SpecialError NotFound)))) =
+           report baseuri a
+    report _ (GetResult (Result (Left (SpecialError NotFound)))) =
         status notFound404
-    report (GetResult (Result (Left (Error msg)))) =
+    report _ (GetResult (Result (Left (Error msg)))) =
         do status internalServerError500
            text msg
-instance (NamedResource k, NamedResource k' , ToJSON v, ToJSON v', Show k, Show k')
-         => WebResult (URI, UpdateResult (Versioned k v) (Versioned k' v')) where
-    report (baseuri, UpdateResult (Result (Right a))) =
+instance (WebResult b, NamedResource k, Show k, ToJSON v)
+         => WebResult (UpdateResult b (Versioned k v)) where
+    report baseuri (UpdateResult (Result (Right a))) =
         do status created201
            setHeader "Location" $ LT.pack $ show $ resourceVersionURL baseuri (version a)
-           json (WebVersioned baseuri a)
-    report (_, UpdateResult (Result (Left (SpecialError NotFound_Upd)))) =
+           report baseuri a
+    report _ (UpdateResult (Result (Left (SpecialError NotFound_Upd)))) =
         status notFound404
-    report (baseuri, UpdateResult (Result (Left (SpecialError (NewerVersion b))))) =
+    report baseuri (UpdateResult (Result (Left (SpecialError (NewerVersion b))))) =
         do status badRequest400
-           json (WebVersioned baseuri b)
-    report (_, UpdateResult (Result (Left (Error msg)))) =
+           report baseuri b
+    report _ (UpdateResult (Result (Left (Error msg)))) =
         do status internalServerError500
            text msg
 instance (NamedResource k, Show k, ToJSON v)
-         => WebResult (URI, PostResult (Versioned k v)) where
-    report (baseuri, PostResult (Result (Right a))) =
+         => WebResult (PostResult (Versioned k v)) where
+    report baseuri (PostResult (Result (Right a))) =
         do status created201
            setHeader "Location" $ LT.pack $ show $ resourceURL baseuri $ thingid $ version a
-           json $ WebVersioned baseuri a
-    report (_, PostResult (Result (Left (SpecialError (InvalidObject msgs))))) =
+           report baseuri a
+    report _ (PostResult (Result (Left (SpecialError (InvalidObject msgs))))) =
         do status badRequest400
            text $ LT.concat [ LT.concat [msg, "\r\n"] | msg<-msgs ]
-    report (_, PostResult (Result (Left (Error msg)))) =
+    report _ (PostResult (Result (Left (Error msg)))) =
         do status internalServerError500
            text msg
 
