@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, RankNTypes #-}
+{-# LANGUAGE OverloadedStrings, RankNTypes, FlexibleContexts #-}
 module YouDo.Web where
 import Codec.MIME.Type (mimeType, MIMEType(Application))
 import Codec.MIME.Parse (parseMIMEType)
@@ -31,8 +31,8 @@ import Web.Scotty (scottyOpts, ScottyM, matchAny, status, header,
 import Web.Scotty.Internal.Types (ActionT(..), ActionError(..),
     ScottyError(..))
 import YouDo.DB
-import qualified YouDo.DB.Mock as Mock
-import YouDo.DB.PostgreSQL(DBConnection(..))
+import YouDo.DB.Mock
+import YouDo.DB.PostgreSQL
 import YouDo.Holex (runHolex, hole, optional, defaultTo, Holex(..),
     HolexError(..), tryApply)
 
@@ -62,42 +62,48 @@ main = execParser opts >>= mainOpts
             (fullDesc <> Opt.header "ydserver - a YouDo web server")
 
 mainOpts :: YDOptions -> IO ()
-mainOpts YDOptions { port = p, db = dbopt } =
-    withDB dbopt $ \db' -> do
-        mvdb <- newMVar db'
-        let baseuri = nullURI { uriScheme = "http:"
-                              , uriAuthority = Just URIAuth
-                                    { uriUserInfo = ""
-                                    , uriRegName = "localhost"
-                                    , uriPort = if p == 80
-                                                then ""
-                                                else ":" ++ show p
-                                    }
-                              , uriPath = "/"
-                              }
-        scottyOpts def{ verbose = 0
-                      , settings = setPort p
-                                 $ setHost "127.0.0.1"  -- for now
-                                 $ defaultSettings
-                      }
-                   $ app baseuri mvdb
+mainOpts YDOptions { port = p, db = dbopt } = do
+    let baseuri = nullURI { uriScheme = "http:"
+                          , uriAuthority = Just URIAuth
+                                { uriUserInfo = ""
+                                , uriRegName = "localhost"
+                                , uriPort = if p == 80
+                                            then ""
+                                            else ":" ++ show p
+                                }
+                          , uriPath = "/"
+                          }
+        scotty = scottyOpts def{ verbose = 0
+                               , settings = setPort p
+                                          $ setHost "127.0.0.1"  -- for now
+                                          $ defaultSettings
+                               }
+    mv <- newMVar ()
+    case dbopt of
+        InMemory -> do
+            db <- empty
+            scotty $ app baseuri (MockYoudoDB db) (MockUserDB db) db mv
+        Postgres connstr -> do
+            bracket (connectPostgreSQL (pack connstr))
+                    (\conn -> close conn)
+                    (\conn -> scotty $ app baseuri
+                                           (PostgresYoudoDB conn)
+                                           (PostgresUserDB conn)
+                                           (PostgresDB conn)
+                                           mv)
 
-withDB :: DBOption -> (forall a. YoudoDB a => a -> IO b) -> IO b
-withDB InMemory f = Mock.empty >>= f
-withDB (Postgres connstr) f =
-    bracket (DBConnection <$> connectPostgreSQL (pack connstr))
-            (\(DBConnection conn) -> close conn)
-            f
-
-app :: YoudoDB a => URI -> MVar a -> ScottyM ()
-app baseuri mv_db = do
+app :: ( DB YoudoID YoudoData IO ydb
+       , DB UserID UserData IO udb
+       , YoudoDB d
+       ) => URI -> ydb -> udb -> d -> MVar () -> ScottyM ()
+app baseuri ydb udb db mv = do
     resource "/0/youdos"
-        [(GET, dbAction mv_db
+        [(GET, dbAction' mv db
             (Const ())
             (const getYoudos)
             (\yds -> do status ok200
                         text $ LT.pack $ show yds)
-        ),(POST, dbAction mv_db
+        ),(POST, dbAction mv ydb
             (YoudoData <$> parse "assignerid"
                        <*> parse "assigneeid"
                        <*> defaultTo "" (parse "description")
@@ -111,7 +117,7 @@ app baseuri mv_db = do
                 text $ LT.concat ["created at ", url, "\r\n"])
         )]
     resource "/0/youdos/:id"
-        [(GET, dbAction mv_db
+        [(GET, dbAction mv ydb
             (parse "id")
             get
             (\yds -> case yds of
@@ -121,14 +127,14 @@ app baseuri mv_db = do
                 _ -> raise "multiple youdos found!")
         )]
     resource "/0/youdos/:id/versions"
-        [(GET, dbAction mv_db
+        [(GET, dbAction mv ydb
             (parse "id")
             getVersions
             (\ydvers -> do status ok200
                            json $ map (WebYoudo baseuri) ydvers)
         )]
     resource "/0/youdos/:id/:txnid"
-        [(GET, dbAction mv_db
+        [(GET, dbAction mv ydb
             (VersionedID <$> parse "id" <*> parse "txnid")
             getVersion
             (\youdos -> case youdos of
@@ -136,7 +142,7 @@ app baseuri mv_db = do
                            json (WebYoudo baseuri yd)
                 [] -> do status notFound404
                 _ -> raise "multiple youdos found!")
-        ),(POST, dbAction mv_db
+        ),(POST, dbAction' mv db
             (YoudoUpdate <$> (VersionedID <$> parse "id"
                                           <*> parse "txnid")
                          <*> optional (parse "assignerid")
@@ -160,7 +166,7 @@ app baseuri mv_db = do
                           text $ LT.concat ["created at ", url, "\r\n"])
         )]
     resource "/0/users/:id"
-        [(GET, dbAction mv_db
+        [(GET, dbAction mv udb
             (parse "id")
             get
             (\users -> case users of
@@ -171,7 +177,7 @@ app baseuri mv_db = do
                         text "multiple users found!")
         )]
     resource "/0/users/:id/:txnid"
-        [(GET, dbAction mv_db
+        [(GET, dbAction mv udb
             (VersionedID <$> parse "id" <*> parse "txnid")
             getVersion
             (\users -> case users of
@@ -193,16 +199,29 @@ resource route acts =
 
 type RequestParser = Holex LT.Text ParamValue
 
-dbAction :: (YoudoDB b)
-    => MVar b
+dbAction :: (DB k v IO d)
+    => MVar ()
+    -> d
     -> RequestParser a
-    -> (a -> b -> IO c)
+    -> (a -> d -> IO c)
     -> (c -> ActionM ())
     -> ActionM ()
-dbAction mv_db expr work resp =
+dbAction mv db expr work resp =
     statusErrors $ do
         a <- failWith badRequest400 $ fromRequest $ expr
-        c <- liftIO $ withMVar mv_db $ work a
+        c <- liftIO $ withMVar mv $ \_ -> work a db
+        failWith internalServerError500 $ resp c
+dbAction' :: (YoudoDB d)
+    => MVar ()
+    -> d
+    -> RequestParser a
+    -> (a -> d -> IO c)
+    -> (c -> ActionM ())
+    -> ActionM ()
+dbAction' mv db expr work resp =
+    statusErrors $ do
+        a <- failWith badRequest400 $ fromRequest $ expr
+        c <- liftIO $ withMVar mv $ \_ -> work a db
         failWith internalServerError500 $ resp c
 
 -- Perform the given action, annotating any failures with the given status.

@@ -14,14 +14,15 @@ data BareMockDB = BareMockDB
     }
 data MockDB = MockDB { mvar :: MVar BareMockDB }
 
-instance DB YoudoID YoudoData IO MockDB where
-    get ydid db = withMVar (mvar db) $ \db' ->
+newtype MockYoudoDB = MockYoudoDB { ymock :: MockDB }
+instance DB YoudoID YoudoData IO MockYoudoDB where
+    get ydid db = withMVar (mvar $ ymock db) $ \db' ->
         return $ [yd | yd<-youdos db', thingid (version yd) == ydid]
-    getVersions ydid db = withMVar (mvar db) $ \db' ->
+    getVersions ydid db = withMVar (mvar $ ymock db) $ \db' ->
         return $ [yd | yd<-youdos db', thingid (version yd) == ydid]
-    getVersion ydver db = withMVar (mvar db) $ \db' ->
+    getVersion ydver db = withMVar (mvar $ ymock db) $ \db' ->
         return $ [yd | yd<-youdos db', version yd == ydver]
-    post yd db = modifyMVar (mvar db) $ \db' -> do
+    post yd db = modifyMVar (mvar $ ymock db) $ \db' -> do
         let newid = YoudoID $
                 1 + case thingid . version <$> (listToMaybe $ youdos db') of
                         Nothing -> 0
@@ -34,14 +35,15 @@ instance DB YoudoID YoudoData IO MockDB where
                      }
                , newid
                )
-instance DB UserID UserData IO MockDB where
-    get uid db = withMVar (mvar db) $ \db' ->
+newtype MockUserDB = MockUserDB { umock :: MockDB }
+instance DB UserID UserData IO MockUserDB where
+    get uid db = withMVar (mvar $ umock db) $ \db' ->
         return $ [u | u<-users db', thingid (version u) == uid]
-    getVersion verid db = withMVar (mvar db) $ \db' ->
+    getVersion verid db = withMVar (mvar $ umock db) $ \db' ->
         return $ [u | u<-users db', version u == verid]
-    getVersions verid db = withMVar (mvar db) $ \db' ->
+    getVersions verid db = withMVar (mvar $ umock db) $ \db' ->
         return $ [u | u<-users db', thingid (version u) == verid]
-    post ud db = modifyMVar (mvar db) $ \db' -> do
+    post ud db = modifyMVar (mvar $ umock db) $ \db' -> do
         let newid = UserID $
                 1 + case thingid . version <$> (listToMaybe $ users db') of
                         Nothing -> 0

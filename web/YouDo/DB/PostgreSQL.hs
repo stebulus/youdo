@@ -5,14 +5,14 @@ import Database.PostgreSQL.Simple (query, query_, execute, withTransaction,
     Only(..), Connection, Query)
 import YouDo.DB
 
-newtype DBConnection = DBConnection Connection
-instance DB YoudoID YoudoData IO DBConnection where
-    get ydid (DBConnection conn) =
+newtype PostgresYoudoDB = PostgresYoudoDB Connection
+instance DB YoudoID YoudoData IO PostgresYoudoDB where
+    get ydid (PostgresYoudoDB conn) =
         query conn
               "select id, txnid, assignerid, assigneeid, description, duedate, completed \
               \from youdo where id = ?"
               (Only ydid)
-    post yd (DBConnection conn) = do
+    post yd (PostgresYoudoDB conn) = do
         withTransaction conn $ do
             _ <- execute conn
                     ("insert into transaction (yd_userid, yd_ipaddr, yd_useragent) \
@@ -26,13 +26,15 @@ instance DB YoudoID YoudoData IO DBConnection where
                 duedate yd, completed yd)
                 :: IO [Only YoudoID]
             return $ fromOnly $ head ids
-instance DB UserID UserData IO DBConnection where
-    get uid (DBConnection conn) =
+newtype PostgresUserDB = PostgresUserDB Connection
+instance DB UserID UserData IO PostgresUserDB where
+    get uid (PostgresUserDB conn) =
         query conn
               "select id, name from yd_user where id = ?"
               (Only uid)
 
-instance YoudoDB DBConnection where
-    getYoudos (DBConnection conn) = query_ conn
+newtype PostgresDB = PostgresDB Connection
+instance YoudoDB PostgresDB where
+    getYoudos (PostgresDB conn) = query_ conn
         "select id, assignerid, assigneeid, description, duedate, completed \
         \from youdo"

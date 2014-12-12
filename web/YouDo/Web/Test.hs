@@ -26,9 +26,10 @@ import Network.Wai (Application, responseToStream, RequestBodyLength(..), reques
     defaultRequest)
 import Network.Wai.Internal (Request(..), ResponseReceived(..))
 import Web.Scotty (scottyApp)
+import YouDo.DB.Mock
 import YouDo.Holex
 import YouDo.Test (plainTest)
-import YouDo.Web (app, withDB, DBOption(..), parse, ParamValue(..))
+import YouDo.Web (app, parse, ParamValue(..))
 
 tests :: IO [Test]
 tests = return
@@ -255,9 +256,11 @@ serverTest :: (IsRequest a) =>
     -> ((a -> IO (Status, ResponseHeaders, LB.ByteString)) -> TestResult)
     -> Test
 serverTest testName f = Test $ TestInstance
-    { run = withDB InMemory $ \db -> do
-        mvdb <- newMVar db
-        waiApp <- scottyApp $ app (fromJust $ parseURI "http://example.com") mvdb
+    { run = do
+        db <- empty
+        mv <- newMVar ()
+        waiApp <- scottyApp $ app (fromJust $ parseURI "http://example.com")
+                                  (MockYoudoDB db) (MockUserDB db) db mv
         result <- runEitherT $ f $ request waiApp
         return $ Finished $ case result of
             Left msg -> Fail msg

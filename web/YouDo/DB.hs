@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings, FlexibleInstances, FlexibleContexts,
-    TypeSynonymInstances, MultiParamTypeClasses #-}
+    TypeSynonymInstances, MultiParamTypeClasses, FunctionalDependencies #-}
 module YouDo.DB where
 import Prelude hiding (id)
 import Control.Applicative ((<$>), (<*>))
@@ -13,15 +13,13 @@ import Database.PostgreSQL.Simple.ToField (ToField(..))
 import Web.Scotty (Parsable(..))
 
 -- d contains versioned key value pairs (k,v), in monad m
-class (Monad m) => DB k v m d where
+class (Monad m) => DB k v m d | d->v, d->k where
     get :: k -> d -> m [Versioned k v]
     getVersion :: VersionedID k -> d -> m [Versioned k v]
     getVersions :: k -> d -> m [Versioned k v]
     post :: v -> d -> m k
 
-class ( DB YoudoID YoudoData IO a
-      , DB UserID UserData IO a)
-      => YoudoDB a where
+class YoudoDB a where
     updateYoudo :: YoudoUpdate -> a -> IO (UpdateResult YoudoID)
     getYoudos :: a -> IO [Youdo]
 
