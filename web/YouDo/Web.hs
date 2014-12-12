@@ -100,6 +100,22 @@ app baseuri ydb udb mv = do
     webdb apibase mv ydb
     webdb apibase mv udb
 
+-- A web interface to an instance of (DB k v u IO d).  The following
+-- endpoints are created, relative to the given base URI (which should
+-- probably end with a slash):
+--      GET objs                (list of all current objs)
+--      POST objs               (create new obj)
+--      GET objs/:id            (current version of obj)
+--      GET objs/:id/versions   (all versions of obj)
+--      GET objs/:id/:txnid     (specified version of obj)
+--      POST objs/:id/:txnid    (create new version of obj)
+-- The name "objs" is obtained from the instance NamedResource k.
+-- Requests that return objects return them in JSON format, using the
+-- instances Show k and ToJSON v.  The :id parameter is interpreted
+-- via the instance Parsable k.  (The FromJSON k instance would only
+-- be used if the id were passed in the JSON request body, which it
+-- shouldn't be.)  The request body, when needed, is interpreted via
+-- default RequestParser for the appropriate type.
 webdb :: ( NamedResource k, DB k v u IO d
          , Parsable k, A.FromJSON k
          , Show k, ToJSON v
