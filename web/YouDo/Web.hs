@@ -119,13 +119,6 @@ app baseuri ydb udb db mv = do
                 text $ LT.concat ["created at ", url, "\r\n"])
         )]
     genericResource apibase mv ydb
-    resource "/0/youdos/:id/versions"
-        [(GET, dbAction mv ydb
-            (parse "id")
-            getVersions
-            (\ydvers -> do status ok200
-                           json $ map (WebVersioned apibase) ydvers)
-        )]
     resource "/0/youdos/:id/:txnid"
         [(GET, dbAction mv ydb
             (VersionedID <$> parse "id" <*> parse "txnid")
@@ -188,6 +181,13 @@ genericResource baseuri mv db =
                     [] -> status notFound404
                     _ -> do status internalServerError500
                             text "multiple objects found!")
+            )]
+          resource (fromString $ s ++ "/versions")
+            [(GET, dbAction mv db
+                (parse "id")
+                getVersions
+                (\xs -> do status ok200
+                           json $ map (WebVersioned baseuri) xs)
             )]
 
 resource :: RoutePattern -> [(StdMethod, ActionM ())] -> ScottyM ()
