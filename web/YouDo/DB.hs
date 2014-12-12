@@ -13,11 +13,13 @@ import Database.PostgreSQL.Simple.ToField (ToField(..))
 import Web.Scotty (Parsable(..))
 
 -- d contains versioned key value pairs (k,v), in monad m
-class (Monad m) => DB k v m d | d->v, d->k where
+class (Monad m, NamedResource k) => DB k v m d | d->v, d->k, d->m where
     get :: k -> d -> m [Versioned k v]
     getVersion :: VersionedID k -> d -> m [Versioned k v]
     getVersions :: k -> d -> m [Versioned k v]
     post :: v -> d -> m k
+    dbResourceName :: d -> Maybe k -> String
+    dbResourceName _ x = resourceName x
 
 class YoudoDB a where
     updateYoudo :: YoudoUpdate -> a -> IO (UpdateResult YoudoID)

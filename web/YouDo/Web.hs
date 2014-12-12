@@ -15,6 +15,7 @@ import qualified Data.HashMap.Strict as M
 import Data.Default (def)
 import Data.List (foldl', intercalate)
 import Data.Monoid ((<>))
+import Data.String (IsString(..))
 import qualified Data.Text as ST
 import qualified Data.Text.Lazy as LT
 import Database.PostgreSQL.Simple (close, connectPostgreSQL)
@@ -117,16 +118,7 @@ app baseuri ydb udb db mv = do
                 setHeader "Location" url
                 text $ LT.concat ["created at ", url, "\r\n"])
         )]
-    resource "/0/youdos/:id"
-        [(GET, dbAction mv ydb
-            (parse "id")
-            get
-            (\yds -> case yds of
-                [yd] -> do status ok200
-                           json (WebVersioned apibase yd)
-                [] -> status notFound404
-                _ -> raise "multiple youdos found!")
-        )]
+    genericResource apibase mv ydb
     resource "/0/youdos/:id/versions"
         [(GET, dbAction mv ydb
             (parse "id")
@@ -166,17 +158,7 @@ app baseuri ydb udb db mv = do
                           setHeader "Location" url
                           text $ LT.concat ["created at ", url, "\r\n"])
         )]
-    resource "/0/users/:id"
-        [(GET, dbAction mv udb
-            (parse "id")
-            get
-            (\users -> case users of
-                [u] -> do status ok200
-                          json (WebVersioned apibase u)
-                [] -> status notFound404
-                _ -> do status internalServerError500
-                        text "multiple users found!")
-        )]
+    genericResource apibase mv udb
     resource "/0/users/:id/:txnid"
         [(GET, dbAction mv udb
             (VersionedID <$> parse "id" <*> parse "txnid")
@@ -188,6 +170,25 @@ app baseuri ydb udb db mv = do
                 _ -> do status internalServerError500
                         text "multiple users found!")
         )]
+
+genericResource :: ( NamedResource k, DB k v IO d
+                   , Parsable k, A.FromJSON k
+                   , Show k, ToJSON v
+                   ) => URI -> MVar () -> d -> ScottyM()
+genericResource baseuri mv db =
+    let resourcebase = (dbResourceName db Nothing ++ "/") `relative` baseuri
+        s = uriPath $ ":id" `relative` resourcebase
+    in do resource (fromString s)
+            [(GET, dbAction mv db
+                (parse "id")
+                get
+                (\xs -> case xs of
+                    [x] -> do status ok200
+                              json (WebVersioned baseuri x)
+                    [] -> status notFound404
+                    _ -> do status internalServerError500
+                            text "multiple objects found!")
+            )]
 
 resource :: RoutePattern -> [(StdMethod, ActionM ())] -> ScottyM ()
 resource route acts =
