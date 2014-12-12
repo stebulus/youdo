@@ -68,7 +68,7 @@ data HolexError k v = MissingKey k          -- ^A hole named @k@ was not filled.
                                             -- but there is no such hole.
                     | DuplicateValue k v    -- ^Value @v@ was given for a hole named @k@,
                                             -- after another value was already given.
-                    | ParseError k v Text   -- ^An error was detected by 'YouDo.Types.parse'.
+                    | ParseError k v Text   -- ^An error was detected by 'YouDo.Web.parse'.
                     | CustomError Text      -- ^An error was detected by 'check'.
     deriving (Show, Eq)
 

@@ -10,18 +10,19 @@ module YouDo.Web (
     -- * Web application
     app, webdb, webfunc, resource,
     -- * Interpreting requests
-    RequestParser,
+    RequestParser, parse, ParamValue(..),
     -- * Reporting results
     WebResult(..)
 ) where
 
 import Codec.MIME.Type (mimeType, MIMEType(Application))
 import Codec.MIME.Parse (parseMIMEType)
-import Control.Applicative
+import Control.Applicative ((<$>), (<*>))
 import Control.Concurrent.MVar (MVar, withMVar)
 import Control.Monad.Error (mapErrorT, throwError)
 import Control.Monad.IO.Class (liftIO, MonadIO)
-import Data.Aeson (toJSON, ToJSON(..), Value(..), (.=))
+import Data.Aeson (ToJSON(..), FromJSON(..), Value(..), (.=))
+import Data.Aeson.Types (parseEither)
 import qualified Data.Aeson as A
 import qualified Data.HashMap.Strict as M
 import Data.Default
@@ -207,9 +208,6 @@ resource route acts =
             status methodNotAllowed405
             setHeader "Allow" $ LT.pack allowedMethods
 
--- | A 'Holex' for parsing data from HTTP requests.
-type RequestParser = Holex LT.Text ParamValue
-
 -- | Perform the given action, annotating any failures with the given
 -- HTTP status.
 failWith :: Status -> ActionM a -> ActionT ErrorWithStatus IO a
@@ -342,3 +340,61 @@ relative s u = nullURI { uriPath = s } `relativeTo` u
 
 lock :: MVar a -> (b -> IO c) -> b -> IO c
 lock mv f x = withMVar mv $ const (f x)
+
+-- | A 'Holex' for parsing data from HTTP requests.
+type RequestParser = Holex LT.Text ParamValue
+
+instance (IsString k, Eq k, Parsable a, FromJSON a)
+         => Default (Holex k ParamValue (VersionedID a)) where
+    def = VersionedID <$> parse "id" <*> parse "txnid"
+
+instance (IsString k, Eq k) => Default (Holex k ParamValue YoudoID) where
+    def = parse "id"
+
+instance (IsString k, Eq k) => Default (Holex k ParamValue YoudoData) where
+    def = YoudoData <$> parse "assignerid"
+                    <*> parse "assigneeid"
+                    <*> defaultTo "" (parse "description")
+                    <*> defaultTo (DueDate Nothing) (parse "duedate")
+                    <*> defaultTo False (parse "completed")
+
+instance (IsString k, Eq k) => Default (Holex k ParamValue YoudoUpdate) where
+    def = YoudoUpdate <$> (VersionedID <$> parse "id"
+                                       <*> parse "txnid")
+                      <*> optional (parse "assignerid")
+                      <*> optional (parse "assigneeid")
+                      <*> optional (parse "description")
+                      <*> optional (parse "duedate")
+                      <*> optional (parse "completed")
+
+instance (IsString k, Eq k) => Default (Holex k ParamValue ()) where
+    def = Const ()
+
+parse :: (Eq k, Parsable a, FromJSON a) => k -> Holex k ParamValue a
+parse k = tryApply
+    (Const (\x ->
+        case x of
+            ScottyParam txt ->
+                case parseParam txt of
+                    Left err -> Left (ParseError k x err)
+                    Right val -> Right val
+            JSONField jsonval ->
+                case parseEither parseJSON jsonval of
+                    Left err -> Left (ParseError k x (LT.pack err))
+                    Right val -> Right val))
+    $ hole k
+
+data ParamValue = ScottyParam LT.Text
+                | JSONField Value
+    deriving (Eq, Show)
+
+instance (IsString k, Eq k) => Default (Holex k ParamValue UserID) where
+    def = parse "id"
+
+instance (IsString k, Eq k) => Default (Holex k ParamValue UserData) where
+    def = UserData <$> parse "name"
+
+instance (IsString k, Eq k) => Default (Holex k ParamValue UserUpdate) where
+    def = UserUpdate <$> (VersionedID <$> parse "id"
+                                      <*> parse "txnid")
+                     <*> optional (parse "name")

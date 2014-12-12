@@ -3,9 +3,6 @@ module YouDo.Types where
 
 import Control.Applicative ((<$>), (<*>))
 import Data.Aeson (ToJSON(..), FromJSON(..), (.=), object, Value(..))
-import Data.Aeson.Types (parseEither)
-import Data.Default
-import Data.String (IsString(..))
 import qualified Data.Text.Lazy as LT
 import Data.Time (UTCTime)
 import Data.Time.ISO8601 (parseISO8601)
@@ -15,11 +12,6 @@ import Database.PostgreSQL.Simple.ToField (ToField(..))
 import Web.Scotty (Parsable(..))
 
 import YouDo.DB
-import YouDo.Holex
-
-instance (IsString k, Eq k, Parsable a, FromJSON a)
-         => Default (Holex k ParamValue (VersionedID a)) where
-    def = VersionedID <$> parse "id" <*> parse "txnid"
 
 type Youdo = Versioned YoudoID YoudoData
 instance NamedResource YoudoID where
@@ -49,8 +41,6 @@ instance FromJSON YoudoID where
     parseJSON x = YoudoID <$> parseJSON x
 instance Parsable YoudoID where
     parseParam x = YoudoID <$> parseParam x
-instance (IsString k, Eq k) => Default (Holex k ParamValue YoudoID) where
-    def = parse "id"
 
 data YoudoData = YoudoData { assignerid :: UserID
                            , assigneeid :: UserID
@@ -58,12 +48,6 @@ data YoudoData = YoudoData { assignerid :: UserID
                            , duedate :: DueDate
                            , completed :: Bool
                            } deriving (Show)
-instance (IsString k, Eq k) => Default (Holex k ParamValue YoudoData) where
-    def = YoudoData <$> parse "assignerid"
-                    <*> parse "assigneeid"
-                    <*> defaultTo "" (parse "description")
-                    <*> defaultTo (DueDate Nothing) (parse "duedate")
-                    <*> defaultTo False (parse "completed")
 
 data YoudoUpdate = YoudoUpdate { oldVersion :: VersionedID YoudoID
                                , newAssignerid :: Maybe UserID
@@ -72,35 +56,6 @@ data YoudoUpdate = YoudoUpdate { oldVersion :: VersionedID YoudoID
                                , newDuedate :: Maybe DueDate
                                , newCompleted :: Maybe Bool
                                } deriving (Show)
-instance (IsString k, Eq k) => Default (Holex k ParamValue YoudoUpdate) where
-    def = YoudoUpdate <$> (VersionedID <$> parse "id"
-                                       <*> parse "txnid")
-                      <*> optional (parse "assignerid")
-                      <*> optional (parse "assigneeid")
-                      <*> optional (parse "description")
-                      <*> optional (parse "duedate")
-                      <*> optional (parse "completed")
-
-instance (IsString k, Eq k) => Default (Holex k ParamValue ()) where
-    def = Const ()
-
-parse :: (Eq k, Parsable a, FromJSON a) => k -> Holex k ParamValue a
-parse k = tryApply
-    (Const (\x ->
-        case x of
-            ScottyParam txt ->
-                case parseParam txt of
-                    Left err -> Left (ParseError k x err)
-                    Right val -> Right val
-            JSONField jsonval ->
-                case parseEither parseJSON jsonval of
-                    Left err -> Left (ParseError k x (LT.pack err))
-                    Right val -> Right val))
-    $ hole k
-
-data ParamValue = ScottyParam LT.Text
-                | JSONField Value
-    deriving (Eq, Show)
 
 type User = Versioned UserID UserData
 instance NamedResource UserID where
@@ -122,21 +77,13 @@ instance FromJSON UserID where
     parseJSON x = UserID <$> parseJSON x
 instance Parsable UserID where
     parseParam x = UserID <$> parseParam x
-instance (IsString k, Eq k) => Default (Holex k ParamValue UserID) where
-    def = parse "id"
 
 data UserData = UserData { name :: String }
     deriving (Show, Eq)
-instance (IsString k, Eq k) => Default (Holex k ParamValue UserData) where
-    def = UserData <$> parse "name"
 
 data UserUpdate = UserUpdate { oldUserVersion :: VersionedID UserID
                              , newName :: Maybe String
                              } deriving (Show, Eq)
-instance (IsString k, Eq k) => Default (Holex k ParamValue UserUpdate) where
-    def = UserUpdate <$> (VersionedID <$> parse "id"
-                                      <*> parse "txnid")
-                     <*> optional (parse "name")
 
 -- This newtype avoids orphan instances.
 newtype DueDate = DueDate { toMaybeTime :: Maybe UTCTime } deriving (Show)
