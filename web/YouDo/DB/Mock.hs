@@ -94,7 +94,7 @@ instance DB UserID UserData UserUpdate IO MockUserDB where
                                            , Success $ version newu
                                            )
 
-instance YoudoDB MockDB where
+instance ExtraDB MockDB where
     getYoudos db = withMVar (mvar db) $ \db' ->
         return $ youdos db'
 

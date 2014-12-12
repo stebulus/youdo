@@ -95,7 +95,7 @@ mainOpts YDOptions { port = p, db = dbopt } = do
 
 app :: ( DB YoudoID YoudoData YoudoUpdate IO ydb
        , DB UserID UserData UserUpdate IO udb
-       , YoudoDB d
+       , ExtraDB d
        ) => URI -> ydb -> udb -> d -> MVar () -> ScottyM ()
 app baseuri ydb udb db mv = do
     let apibase = "./0/" `relative` baseuri
@@ -197,7 +197,7 @@ dbAction mv db expr work resp =
         a <- failWith badRequest400 $ fromRequest $ expr
         c <- liftIO $ withMVar mv $ \_ -> work a db
         failWith internalServerError500 $ resp c
-dbAction' :: (YoudoDB d)
+dbAction' :: (ExtraDB d)
     => MVar ()
     -> d
     -> RequestParser a

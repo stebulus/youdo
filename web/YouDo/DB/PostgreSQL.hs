@@ -34,7 +34,7 @@ instance DB UserID UserData UserUpdate IO PostgresUserDB where
               (Only uid)
 
 newtype PostgresDB = PostgresDB Connection
-instance YoudoDB PostgresDB where
+instance ExtraDB PostgresDB where
     getYoudos (PostgresDB conn) = query_ conn
         "select id, assignerid, assigneeid, description, duedate, completed \
         \from youdo"

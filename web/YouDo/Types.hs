@@ -26,7 +26,7 @@ class (Monad m, NamedResource k)
     dbResourceName :: d -> Maybe k -> String
     dbResourceName _ x = resourceName x
 
-class YoudoDB a where
+class ExtraDB a where
     getYoudos :: a -> IO [Youdo]
 
 data VersionedID a = VersionedID
