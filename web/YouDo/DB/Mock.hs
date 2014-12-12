@@ -34,11 +34,11 @@ instance DB YoudoID YoudoData YoudoUpdate IO MockYoudoDB where
                         Just (YoudoID n) -> n
             newtxn = TransactionID $
                 1 + case lasttxn db' of TransactionID n -> n
-        return ( db' { youdos = Versioned (VersionedID newid newtxn) yd
-                                : (youdos db')
+            newy = Versioned (VersionedID newid newtxn) yd
+        return ( db' { youdos = newy : (youdos db')
                      , lasttxn = newtxn
                      }
-               , newid
+               , PostResult $ Result $ Right $ newy
                )
     update upd db = modifyMVar (mvar $ ymock db) $ \db' -> do
         let oldyd = listToMaybe
@@ -75,11 +75,11 @@ instance DB UserID UserData UserUpdate IO MockUserDB where
                         Just (UserID n) -> n
             newtxn = TransactionID $
                 1 + case lasttxn db' of TransactionID n -> n
-        return ( db' { users = Versioned (VersionedID newid newtxn) ud
-                               : (users db')
+            newu = Versioned (VersionedID newid newtxn) ud
+        return ( db' { users = newu : (users db')
                      , lasttxn = newtxn
                      }
-               , newid
+               , PostResult $ Result $ Right newu
                )
     update upd db = modifyMVar (mvar $ umock db) $ \db' -> do
         let oldu = listToMaybe

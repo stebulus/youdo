@@ -22,7 +22,7 @@ class (Monad m, NamedResource k)
     getVersion :: VersionedID k -> d -> m (GetResult (Versioned k v))
     getVersions :: k -> d -> m (GetResult [Versioned k v])
     getAll :: d -> m (GetResult [Versioned k v])
-    post :: v -> d -> m k
+    post :: v -> d -> m (PostResult (Versioned k v))
     update :: u -> d -> m (UpdateResult (Versioned k v) (Versioned k v))
     dbResourceName :: d -> Maybe k -> String
     dbResourceName _ x = resourceName x
@@ -42,6 +42,11 @@ data UpdateError a = NewerVersion a
 newtype UpdateResult b a = UpdateResult (Result (UpdateError b) a)
 instance Functor (UpdateResult b) where
     fmap f (UpdateResult r) = UpdateResult (fmap f r)
+
+newtype InvalidObject = InvalidObject [LT.Text]
+newtype PostResult a = PostResult (Result InvalidObject a)
+instance Functor PostResult where
+    fmap f (PostResult r) = PostResult (fmap f r)
 
 one :: [a] -> GetResult a
 one [x] = GetResult $ Result $ Right x

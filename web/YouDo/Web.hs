@@ -131,14 +131,9 @@ webdb baseuri mv db =
     in do resource (pat rtype)
             [(GET, webfunc (\() -> withMVar mv $ \_ ->
                 (fmap.fmap.fmap) (WebVersioned baseuri) $ getAll db)
-            ),(POST, dbAction mv db
-                def
-                post
-                (\xid -> do
-                    let url = LT.pack $ show $ resourceURL baseuri xid
-                    status created201
-                    setHeader "Location" url
-                    text $ LT.concat ["created at ", url, "\r\n"])
+            ),(POST, webfunc (\x -> withMVar mv $ \_ -> do
+                r <- post x db
+                return (baseuri,r))
             )]
           resource (pat (rtype ++ "/:id"))
             [(GET, webfunc (\x -> withMVar mv $ \_ ->
@@ -187,6 +182,18 @@ instance (NamedResource k, NamedResource k' , ToJSON v, ToJSON v', Show k, Show 
         do status badRequest400
            json (WebVersioned baseuri b)
     report (_, UpdateResult (Result (Left (Error msg)))) =
+        do status internalServerError500
+           text msg
+instance (NamedResource k, Show k, ToJSON v)
+         => WebResult (URI, PostResult (Versioned k v)) where
+    report (baseuri, PostResult (Result (Right a))) =
+        do status created201
+           setHeader "Location" $ LT.pack $ show $ resourceURL baseuri $ thingid $ version a
+           json $ WebVersioned baseuri a
+    report (_, PostResult (Result (Left (SpecialError (InvalidObject msgs))))) =
+        do status badRequest400
+           text $ LT.concat [ LT.concat [msg, "\r\n"] | msg<-msgs ]
+    report (_, PostResult (Result (Left (Error msg)))) =
         do status internalServerError500
            text msg
 

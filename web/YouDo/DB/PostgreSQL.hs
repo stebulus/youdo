@@ -24,11 +24,12 @@ instance DB YoudoID YoudoData YoudoUpdate IO PostgresYoudoDB where
             ids <- query conn
                 "insert into youdo \
                 \(assignerid, assigneeid, description, duedate, completed) \
-                \values (?, ?, ?, ?, ?) returning id"
+                \values (?, ?, ?, ?, ?) \
+                \returning id, assignerid, assigneeid, description, duedate, completed"
                 (assignerid yd, assigneeid yd, description yd,
                 duedate yd, completed yd)
-                :: IO [Only YoudoID]
-            return $ fromOnly $ head ids
+                :: IO [Youdo]
+            return $ PostResult $ Result $ Right $ head ids
 newtype PostgresUserDB = PostgresUserDB Connection
 instance DB UserID UserData UserUpdate IO PostgresUserDB where
     get uid (PostgresUserDB conn) =
