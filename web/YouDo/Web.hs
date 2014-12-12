@@ -112,7 +112,7 @@ app baseuri ydb udb db mv = do
                        <*> defaultTo False (parse "completed"))
             post
             (\ydid -> do
-                let url = LT.pack $ youdoURL baseuri ydid
+                let url = LT.pack $ show $ resourceURL apibase ydid
                 status created201
                 setHeader "Location" url
                 text $ LT.concat ["created at ", url, "\r\n"])
@@ -157,11 +157,11 @@ app baseuri ydb udb db mv = do
                     do status badRequest400
                        text $ LT.concat
                             [ "cannot modify old version; modify "
-                            , LT.pack $ youdoVersionURL baseuri newver
+                            , LT.pack $ show $ resourceVersionURL apibase newver
                             ]
                 Failure err -> raise $ LT.pack err
                 Success ydver ->
-                    let url = LT.pack $ youdoVersionURL baseuri ydver
+                    let url = LT.pack $ show $ resourceVersionURL apibase ydver
                     in do status created201
                           setHeader "Location" url
                           text $ LT.concat ["created at ", url, "\r\n"])
@@ -284,16 +284,16 @@ instance (Show k, NamedResource k, ToJSON v) => ToJSON (WebVersioned k v) where
                             Object m -> m
                             _ -> error "data did not encode as JSON object"
 
-youdoURL :: URI -> YoudoID -> String
-youdoURL baseuri (YoudoID n) = show $
-    nullURI { uriPath = "0/youdos/" ++ (show n) }
-    `relativeTo` baseuri
+resourceRelativeURLString :: (Show k, NamedResource k) => k -> String
+resourceRelativeURLString k = "./" ++ resourceName (Just k) ++ "/" ++ show k
 
-youdoVersionURL :: URI -> VersionedID YoudoID -> String
-youdoVersionURL baseuri (VersionedID (YoudoID yd) (TransactionID txn))
-    = show $
-        nullURI { uriPath = "0/youdos/" ++ (show yd) ++ "/" ++ (show txn) }
-        `relativeTo` baseuri
+resourceURL :: (Show k, NamedResource k) => URI -> k -> URI
+resourceURL baseuri k = resourceRelativeURLString k `relative` baseuri
+
+resourceVersionURL :: (Show k, NamedResource k) => URI -> VersionedID k -> URI
+resourceVersionURL baseuri verk =
+    (resourceRelativeURLString (thingid verk) ++ "/" ++ (show $ txnid $ verk))
+    `relative` baseuri
 
 fromRequest :: Holex LT.Text ParamValue a -> ActionM a
 fromRequest expr = do
