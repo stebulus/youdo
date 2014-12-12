@@ -25,7 +25,8 @@ instance DB YoudoID YoudoData YoudoUpdate IO MockYoudoDB where
     getVersion ydver db = withMVar (mvar $ ymock db) $ \db' ->
         return $ one $ [yd | yd<-youdos db', version yd == ydver]
     getAll db = withMVar (mvar $ ymock db) $ \db' ->
-        return $ Right $ nubBy ((==) `on` thingid . version) $ youdos db'
+        return $ GetResult $ Result $ Right
+               $ nubBy ((==) `on` thingid . version) $ youdos db'
     post yd db = modifyMVar (mvar $ ymock db) $ \db' -> do
         let newid = YoudoID $
                 1 + case thingid . version <$> (listToMaybe $ youdos db') of

@@ -30,17 +30,21 @@ class (Monad m, NamedResource k)
 data NotFound = NotFound
 data Error e = SpecialError e
              | Error LT.Text
-type Result e a = Either (Error e) a
-type GetResult a = Result NotFound a
+newtype Result e a = Result (Either (Error e) a)
+instance Functor (Result e) where
+    fmap f (Result eith) = Result (fmap f eith)
+newtype GetResult a = GetResult (Result NotFound a)
+instance Functor GetResult where
+    fmap f (GetResult r) = GetResult (fmap f r)
 
 one :: [a] -> GetResult a
-one [x] = Right x
-one [] = Left (SpecialError NotFound)
-one _ = Left (Error "multiple objects found!")
+one [x] = GetResult $ Result $ Right x
+one [] = GetResult $ Result $ Left $ SpecialError NotFound
+one _ = GetResult $ Result $ Left $ Error "multiple objects found!"
 
 some :: [a] -> GetResult [a]
-some [] = Left (SpecialError NotFound)
-some x = Right x
+some [] = GetResult $ Result $ Left $ SpecialError NotFound
+some x = GetResult $ Result $ Right x
 
 data VersionedID a = VersionedID
     { thingid :: a
@@ -96,6 +100,8 @@ instance FromJSON YoudoID where
     parseJSON x = YoudoID <$> parseJSON x
 instance Parsable YoudoID where
     parseParam x = YoudoID <$> parseParam x
+instance (IsString k, Eq k) => Default (Holex k ParamValue YoudoID) where
+    def = parse "id"
 
 data YoudoData = YoudoData { assignerid :: UserID
                            , assigneeid :: UserID
@@ -125,6 +131,9 @@ instance (IsString k, Eq k) => Default (Holex k ParamValue YoudoUpdate) where
                       <*> optional (parse "description")
                       <*> optional (parse "duedate")
                       <*> optional (parse "completed")
+
+instance (IsString k, Eq k) => Default (Holex k ParamValue ()) where
+    def = Const ()
 
 parse :: (Eq k, Parsable a, FromJSON a) => k -> Holex k ParamValue a
 parse k = tryApply
@@ -164,6 +173,8 @@ instance FromJSON UserID where
     parseJSON x = UserID <$> parseJSON x
 instance Parsable UserID where
     parseParam x = UserID <$> parseParam x
+instance (IsString k, Eq k) => Default (Holex k ParamValue UserID) where
+    def = parse "id"
 
 data UserData = UserData { name :: String }
     deriving (Show, Eq)

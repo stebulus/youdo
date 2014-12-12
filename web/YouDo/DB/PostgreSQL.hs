@@ -12,7 +12,7 @@ instance DB YoudoID YoudoData YoudoUpdate IO PostgresYoudoDB where
               "select id, txnid, assignerid, assigneeid, description, duedate, completed \
               \from youdo where id = ?"
               (Only ydid)
-    getAll (PostgresYoudoDB conn) = Right <$> query_ conn
+    getAll (PostgresYoudoDB conn) = GetResult <$> Result <$> Right <$> query_ conn
         "select id, assignerid, assigneeid, description, duedate, completed \
         \from youdo"
     post yd (PostgresYoudoDB conn) = do

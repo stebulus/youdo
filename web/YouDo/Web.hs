@@ -119,22 +119,17 @@ app baseuri ydb udb mv = do
 webdb :: ( NamedResource k, DB k v u IO d
          , Parsable k, A.FromJSON k
          , Show k, ToJSON v
-         , Default (RequestParser u)
+         , Default (RequestParser k)
          , Default (RequestParser v)
+         , Default (RequestParser u)
          ) => URI -> MVar () -> d -> ScottyM()
 webdb baseuri mv db =
     let basepath = nullURI { uriPath = uriPath baseuri }
         rtype = dbResourceName db Nothing
         pat s = fromString $ show $ s `relative` basepath
     in do resource (pat rtype)
-            [(GET, dbAction mv db
-                (Const ())
-                (const getAll)
-                (\r -> case r of
-                    Right xs -> do status ok200
-                                   json $ map (WebVersioned baseuri) xs
-                    Left (SpecialError NotFound) -> status notFound404
-                    Left (Error msg) -> raise msg)
+            [(GET, webfunc (\() -> withMVar mv $ \_ ->
+                (fmap.fmap.fmap) (WebVersioned baseuri) $ getAll db)
             ),(POST, dbAction mv db
                 def
                 post
@@ -156,24 +151,11 @@ webdb baseuri mv db =
                             text "multiple objects found!")
             )]
           resource (pat (rtype ++ "/:id/versions"))
-            [(GET, dbAction mv db
-                (parse "id")
-                getVersions
-                (\r -> case r of
-                    Right xs -> do status ok200
-                                   json $ map (WebVersioned baseuri) xs
-                    Left (SpecialError NotFound) -> status notFound404
-                    Left (Error msg) -> raise msg)
-            )]
+            [(GET, webfunc (\x -> withMVar mv $ \_ ->
+                (fmap.fmap.fmap) (WebVersioned baseuri) $ getVersions x db))]
           resource (pat (rtype ++ "/:id/:txnid"))
-            [(GET, dbAction mv db
-                def
-                getVersion
-                (\r -> case r of
-                    Right x -> do status ok200
-                                  json (WebVersioned baseuri x)
-                    Left (SpecialError NotFound) -> status notFound404
-                    Left (Error msg) -> raise msg)
+            [(GET, webfunc (\x -> withMVar mv $ \_ ->
+                (fmap.fmap) (WebVersioned baseuri) $ getVersion x db)
             ),(POST, dbAction mv db
                 def
                 update
@@ -191,6 +173,27 @@ webdb baseuri mv db =
                               setHeader "Location" url
                               text $ LT.concat ["created at ", url, "\r\n"])
             )]
+
+webfunc :: (WebResult r, Default (RequestParser a))
+           => (a -> IO r) -> ActionM ()
+webfunc f =
+    statusErrors $ do
+        a <- failWith badRequest400 $ fromRequest $ def
+        failWith internalServerError500 $ do
+            r <- liftIO $ f a
+            report r
+
+class WebResult r where
+    report :: r -> ActionM ()
+instance (ToJSON a) => WebResult (GetResult a) where
+    report (GetResult (Result (Right a))) =
+        do status ok200
+           json a
+    report (GetResult (Result (Left (SpecialError NotFound)))) =
+        status notFound404
+    report (GetResult (Result (Left (Error msg)))) =
+        do status internalServerError500
+           text msg
 
 resource :: RoutePattern -> [(StdMethod, ActionM ())] -> ScottyM ()
 resource route acts =
