@@ -145,7 +145,7 @@ webdb baseuri mv db =
             )]
           resource (pat (rtype ++ "/:id/:txnid"))
             [(GET, dbAction mv db
-                (VersionedID <$> parse "id" <*> parse "txnid")
+                def
                 getVersion
                 (\xs -> case xs of
                     [x] -> do status ok200

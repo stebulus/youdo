@@ -31,6 +31,9 @@ data VersionedID a = VersionedID
     { thingid :: a
     , txnid :: TransactionID
     } deriving (Show, Eq)
+instance (IsString k, Eq k, Parsable a, FromJSON a)
+         => Default (Holex k ParamValue (VersionedID a)) where
+    def = VersionedID <$> parse "id" <*> parse "txnid"
 
 data Versioned a b = Versioned
     { version :: VersionedID a
