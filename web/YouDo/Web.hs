@@ -140,15 +140,8 @@ webdb baseuri mv db =
                     text $ LT.concat ["created at ", url, "\r\n"])
             )]
           resource (pat (rtype ++ "/:id"))
-            [(GET, dbAction mv db
-                (parse "id")
-                get
-                (\xs -> case xs of
-                    [x] -> do status ok200
-                              json (WebVersioned baseuri x)
-                    [] -> status notFound404
-                    _ -> do status internalServerError500
-                            text "multiple objects found!")
+            [(GET, webfunc (\x -> withMVar mv $ \_ ->
+                (fmap.fmap) (WebVersioned baseuri) $ get x db)
             )]
           resource (pat (rtype ++ "/:id/versions"))
             [(GET, webfunc (\x -> withMVar mv $ \_ ->

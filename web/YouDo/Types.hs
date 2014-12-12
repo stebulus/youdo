@@ -18,7 +18,7 @@ import YouDo.Holex
 -- d contains versioned key value pairs (k,v), in monad m
 class (Monad m, NamedResource k)
       => DB k v u m d | d->v, d->k, d->u, d->m where
-    get :: k -> d -> m [Versioned k v]
+    get :: k -> d -> m (GetResult (Versioned k v))
     getVersion :: VersionedID k -> d -> m (GetResult (Versioned k v))
     getVersions :: k -> d -> m (GetResult [Versioned k v])
     getAll :: d -> m (GetResult [Versioned k v])

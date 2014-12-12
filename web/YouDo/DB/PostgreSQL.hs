@@ -8,7 +8,7 @@ import YouDo.Types
 newtype PostgresYoudoDB = PostgresYoudoDB Connection
 instance DB YoudoID YoudoData YoudoUpdate IO PostgresYoudoDB where
     get ydid (PostgresYoudoDB conn) =
-        query conn
+        one <$> query conn
               "select id, txnid, assignerid, assigneeid, description, duedate, completed \
               \from youdo where id = ?"
               (Only ydid)
@@ -32,6 +32,6 @@ instance DB YoudoID YoudoData YoudoUpdate IO PostgresYoudoDB where
 newtype PostgresUserDB = PostgresUserDB Connection
 instance DB UserID UserData UserUpdate IO PostgresUserDB where
     get uid (PostgresUserDB conn) =
-        query conn
+        one <$> query conn
               "select id, name from yd_user where id = ?"
               (Only uid)

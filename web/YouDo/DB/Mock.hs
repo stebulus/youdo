@@ -19,7 +19,7 @@ data MockDB = MockDB { mvar :: MVar BareMockDB }
 newtype MockYoudoDB = MockYoudoDB { ymock :: MockDB }
 instance DB YoudoID YoudoData YoudoUpdate IO MockYoudoDB where
     get ydid db = withMVar (mvar $ ymock db) $ \db' ->
-        return $ [yd | yd<-youdos db', thingid (version yd) == ydid]
+        return $ one $ [yd | yd<-youdos db', thingid (version yd) == ydid]
     getVersions ydid db = withMVar (mvar $ ymock db) $ \db' ->
         return $ some $ [yd | yd<-youdos db', thingid (version yd) == ydid]
     getVersion ydver db = withMVar (mvar $ ymock db) $ \db' ->
@@ -62,7 +62,7 @@ instance DB YoudoID YoudoData YoudoUpdate IO MockYoudoDB where
 newtype MockUserDB = MockUserDB { umock :: MockDB }
 instance DB UserID UserData UserUpdate IO MockUserDB where
     get uid db = withMVar (mvar $ umock db) $ \db' ->
-        return $ [u | u<-users db', thingid (version u) == uid]
+        return $ one $ [u | u<-users db', thingid (version u) == uid]
     getVersion verid db = withMVar (mvar $ umock db) $ \db' ->
         return $ one $ [u | u<-users db', version u == verid]
     getVersions verid db = withMVar (mvar $ umock db) $ \db' ->
