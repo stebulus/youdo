@@ -6,7 +6,7 @@ import Control.Applicative ((<$>))
 import Control.Concurrent.MVar (MVar, withMVar, modifyMVar, newMVar)
 import Data.Function (on)
 import Data.List (nubBy)
-import Data.Maybe (listToMaybe)
+import Data.Maybe (listToMaybe, fromMaybe)
 import YouDo.Types
 
 data BareMockDB = BareMockDB
@@ -102,22 +102,12 @@ class Updater u d where
     doUpdate :: u -> d -> d
 instance Updater YoudoUpdate YoudoData where
     doUpdate upd yd =
-        (\yd -> case newAssignerid upd of
-                    Nothing -> yd
-                    Just assigner -> yd { assignerid = assigner })
-        $ (\yd -> case newAssigneeid upd of
-                    Nothing -> yd
-                    Just assignee -> yd { assigneeid = assignee })
-        $ (\yd -> case newDescription upd of
-                    Nothing -> yd
-                    Just descr -> yd { description = descr })
-        $ (\yd -> case newDuedate upd of
-                    Nothing -> yd
-                    Just dd -> yd { duedate = dd })
-        $ (\yd -> case newCompleted upd of
-                    Nothing -> yd
-                    Just c -> yd { completed = c })
-        yd
+        yd { assignerid = fromMaybe (assignerid yd) (newAssignerid upd)
+           , assigneeid = fromMaybe (assigneeid yd) (newAssigneeid upd)
+           , description = fromMaybe (description yd) (newDescription upd)
+           , duedate = fromMaybe (duedate yd) (newDuedate upd)
+           , completed = fromMaybe (completed yd) (newCompleted upd)
+           }
 instance Updater UserUpdate UserData where
     doUpdate upd u = case newName upd of
         Nothing -> u

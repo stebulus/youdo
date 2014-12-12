@@ -9,7 +9,6 @@ import Control.Exception (bracket)
 import Control.Monad.Error (mapErrorT, throwError)
 import Control.Monad.IO.Class (liftIO, MonadIO)
 import Data.Aeson (toJSON, ToJSON(..), Value(..), (.=))
-import Data.Aeson.Types (parseEither)
 import qualified Data.Aeson as A
 import Data.ByteString.Char8 (pack)
 import qualified Data.HashMap.Strict as M
@@ -17,7 +16,6 @@ import Data.Default
 import Data.List (foldl', intercalate)
 import Data.Monoid ((<>))
 import Data.String (IsString(..))
-import qualified Data.Text as ST
 import qualified Data.Text.Lazy as LT
 import Database.PostgreSQL.Simple (close, connectPostgreSQL)
 import Network.HTTP.Types (ok200, created201, badRequest400, notFound404,
@@ -34,13 +32,12 @@ import Web.Scotty.Internal.Types (ActionT(..), ActionError(..),
     ScottyError(..))
 import YouDo.DB.Mock
 import YouDo.DB.PostgreSQL
-import YouDo.Holex (runHolex, hole, optional, defaultTo, Holex(..),
-    HolexError(..), tryApply)
+import YouDo.Holex
 import YouDo.Types
 
 data DBOption = InMemory | Postgres String
 data YDOptions = YDOptions { port :: Int
-                           , db :: DBOption
+                           , dbopt :: DBOption
                            }
 options :: Parser YDOptions
 options = YDOptions
@@ -64,7 +61,7 @@ main = execParser opts >>= mainOpts
             (fullDesc <> Opt.header "ydserver - a YouDo web server")
 
 mainOpts :: YDOptions -> IO ()
-mainOpts YDOptions { port = p, db = dbopt } = do
+mainOpts opts = do
     let baseuri = nullURI { uriScheme = "http:"
                           , uriAuthority = Just URIAuth
                                 { uriUserInfo = ""
@@ -80,8 +77,9 @@ mainOpts YDOptions { port = p, db = dbopt } = do
                                           $ setHost "127.0.0.1"  -- for now
                                           $ defaultSettings
                                }
+        p = port opts
     mv <- newMVar ()
-    case dbopt of
+    case dbopt opts of
         InMemory -> do
             db <- empty
             scotty $ app baseuri (MockYoudoDB db) (MockUserDB db) mv
@@ -234,8 +232,8 @@ bindError act f = do
         Left Next -> throwError Next
 
 statusErrors :: ActionT ErrorWithStatus IO () -> ActionM ()
-statusErrors = (`bindError` report)
-    where report (ErrorWithStatus stat msg) =
+statusErrors = (`bindError` reportStatus)
+    where reportStatus (ErrorWithStatus stat msg) =
                 do status stat
                    text msg
 
