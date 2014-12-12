@@ -40,7 +40,7 @@ import Data.Text.Lazy (Text)
 -- @v@ is the type of the values that fill holes; and @a@ is the
 -- type of the entire expression.  The applicative instance reduces
 -- applications of constant functions to constant arguments immediately
--- (that is, @Const f <*> Const x@ becomes a single @Const@ with a
+-- (that is, @Const f \<*\> Const x@ becomes a single @Const@ with a
 -- thunk in it), but all other combinations are left as is.
 data (Eq k) => Holex k v a
     = Const a   -- ^A constant expression.
