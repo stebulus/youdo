@@ -155,7 +155,7 @@ instance (Show k, NamedResource k, ToJSON v) => ToJSON (WebVersioned k v) where
                             Object m -> m
                             _ -> error "data did not encode as JSON object"
 
--- | Reporting results from 'get' and other "getting" methods.
+-- | Reporting results from 'get' and other getting methods.
 instance (WebResult a) => WebResult (GetResult a) where
     report baseuri (Right (Right a)) =
         do status ok200
