@@ -23,7 +23,7 @@ class (Monad m, NamedResource k)
     getVersions :: k -> d -> m (GetResult [Versioned k v])
     getAll :: d -> m (GetResult [Versioned k v])
     post :: v -> d -> m k
-    update :: u -> d -> m (UpdateResult k)
+    update :: u -> d -> m (UpdateResult (Versioned k v) (Versioned k v))
     dbResourceName :: d -> Maybe k -> String
     dbResourceName _ x = resourceName x
 
@@ -36,6 +36,12 @@ instance Functor (Result e) where
 newtype GetResult a = GetResult (Result NotFound a)
 instance Functor GetResult where
     fmap f (GetResult r) = GetResult (fmap f r)
+
+data UpdateError a = NewerVersion a
+                   | NotFound_Upd  -- ick.
+newtype UpdateResult b a = UpdateResult (Result (UpdateError b) a)
+instance Functor (UpdateResult b) where
+    fmap f (UpdateResult r) = UpdateResult (fmap f r)
 
 one :: [a] -> GetResult a
 one [x] = GetResult $ Result $ Right x
@@ -208,7 +214,3 @@ instance FromField DueDate where
     fromField fld = (fmap.fmap) DueDate $ fromField fld
 instance ToField DueDate where
     toField (DueDate t) = toField t
-
-data UpdateResult a = Success (VersionedID a)
-                    | Failure String
-                    | OldVersion (VersionedID a)

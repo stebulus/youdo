@@ -45,9 +45,10 @@ instance DB YoudoID YoudoData YoudoUpdate IO MockYoudoDB where
                 [yd | yd<-youdos db'
                     , thingid (version yd) == thingid (oldVersion upd)]
         case oldyd of
-            Nothing -> return (db', Failure $ "no youdo with " ++ (show $ oldVersion upd))
+            Nothing -> return (db', UpdateResult $ Result $ Left $ SpecialError $ NotFound_Upd)
             Just theyd -> if version theyd /= oldVersion upd
-                            then return (db', OldVersion $ version theyd)
+                            then return (db', UpdateResult $ Result $ Left $ SpecialError
+                                              $ NewerVersion $ theyd)
                             else let newyd = Versioned
                                         (VersionedID (thingid (version theyd)) newtxn)
                                         (doUpdate upd (thing theyd))
@@ -56,7 +57,7 @@ instance DB YoudoID YoudoData YoudoUpdate IO MockYoudoDB where
                                  in return (db' { youdos = newyd : (youdos db')
                                                 , lasttxn = newtxn
                                                 }
-                                           , Success $ version newyd
+                                           , UpdateResult $ Result $ Right $ newyd
                                            )
 
 newtype MockUserDB = MockUserDB { umock :: MockDB }
@@ -85,9 +86,10 @@ instance DB UserID UserData UserUpdate IO MockUserDB where
                 [u | u<-users db'
                     , thingid (version u) == thingid (oldUserVersion upd)]
         case oldu of
-            Nothing -> return (db', Failure $ "no user with " ++ (show $ oldUserVersion upd))
+            Nothing -> return (db', UpdateResult $ Result $ Left $ SpecialError NotFound_Upd)
             Just theu -> if version theu /= oldUserVersion upd
-                            then return (db', OldVersion $ version theu)
+                            then return (db', UpdateResult $ Result $ Left $ SpecialError
+                                              $ NewerVersion $ theu)
                             else let newu = Versioned
                                         (VersionedID (thingid (version theu)) newtxn)
                                         (doUpdate upd (thing theu))
@@ -96,7 +98,7 @@ instance DB UserID UserData UserUpdate IO MockUserDB where
                                  in return (db' { users = newu : (users db')
                                                 , lasttxn = newtxn
                                                 }
-                                           , Success $ version newu
+                                           , UpdateResult $ Result $ Right $ newu
                                            )
 
 class Updater u d where

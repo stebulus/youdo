@@ -1,4 +1,5 @@
-{-# LANGUAGE OverloadedStrings, RankNTypes, FlexibleContexts #-}
+{-# LANGUAGE OverloadedStrings, RankNTypes, FlexibleContexts,
+    FlexibleInstances #-}
 module YouDo.Web where
 import Codec.MIME.Type (mimeType, MIMEType(Application))
 import Codec.MIME.Parse (parseMIMEType)
@@ -149,22 +150,9 @@ webdb baseuri mv db =
           resource (pat (rtype ++ "/:id/:txnid"))
             [(GET, webfunc (\x -> withMVar mv $ \_ ->
                 (fmap.fmap) (WebVersioned baseuri) $ getVersion x db)
-            ),(POST, dbAction mv db
-                def
-                update
-                (\result -> case result of
-                    OldVersion newver ->
-                        do status badRequest400
-                           text $ LT.concat
-                                [ "cannot modify old version; modify "
-                                , LT.pack $ show $ resourceVersionURL baseuri newver
-                                ]
-                    Failure err -> raise $ LT.pack err
-                    Success ydver ->
-                        let url = LT.pack $ show $ resourceVersionURL baseuri ydver
-                        in do status created201
-                              setHeader "Location" url
-                              text $ LT.concat ["created at ", url, "\r\n"])
+            ),(POST, webfunc (\x -> withMVar mv $ \_ -> do
+                u <- update x db
+                return (baseuri, u))
             )]
 
 webfunc :: (WebResult r, Default (RequestParser a))
@@ -185,6 +173,20 @@ instance (ToJSON a) => WebResult (GetResult a) where
     report (GetResult (Result (Left (SpecialError NotFound)))) =
         status notFound404
     report (GetResult (Result (Left (Error msg)))) =
+        do status internalServerError500
+           text msg
+instance (NamedResource k, NamedResource k' , ToJSON v, ToJSON v', Show k, Show k')
+         => WebResult (URI, UpdateResult (Versioned k v) (Versioned k' v')) where
+    report (baseuri, UpdateResult (Result (Right a))) =
+        do status created201
+           setHeader "Location" $ LT.pack $ show $ resourceVersionURL baseuri (version a)
+           json (WebVersioned baseuri a)
+    report (_, UpdateResult (Result (Left (SpecialError NotFound_Upd)))) =
+        status notFound404
+    report (baseuri, UpdateResult (Result (Left (SpecialError (NewerVersion b))))) =
+        do status badRequest400
+           json (WebVersioned baseuri b)
+    report (_, UpdateResult (Result (Left (Error msg)))) =
         do status internalServerError500
            text msg
 
