@@ -103,7 +103,6 @@ app baseuri ydb udb mv = do
 webdb :: ( NamedResource k, DB k v u IO d
          , Parsable k, A.FromJSON k
          , Show k, ToJSON v
-         , Show v
          , Default (RequestParser u)
          , Default (RequestParser v)
          ) => URI -> MVar () -> d -> ScottyM()
@@ -116,7 +115,7 @@ webdb baseuri mv db =
                 (Const ())
                 (const getAll)
                 (\yds -> do status ok200
-                            text $ LT.pack $ show yds)
+                            json $ map (WebVersioned baseuri) yds)
             ),(POST, dbAction mv db
                 def
                 post
