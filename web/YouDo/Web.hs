@@ -97,33 +97,36 @@ app :: ( DB YoudoID YoudoData YoudoUpdate IO ydb
        ) => URI -> ydb -> udb -> MVar () -> ScottyM ()
 app baseuri ydb udb mv = do
     let apibase = "./0/" `relative` baseuri
-    resource "/0/youdos"
-        [(GET, dbAction mv ydb
-            (Const ())
-            (const getAll)
-            (\yds -> do status ok200
-                        text $ LT.pack $ show yds)
-        ),(POST, dbAction mv ydb
-            def
-            post
-            (\ydid -> do
-                let url = LT.pack $ show $ resourceURL apibase ydid
-                status created201
-                setHeader "Location" url
-                text $ LT.concat ["created at ", url, "\r\n"])
-        )]
     webdb apibase mv ydb
     webdb apibase mv udb
 
 webdb :: ( NamedResource k, DB k v u IO d
          , Parsable k, A.FromJSON k
          , Show k, ToJSON v
+         , Show v
          , Default (RequestParser u)
+         , Default (RequestParser v)
          ) => URI -> MVar () -> d -> ScottyM()
 webdb baseuri mv db =
-    let resourcebase = (dbResourceName db Nothing ++ "/") `relative` baseuri
-        s = uriPath $ ":id" `relative` resourcebase
-    in do resource (fromString s)
+    let basepath = nullURI { uriPath = uriPath baseuri }
+        rtype = dbResourceName db Nothing
+        pat s = fromString $ show $ s `relative` basepath
+    in do resource (pat rtype)
+            [(GET, dbAction mv db
+                (Const ())
+                (const getAll)
+                (\yds -> do status ok200
+                            text $ LT.pack $ show yds)
+            ),(POST, dbAction mv db
+                def
+                post
+                (\xid -> do
+                    let url = LT.pack $ show $ resourceURL baseuri xid
+                    status created201
+                    setHeader "Location" url
+                    text $ LT.concat ["created at ", url, "\r\n"])
+            )]
+          resource (pat (rtype ++ "/:id"))
             [(GET, dbAction mv db
                 (parse "id")
                 get
@@ -134,14 +137,14 @@ webdb baseuri mv db =
                     _ -> do status internalServerError500
                             text "multiple objects found!")
             )]
-          resource (fromString $ s ++ "/versions")
+          resource (pat (rtype ++ "/:id/versions"))
             [(GET, dbAction mv db
                 (parse "id")
                 getVersions
                 (\xs -> do status ok200
                            json $ map (WebVersioned baseuri) xs)
             )]
-          resource (fromString $ s ++ "/:txnid")
+          resource (pat (rtype ++ "/:id/:txnid"))
             [(GET, dbAction mv db
                 (VersionedID <$> parse "id" <*> parse "txnid")
                 getVersion
