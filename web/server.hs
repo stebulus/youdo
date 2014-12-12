@@ -1,2 +1,2 @@
 module Main (main) where
-import YouDo.Web (main)
+import YouDo.Web.Main (main)

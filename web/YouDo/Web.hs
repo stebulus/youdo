@@ -3,93 +3,27 @@
 module YouDo.Web where
 import Codec.MIME.Type (mimeType, MIMEType(Application))
 import Codec.MIME.Parse (parseMIMEType)
-import Control.Applicative ((<$>), (<*>), (<|>))
-import Control.Concurrent.MVar (MVar, newMVar, withMVar)
-import Control.Exception (bracket)
+import Control.Applicative
+import Control.Concurrent.MVar (MVar, withMVar)
 import Control.Monad.Error (mapErrorT, throwError)
 import Control.Monad.IO.Class (liftIO, MonadIO)
 import Data.Aeson (toJSON, ToJSON(..), Value(..), (.=))
 import qualified Data.Aeson as A
-import Data.ByteString.Char8 (pack)
 import qualified Data.HashMap.Strict as M
 import Data.Default
 import Data.List (foldl', intercalate)
-import Data.Monoid ((<>))
 import Data.String (IsString(..))
 import qualified Data.Text.Lazy as LT
-import Database.PostgreSQL.Simple (close, connectPostgreSQL)
 import Network.HTTP.Types (ok200, created201, badRequest400, notFound404,
     methodNotAllowed405, internalServerError500, Status, StdMethod(..))
-import Network.URI (URI(..), URIAuth(..), relativeTo, nullURI)
-import Network.Wai.Handler.Warp (setPort, setHost, defaultSettings)
-import Options.Applicative (option, strOption, flag', auto, long, short,
-    metavar, help, execParser, Parser, fullDesc, helper, info)
-import qualified Options.Applicative as Opt
-import Web.Scotty (scottyOpts, ScottyM, matchAny, status, header,
-    addroute, RoutePattern, params, text, json, Options(..), setHeader,
+import Network.URI (URI(..), relativeTo, nullURI)
+import Web.Scotty (ScottyM, matchAny, status, header,
+    addroute, RoutePattern, params, text, json, setHeader,
     ActionM, raise, Parsable(..), body)
 import Web.Scotty.Internal.Types (ActionT(..), ActionError(..),
     ScottyError(..))
-import YouDo.DB.Mock
-import YouDo.DB.PostgreSQL
 import YouDo.Holex
 import YouDo.Types
-
-data DBOption = InMemory | Postgres String
-data YDOptions = YDOptions { port :: Int
-                           , dbopt :: DBOption
-                           }
-options :: Parser YDOptions
-options = YDOptions
-    <$> option auto (long "port"
-                     <> short 'p'
-                     <> metavar "PORT"
-                     <> help "Listen on port number PORT.")
-    <*> ( Postgres <$> strOption (long "postgresql"
-                                 <> short 'g'
-                                 <> metavar "STR"
-                                 <> help "Connect to PostgreSQL database \
-                                         \specified by libpq connection \
-                                         \string STR.")
-          <|> flag' InMemory (long "memory"
-                             <> short 'm'
-                             <> help "Use a transient in-memory database.") )
-
-main :: IO ()
-main = execParser opts >>= mainOpts
-    where opts = info (helper <*> options)
-            (fullDesc <> Opt.header "ydserver - a YouDo web server")
-
-mainOpts :: YDOptions -> IO ()
-mainOpts opts = do
-    let baseuri = nullURI { uriScheme = "http:"
-                          , uriAuthority = Just URIAuth
-                                { uriUserInfo = ""
-                                , uriRegName = "localhost"
-                                , uriPort = if p == 80
-                                            then ""
-                                            else ":" ++ show p
-                                }
-                          , uriPath = "/"
-                          }
-        scotty = scottyOpts def{ verbose = 0
-                               , settings = setPort p
-                                          $ setHost "127.0.0.1"  -- for now
-                                          $ defaultSettings
-                               }
-        p = port opts
-    mv <- newMVar ()
-    case dbopt opts of
-        InMemory -> do
-            db <- empty
-            scotty $ app baseuri (MockYoudoDB db) (MockUserDB db) mv
-        Postgres connstr -> do
-            bracket (connectPostgreSQL (pack connstr))
-                    (\conn -> close conn)
-                    (\conn -> scotty $ app baseuri
-                                           (PostgresYoudoDB conn)
-                                           (PostgresUserDB conn)
-                                           mv)
 
 app :: ( DB YoudoID YoudoData YoudoUpdate IO ydb
        , DB UserID UserData UserUpdate IO udb
