@@ -206,19 +206,6 @@ resource route acts =
 
 type RequestParser = Holex LT.Text ParamValue
 
-dbAction :: (DB k v u IO d)
-    => MVar ()
-    -> d
-    -> RequestParser a
-    -> (a -> d -> IO c)
-    -> (c -> ActionM ())
-    -> ActionM ()
-dbAction mv db expr work resp =
-    statusErrors $ do
-        a <- failWith badRequest400 $ fromRequest $ expr
-        c <- liftIO $ withMVar mv $ \_ -> work a db
-        failWith internalServerError500 $ resp c
-
 -- Perform the given action, annotating any failures with the given status.
 failWith :: Status -> ActionM a -> ActionT ErrorWithStatus IO a
 failWith stat act =
