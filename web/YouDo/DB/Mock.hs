@@ -1,7 +1,5 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 module YouDo.DB.Mock where
-
-import Prelude hiding (id)
 import Control.Applicative ((<$>))
 import Control.Concurrent.MVar (MVar, withMVar, modifyMVar, newMVar)
 import Data.Function (on)
