@@ -152,6 +152,20 @@ tests = return $
                     \duedate=2014-11-30T14:10:05.038Z&completed=false"
             <> header "Content-Type" "application/x-www-form-urlencoded"
         stat ~= badRequest400
+    , serverTest "new youdo with misformatted assignerid" $ \req -> do
+        (stat, _, _) <- liftIO $ req
+            $ post "http://example.com/0/youdos"
+            <> body "assignerid=q&assigneeid=0&description=blah&\
+                    \duedate=2014-11-30T14:10:05.038Z&completed=false"
+            <> header "Content-Type" "application/x-www-form-urlencoded"
+        stat ~= badRequest400
+    , serverTest "new youdo with misformatted completed" $ \req -> do
+        (stat, _, _) <- liftIO $ req
+            $ post "http://example.com/0/youdos"
+            <> body "assignerid=0&assigneeid=0&description=blah&\
+                    \duedate=2014-11-30T14:10:05.038Z&completed=snee"
+            <> header "Content-Type" "application/x-www-form-urlencoded"
+        stat ~= badRequest400
     , serverTest "bad method to /0/youdos" $ \req -> do
         (stat, hdrs, _) <- liftIO $ req
             $ method methodPut
