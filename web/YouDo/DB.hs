@@ -1,5 +1,6 @@
 {-# LANGUAGE MultiParamTypeClasses, FunctionalDependencies,
-    FlexibleInstances, FlexibleContexts, OverloadedStrings #-}
+    FlexibleInstances, FlexibleContexts, OverloadedStrings,
+    ScopedTypeVariables #-}
 module YouDo.DB where
 
 import Control.Applicative
@@ -17,8 +18,9 @@ class (Monad m, NamedResource k)
     getAll :: d -> m (GetResult [Versioned k v])
     post :: v -> d -> m (PostResult (Versioned k v))
     update :: u -> d -> m (UpdateResult (Versioned k v) (Versioned k v))
-    dbResourceName :: d -> Maybe k -> String
-    dbResourceName _ x = resourceName x
+    dbResourceName :: d -> String
+    dbResourceName = const $ resourceName x
+        where x = Nothing :: Maybe k    -- ScopedTypeVariables used!
 
 class Result r a | r->a where
     notFound :: r

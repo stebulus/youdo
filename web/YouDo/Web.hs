@@ -91,7 +91,7 @@ webdb :: ( NamedResource k, DB k v u IO d
          -> ScottyM()
 webdb baseuri mv db =
     let basepath = nullURI { uriPath = uriPath baseuri }
-        rtype = dbResourceName db Nothing
+        rtype = dbResourceName db
         pat s = fromString $ show $ s `relative` basepath
         onweb f = webfunc baseuri $ lock mv $ flip f db
     in do resource (pat rtype)
