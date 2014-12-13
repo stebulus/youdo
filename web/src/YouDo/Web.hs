@@ -30,11 +30,12 @@ import Data.List (foldl', intercalate)
 import Data.String (IsString(..))
 import qualified Data.Text.Lazy as LT
 import Network.HTTP.Types (ok200, created201, badRequest400, notFound404,
-    methodNotAllowed405, internalServerError500, Status, StdMethod(..))
+    methodNotAllowed405, unsupportedMediaType415, internalServerError500,
+    Status, StdMethod(..))
 import Network.URI (URI(..), relativeTo, nullURI)
 import Web.Scotty (ScottyM, matchAny, status, header,
     addroute, RoutePattern, params, text, json, setHeader,
-    ActionM, raise, Parsable(..), body)
+    ActionM, Parsable(..), body)
 import Web.Scotty.Internal.Types (ActionT(..), ActionError(..),
     ScottyError(..))
 
@@ -119,7 +120,7 @@ webfunc :: (WebResult r, Default (RequestParser a))
            -> ActionM ()
 webfunc u f =
     statusErrors $ do
-        a <- failWith badRequest400 $ fromRequest $ def
+        a <- fromRequest $ def
         failWith internalServerError500 $ do
             r <- liftIO $ f a
             report u r
@@ -258,6 +259,9 @@ instance ScottyError ErrorWithStatus where
     stringError msg = ErrorWithStatus internalServerError500 (LT.pack msg)
     showError (ErrorWithStatus _ msg) = msg
 
+raiseStatus :: Status -> LT.Text -> ActionStatusM a
+raiseStatus stat msg = throwError $ ActionError $ ErrorWithStatus stat msg
+
 -- | The relative URL for a 'NamedResource' object.
 resourceRelativeURLString :: (Show k, NamedResource k) => k -> String
 resourceRelativeURLString k = "./" ++ resourceName (Just k) ++ "/" ++ show k
@@ -273,23 +277,24 @@ resourceVersionURL baseuri verk =
     `relative` baseuri
 
 -- | Use the given 'Holex' to interpret the data in the HTTP request.
-fromRequest :: Holex LT.Text ParamValue a -> ActionM a
+fromRequest :: Holex LT.Text ParamValue a -> ActionStatusM a
 fromRequest expr = do
     kvs <- requestData
     case runHolex expr kvs of
-        Left errs -> raise $ showHolexErrors errs
+        Left errs -> raiseStatus badRequest400 $ showHolexErrors errs
         Right a -> return a
 
 -- | Get HTTP request data as key-value pairs, including
 -- captures, query parameters, form data (in a request body of type
 -- @application/x-www-form-url-encoded@), and values of a JSON object
 -- (in a request body of type @application/json@).
-requestData :: ActionM [(LT.Text, ParamValue)]
+-- Raises HTTP status 415 (Unsupported Media Type) for other media types.
+requestData :: ActionStatusM [(LT.Text, ParamValue)]
 requestData = do
-    ps <- params
+    ps <- failWith internalServerError500 $ params
     let paramdata = [(k, ScottyParam v) | (k,v)<-ps]
     bodydata <- do
-        maybehdr <- Web.Scotty.header "Content-Type"
+        maybehdr <- failWith internalServerError500 $ Web.Scotty.header "Content-Type"
         case maybehdr of
             Nothing -> return []
             Just hdr -> do
@@ -299,16 +304,18 @@ requestData = do
                         -- form data is already in params
                         return []
                     Just (Application "json") -> do
-                        bod <- body
+                        bod <- failWith internalServerError500 $ body
                         case A.eitherDecode' bod of
                             Left err ->
-                                raise (LT.pack err)
+                                raiseStatus badRequest400 $ LT.pack err
                             Right (Object obj) ->
                                 return [(LT.fromStrict k, JSONField v) | (k,v)<-M.toList obj]
                             Right _ ->
-                                raise "json payload is not an object"
-                    Nothing -> raise $ LT.concat ["Incomprehensible Content-Type: ", hdr]
-                    _ -> raise $ LT.concat ["Don't know how to handle Content-Type: ", hdr]
+                                raiseStatus badRequest400 $ "json payload is not an object"
+                    Nothing -> raiseStatus badRequest400 $
+                        LT.concat ["Incomprehensible Content-Type: ", hdr]
+                    _ -> raiseStatus unsupportedMediaType415 $
+                        LT.concat ["Don't know how to handle Content-Type: ", hdr]
     return $ paramdata ++ bodydata
 
 -- | English description of a 'HolexError'.
