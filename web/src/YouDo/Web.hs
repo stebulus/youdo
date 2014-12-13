@@ -161,23 +161,23 @@ instance (Show k, NamedResource k, ToJSON v) => ToJSON (WebVersioned k v) where
 -- | Reporting results from 'get' and other getting methods.
 instance (WebResult a) => WebResult (GetResult a) where
     report baseuri (Right (Right a)) =
-        do status ok200
+        do status ok200  -- http://tools.ietf.org/html/rfc2616#section-10.2.1
            report baseuri a
     report _ (Left NotFound) =
-        status notFound404
+        status notFound404  -- http://tools.ietf.org/html/rfc2616#section-10.4.5
     report _ (Right (Left msg)) =
-        do status internalServerError500
+        do status internalServerError500  -- http://tools.ietf.org/html/rfc2616#section-10.5.1
            text msg
 
 -- | Reporting results from 'update'.
 instance (WebResult b, NamedResource k, Show k, ToJSON v)
          => WebResult (UpdateResult b (Versioned k v)) where
     report baseuri (Right (Right (Right a))) =
-        do status created201
+        do status created201  -- http://tools.ietf.org/html/rfc2616#section-10.2.2
            setHeader "Location" $ LT.pack $ show $ resourceVersionURL baseuri (version a)
            report baseuri a
     report baseuri (Left (NewerVersion b)) =
-        do status conflict409
+        do status conflict409  -- http://tools.ietf.org/html/rfc2616#section-10.4.10
            report baseuri b
     report baseuri (Right gr) = report baseuri gr
 
@@ -185,7 +185,7 @@ instance (WebResult b, NamedResource k, Show k, ToJSON v)
 instance (NamedResource k, Show k, ToJSON v)
          => WebResult (PostResult (Versioned k v)) where
     report baseuri (Right (Right (Right a))) =
-        do status created201
+        do status created201  -- http://tools.ietf.org/html/rfc2616#section-10.2.2
            setHeader "Location" $ LT.pack $ show $ resourceURL baseuri $ thingid $ version a
            report baseuri a
     report _ (Left (InvalidObject msgs)) =
@@ -206,7 +206,7 @@ resource route acts =
     in do
         sequence_ [addroute method route act | (method, act) <- acts]
         matchAny route $ do
-            status methodNotAllowed405
+            status methodNotAllowed405  -- http://tools.ietf.org/html/rfc2616#section-10.4.6
             setHeader "Allow" $ LT.pack allowedMethods
 
 -- | Perform the given action, annotating any failures with the given
@@ -262,7 +262,12 @@ instance ScottyError ErrorWithStatus where
 raiseStatus :: Status -> LT.Text -> ActionStatusM a
 raiseStatus stat msg = throwError $ ActionError $ ErrorWithStatus stat msg
 
+-- | <http://tools.ietf.org/html/rfc2616#section-10.4.1>
+badRequest :: LT.Text -> ActionStatusM a
+badRequest = raiseStatus badRequest400
+
 -- | Equivalent to 'failWith' 'internalServerError500'.
+-- (See <http://tools.ietf.org/html/rfc2616#section-10.5.1>.)
 lift500 :: ActionM a -> ActionStatusM a
 lift500 = failWith internalServerError500
 
@@ -285,7 +290,7 @@ fromRequest :: Holex LT.Text ParamValue a -> ActionStatusM a
 fromRequest expr = do
     kvs <- requestData
     case runHolex expr kvs of
-        Left errs -> raiseStatus badRequest400 $ showHolexErrors errs
+        Left errs -> badRequest $ showHolexErrors errs
         Right a -> return a
 
 -- | Get HTTP request data as key-value pairs, including
@@ -293,6 +298,7 @@ fromRequest expr = do
 -- @application/x-www-form-url-encoded@), and values of a JSON object
 -- (in a request body of type @application/json@).
 -- Raises HTTP status 415 (Unsupported Media Type) for other media types.
+-- (See <http://tools.ietf.org/html/rfc2616#section-10.4.16>.)
 requestData :: ActionStatusM [(LT.Text, ParamValue)]
 requestData = do
     ps <- lift500 params
@@ -311,12 +317,12 @@ requestData = do
                         bod <- lift500 body
                         case A.eitherDecode' bod of
                             Left err ->
-                                raiseStatus badRequest400 $ LT.pack err
+                                badRequest $ LT.pack err
                             Right (Object obj) ->
                                 return [(LT.fromStrict k, JSONField v) | (k,v)<-M.toList obj]
                             Right _ ->
-                                raiseStatus badRequest400 $ "json payload is not an object"
-                    Nothing -> raiseStatus badRequest400 $
+                                badRequest "json payload is not an object"
+                    Nothing -> badRequest $
                         LT.concat ["Incomprehensible Content-Type: ", hdr]
                     _ -> raiseStatus unsupportedMediaType415 $
                         LT.concat ["Don't know how to handle Content-Type: ", hdr]
