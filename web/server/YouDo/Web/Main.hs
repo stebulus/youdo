@@ -22,12 +22,12 @@ import Options.Applicative (option, strOption, flag', auto, long, short,
     metavar, help, execParser, Parser, fullDesc, helper, info, header)
 import Web.Scotty (scottyOpts, Options(..))
 
-import YouDo.DB.Mock
+import YouDo.DB.Memory
 import YouDo.DB.PostgreSQL
 import YouDo.Web (app)
 
 -- | The kind of database to connect to.
-data DBOption = InMemory            -- ^A transient in-memory database; see "YouDo.DB.Mock"
+data DBOption = InMemory            -- ^A transient in-memory database; see "YouDo.DB.Memory"
               | Postgres String     -- ^A PostgreSQL database; see "YouDo.DB.PostgreSQL"
 
 data YDOptions = YDOptions { port :: Int        -- ^What port to listen to.
@@ -76,7 +76,7 @@ mainOpts opts = do
     mv <- newMVar ()
     case dbopt opts of
         InMemory -> do
-            db <- YouDo.DB.Mock.empty
+            db <- YouDo.DB.Memory.empty
             scotty $ app baseuri (MemoryYoudoDB db) (MemoryUserDB db) mv
         Postgres connstr -> do
             bracket (connectPostgreSQL (pack connstr))

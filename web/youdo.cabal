@@ -36,7 +36,7 @@ executable ydserver
 library
   hs-source-dirs:      src
   exposed-modules:     YouDo.DB
-                       , YouDo.DB.Mock
+                       , YouDo.DB.Memory
                        , YouDo.DB.PostgreSQL
                        , YouDo.Holex
                        , YouDo.Test

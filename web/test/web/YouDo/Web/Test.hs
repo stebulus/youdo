@@ -28,7 +28,7 @@ import Network.Wai (Application, responseToStream, RequestBodyLength(..), reques
     defaultRequest)
 import Network.Wai.Internal (Request(..), ResponseReceived(..))
 import Web.Scotty (scottyApp, parseParam)
-import YouDo.DB.Mock
+import YouDo.DB.Memory
 import YouDo.Holex
 import YouDo.Test (plainTest)
 import YouDo.Types (DueDate)
