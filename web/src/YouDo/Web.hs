@@ -30,8 +30,8 @@ import Data.List (foldl', intercalate)
 import Data.String (IsString(..))
 import qualified Data.Text.Lazy as LT
 import Network.HTTP.Types (ok200, created201, badRequest400, notFound404,
-    methodNotAllowed405, unsupportedMediaType415, internalServerError500,
-    Status, StdMethod(..))
+    methodNotAllowed405, conflict409, unsupportedMediaType415,
+    internalServerError500, Status, StdMethod(..))
 import Network.URI (URI(..), relativeTo, nullURI)
 import Web.Scotty (ScottyM, matchAny, status, header,
     addroute, RoutePattern, params, text, json, setHeader,
@@ -177,7 +177,7 @@ instance (WebResult b, NamedResource k, Show k, ToJSON v)
            setHeader "Location" $ LT.pack $ show $ resourceVersionURL baseuri (version a)
            report baseuri a
     report baseuri (Left (NewerVersion b)) =
-        do status badRequest400
+        do status conflict409
            report baseuri b
     report baseuri (Right gr) = report baseuri gr
 
