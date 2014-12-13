@@ -6,7 +6,8 @@ import Control.Concurrent.MVar (newEmptyMVar, newMVar, takeMVar, putMVar,
     modifyMVar_, modifyMVar)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.Either (EitherT(..), left, right, hoistEither)
-import Data.Aeson (eitherDecode, Object, Value(..))
+import Data.Aeson (eitherDecode, Object, Value(..), parseJSON)
+import Data.Aeson.Types (parseEither)
 import qualified Data.ByteString.Lazy.Char8 as LB
 import qualified Data.ByteString.Char8 as SB
 import Data.CaseInsensitive (mk)
@@ -29,6 +30,7 @@ import Web.Scotty (scottyApp)
 import YouDo.DB.Mock
 import YouDo.Holex
 import YouDo.Test (plainTest)
+import YouDo.Types (DueDate)
 import YouDo.Web
 
 tests :: IO [Test]
@@ -60,7 +62,7 @@ tests = return
             <> body "{\"assignerid\":0,\
                     \\"assigneeid\":0,\
                     \\"description\":\"blah\",\
-                    \\"duedate\":\"\",\
+                    \\"duedate\":null,\
                     \\"completed\":false}"
             <> header "Content-Type" "application/json"
         stat ~= created201
@@ -215,6 +217,14 @@ tests = return
         (val,val') ~= (Right (-2),
             Left [ParseError "b" (JSONField (String "q"))
                 "when expecting a Int, encountered String instead"])
+    , plainTest "parsing misformatted duedate from json using Holex" $ do
+        (runHolex (parse "duedate") [("duedate", JSONField (String "snee"))]
+            :: Either [HolexError String ParamValue] DueDate)
+            ~= Left [ParseError "duedate" (JSONField (String "snee"))
+                        "could not parse date \"snee\""]
+    , plainTest "parsing misformatted date from json using Aeson" $ do
+        (parseEither parseJSON "snee" :: Either String DueDate)
+            ~= Left "could not parse date \"snee\""
     ]
 
 unintersperse :: (Eq a) => a -> [a] -> [[a]]

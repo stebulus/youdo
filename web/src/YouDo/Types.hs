@@ -1,8 +1,10 @@
 {-# LANGUAGE OverloadedStrings, FlexibleInstances #-}
 module YouDo.Types where
 
-import Control.Applicative ((<$>), (<*>))
+import Control.Applicative ((<$>), (<*>), pure)
 import Data.Aeson (ToJSON(..), FromJSON(..), (.=), object, Value(..))
+import Data.Aeson.Types (Parser, typeMismatch)
+import qualified Data.Text as ST
 import qualified Data.Text.Lazy as LT
 import Data.Time (UTCTime)
 import Data.Time.ISO8601 (parseISO8601)
@@ -86,7 +88,7 @@ data UserUpdate = UserUpdate { oldUserVersion :: VersionedID UserID
                              } deriving (Show, Eq)
 
 -- This newtype avoids orphan instances.
-newtype DueDate = DueDate { toMaybeTime :: Maybe UTCTime } deriving (Show)
+newtype DueDate = DueDate { toMaybeTime :: Maybe UTCTime } deriving (Eq, Show)
 instance Parsable DueDate where
     parseParam "" = Right $ DueDate Nothing
     parseParam t = case parseISO8601 (LT.unpack t) of
@@ -96,10 +98,15 @@ instance ToJSON DueDate where
     toJSON (DueDate Nothing) = Null
     toJSON (DueDate (Just t)) = toJSON t
 instance FromJSON DueDate where
-    parseJSON x = DueDate <$> (possibleDate <$> parseJSON x)
-        where possibleDate s = if s == ""
-                                then Nothing
-                                else parseISO8601 s
+    parseJSON Null = DueDate <$> pure Nothing
+    parseJSON (String t) = DueDate <$> (possibleDate =<< pure t)
+        where possibleDate :: ST.Text -> Parser (Maybe UTCTime)
+              possibleDate s =
+                case parseISO8601 (ST.unpack s) of
+                    Just d -> return $ Just d
+                    Nothing -> fail $ "could not parse date " ++ show t
+    parseJSON x = typeMismatch "String or Null" x
+
 instance FromField DueDate where
     fromField fld = (fmap.fmap) DueDate $ fromField fld
 instance ToField DueDate where
