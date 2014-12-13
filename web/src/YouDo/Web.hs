@@ -97,7 +97,7 @@ webdb baseuri mv db =
         onweb f = webfunc baseuri $ lock mv $ flip f db
     in do resource (pat rtype)
             [ (GET, onweb (\() -> getAll))
-            , (POST, onweb post)
+            , (POST, onweb create)
             ]
           resource (pat (rtype ++ "/:id"))
             [ (GET, onweb get) ]
@@ -181,9 +181,9 @@ instance (WebResult b, NamedResource k, Show k, ToJSON v)
            report baseuri b
     report baseuri (Right gr) = report baseuri gr
 
--- | Reporting results from 'post'.
+-- | Reporting results from 'create'.
 instance (NamedResource k, Show k, ToJSON v)
-         => WebResult (PostResult (Versioned k v)) where
+         => WebResult (CreateResult (Versioned k v)) where
     report baseuri (Right (Right (Right a))) =
         do status created201  -- http://tools.ietf.org/html/rfc2616#section-10.2.2
            setHeader "Location" $ LT.pack $ show $ resourceURL baseuri $ thingid $ version a

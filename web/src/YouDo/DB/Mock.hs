@@ -26,7 +26,7 @@ instance DB YoudoID YoudoData YoudoUpdate IO MockYoudoDB where
         return $ one $ [yd | yd<-youdos db', version yd == ydver]
     getAll db = withMVar (mvar $ ymock db) $ \db' ->
         return $ success $ nubBy ((==) `on` thingid . version) $ youdos db'
-    post yd db = modifyMVar (mvar $ ymock db) $ \db' -> do
+    create yd db = modifyMVar (mvar $ ymock db) $ \db' -> do
         let newid = YoudoID $
                 1 + case thingid . version <$> (listToMaybe $ youdos db') of
                         Nothing -> 0
@@ -66,7 +66,7 @@ instance DB UserID UserData UserUpdate IO MockUserDB where
         return $ one $ [u | u<-users db', version u == verid]
     getVersions verid db = withMVar (mvar $ umock db) $ \db' ->
         return $ some $ [u | u<-users db', thingid (version u) == verid]
-    post ud db = modifyMVar (mvar $ umock db) $ \db' -> do
+    create ud db = modifyMVar (mvar $ umock db) $ \db' -> do
         let newid = UserID $
                 1 + case thingid . version <$> (listToMaybe $ users db') of
                         Nothing -> 0

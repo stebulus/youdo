@@ -18,7 +18,7 @@ instance DB YoudoID YoudoData YoudoUpdate IO PostgresYoudoDB where
     getAll (PostgresYoudoDB conn) = success <$> query_ conn
         "select id, assignerid, assigneeid, description, duedate, completed \
         \from youdo"
-    post yd (PostgresYoudoDB conn) = do
+    create yd (PostgresYoudoDB conn) = do
         withTransaction conn $ do
             _ <- execute conn
                     ("insert into transaction (yd_userid, yd_ipaddr, yd_useragent) \

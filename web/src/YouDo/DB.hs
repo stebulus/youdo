@@ -13,7 +13,7 @@ module YouDo.DB (
     -- *Versioning of database objects
     Versioned(..), VersionedID(..), TransactionID(..),
     -- *Results of database operations
-    GetResult, PostResult, UpdateResult,
+    GetResult, CreateResult, UpdateResult,
     Result(..),
     NotFound(..),
     InvalidObject(..), invalidObject,
@@ -47,7 +47,7 @@ class (Monad m, NamedResource k)
     getAll :: d -> m (GetResult [Versioned k v])
 
     -- | Store a new object.
-    post :: v -> d -> m (PostResult (Versioned k v))
+    create :: v -> d -> m (CreateResult (Versioned k v))
 
     -- | Update an existing object.
     update :: u -> d -> m (UpdateResult (Versioned k v) (Versioned k v))
@@ -123,7 +123,7 @@ data NotFound = NotFound
 data NewerVersion a = NewerVersion a
 
 {- |
-    Result of a 'DB' post operation: the supplied data describes an
+    Result of a 'DB' create operation: the supplied data describes an
     invalid object.  A list of reasons is enclosed.
 -}
 data InvalidObject = InvalidObject [LT.Text]
@@ -159,17 +159,17 @@ newerVersion :: b -> UpdateResult b a
 newerVersion x = Left $ NewerVersion x
 
 {- |
-    Result of a 'DB' post operation.  The data supplied describes
+    Result of a 'DB' create operation.  The data supplied describes
     an invalid object (and reasons are enclosed), the object was not
-    found (?), some other error occurred, or the post succeeded and
+    found (?), some other error occurred, or the create succeeded and
     the created object is enclosed.
 -}
-type PostResult a = Either InvalidObject (GetResult a)
-instance Result (PostResult a) a where
+type CreateResult a = Either InvalidObject (GetResult a)
+instance Result (CreateResult a) a where
     notFound = Right $ notFound
     failure = Right . failure
     success = Right . success
-invalidObject :: [LT.Text] -> PostResult a
+invalidObject :: [LT.Text] -> CreateResult a
 invalidObject errs = Left $ InvalidObject errs
 
 {- |
