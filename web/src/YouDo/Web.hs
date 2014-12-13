@@ -121,7 +121,7 @@ webfunc :: (WebResult r, Default (RequestParser a))
 webfunc u f =
     statusErrors $ do
         a <- fromRequest $ def
-        failWith internalServerError500 $ do
+        lift500 $ do
             r <- liftIO $ f a
             report u r
 
@@ -262,6 +262,10 @@ instance ScottyError ErrorWithStatus where
 raiseStatus :: Status -> LT.Text -> ActionStatusM a
 raiseStatus stat msg = throwError $ ActionError $ ErrorWithStatus stat msg
 
+-- | Equivalent to 'failWith' 'internalServerError500'.
+lift500 :: ActionM a -> ActionStatusM a
+lift500 = failWith internalServerError500
+
 -- | The relative URL for a 'NamedResource' object.
 resourceRelativeURLString :: (Show k, NamedResource k) => k -> String
 resourceRelativeURLString k = "./" ++ resourceName (Just k) ++ "/" ++ show k
@@ -291,10 +295,10 @@ fromRequest expr = do
 -- Raises HTTP status 415 (Unsupported Media Type) for other media types.
 requestData :: ActionStatusM [(LT.Text, ParamValue)]
 requestData = do
-    ps <- failWith internalServerError500 $ params
+    ps <- lift500 params
     let paramdata = [(k, ScottyParam v) | (k,v)<-ps]
     bodydata <- do
-        maybehdr <- failWith internalServerError500 $ Web.Scotty.header "Content-Type"
+        maybehdr <- lift500 $ Web.Scotty.header "Content-Type"
         case maybehdr of
             Nothing -> return []
             Just hdr -> do
@@ -304,7 +308,7 @@ requestData = do
                         -- form data is already in params
                         return []
                     Just (Application "json") -> do
-                        bod <- failWith internalServerError500 $ body
+                        bod <- lift500 body
                         case A.eitherDecode' bod of
                             Left err ->
                                 raiseStatus badRequest400 $ LT.pack err
