@@ -210,7 +210,7 @@ resource route acts =
 
 -- | Perform the given action, annotating any failures with the given
 -- HTTP status.
-failWith :: Status -> ActionM a -> ActionT ErrorWithStatus IO a
+failWith :: Status -> ActionM a -> ActionStatusM a
 failWith stat act =
     ActionT $ mapErrorT
         (\m -> do
@@ -245,11 +245,13 @@ bindError act f = do
         Left Next -> throwError Next
 
 -- | Report any error status to the web client.
-statusErrors :: ActionT ErrorWithStatus IO () -> ActionM ()
+statusErrors :: ActionStatusM () -> ActionM ()
 statusErrors = (`bindError` reportStatus)
     where reportStatus (ErrorWithStatus stat msg) =
                 do status stat
                    text msg
+
+type ActionStatusM a = ActionT ErrorWithStatus IO a
 
 data ErrorWithStatus = ErrorWithStatus Status LT.Text
 instance ScottyError ErrorWithStatus where
