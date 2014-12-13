@@ -9,15 +9,15 @@ import Data.Maybe (listToMaybe, fromMaybe)
 import YouDo.DB
 import YouDo.Types
 
-data BareMockDB = BareMockDB
+data BareMemoryDB = BareMemoryDB
     { youdos :: [Youdo]
     , users :: [User]
     , lasttxn :: TransactionID
     }
-data MockDB = MockDB { mvar :: MVar BareMockDB }
+data MemoryDB = MemoryDB { mvar :: MVar BareMemoryDB }
 
-newtype MockYoudoDB = MockYoudoDB { ymock :: MockDB }
-instance DB YoudoID YoudoData YoudoUpdate IO MockYoudoDB where
+newtype MemoryYoudoDB = MemoryYoudoDB { ymock :: MemoryDB }
+instance DB YoudoID YoudoData YoudoUpdate IO MemoryYoudoDB where
     get ydid db = withMVar (mvar $ ymock db) $ \db' ->
         return $ one $ [yd | yd<-youdos db', thingid (version yd) == ydid]
     getVersions ydid db = withMVar (mvar $ ymock db) $ \db' ->
@@ -58,8 +58,8 @@ instance DB YoudoID YoudoData YoudoUpdate IO MockYoudoDB where
                                            , success newyd
                                            )
 
-newtype MockUserDB = MockUserDB { umock :: MockDB }
-instance DB UserID UserData UserUpdate IO MockUserDB where
+newtype MemoryUserDB = MemoryUserDB { umock :: MemoryDB }
+instance DB UserID UserData UserUpdate IO MemoryUserDB where
     get uid db = withMVar (mvar $ umock db) $ \db' ->
         return $ one $ [u | u<-users db', thingid (version u) == uid]
     getVersion verid db = withMVar (mvar $ umock db) $ \db' ->
@@ -113,13 +113,13 @@ instance Updater UserUpdate UserData where
         Nothing -> u
         Just n -> u { name = n }
 
-empty :: IO MockDB
+empty :: IO MemoryDB
 empty = do
-    mv <- newMVar $ BareMockDB
+    mv <- newMVar $ BareMemoryDB
             { youdos = []
             , users = [Versioned (VersionedID (UserID 0)
                                               (TransactionID 0))
                                  (UserData "yddb")]
             , lasttxn = TransactionID 0
             }
-    return $ MockDB mv
+    return $ MemoryDB mv

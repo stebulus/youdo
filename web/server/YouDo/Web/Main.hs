@@ -77,7 +77,7 @@ mainOpts opts = do
     case dbopt opts of
         InMemory -> do
             db <- YouDo.DB.Mock.empty
-            scotty $ app baseuri (MockYoudoDB db) (MockUserDB db) mv
+            scotty $ app baseuri (MemoryYoudoDB db) (MemoryUserDB db) mv
         Postgres connstr -> do
             bracket (connectPostgreSQL (pack connstr))
                     (\conn -> close conn)
