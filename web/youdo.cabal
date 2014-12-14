@@ -18,21 +18,8 @@ executable ydserver
   main-is:             server.hs
   hs-source-dirs:      server
   ghc-options:         -Wall
-  other-modules:       YouDo.Web.Main
   build-depends:       base ==4.6.*
                        , youdo ==0.1.*
-
-                       , scotty ==0.9.*
-                       , postgresql-simple ==0.4.*
-                       , warp ==3.0.*
-                       , optparse-applicative ==0.11.*
-
-                       , mtl ==2.1.*
-
-                       , network ==2.4.*
-
-                       , bytestring ==0.10.*
-                       , data-default ==0.5.*
 
 library
   hs-source-dirs:      src
@@ -44,15 +31,18 @@ library
                        , YouDo.TimeParser
                        , YouDo.Types
                        , YouDo.Web
+                       , YouDo.Web.Main
                        , YouDo.WebApp
   ghc-options:         -Wall
   build-depends:       base ==4.6.*
                        , Cabal ==1.16.*
 
                        , scotty ==0.9.*
+                       , warp ==3.0.*
                        , aeson ==0.7.*
                        , postgresql-simple ==0.4.*
                        , attoparsec ==0.11.*
+                       , optparse-applicative ==0.11.*
 
                        , http-types ==0.8.*
                        , network ==2.4.*
