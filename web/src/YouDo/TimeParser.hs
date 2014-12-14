@@ -19,11 +19,11 @@ import Data.Time (UTCTime(..), picosecondsToDiffTime, fromGregorianValid,
     instance for @Day@ (defined in "Data.Time.Format.Parse") of
     @fromGregorian@ instead of @fromGregorianValid@ (both defined in
     "Data.Time.Calendar").  We could fix this by defining our own
-    instance of @ParseTime@ with the desired behaviour, but this
-    would involve duplicating the whole stack of code above that,
-    and it would require supporting all the @strftime()@-style format
-    characters (onky a few of which are relevant to us).  So instead
-    we just write a simple direct parser.
+    instance of @ParseTime@ with the desired behaviour, but then we'd
+    have to duplicate the whole stack of code above that, and we'd
+    have to support all the @strftime()@-style format characters
+    (only a few of which are relevant to us).  So instead we just
+    write a simple direct parser.
 -}
 
 parseUTCTime :: LT.Text -> Either String UTCTime
