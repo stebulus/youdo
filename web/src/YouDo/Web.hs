@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings, RankNTypes, FlexibleContexts,
-    FlexibleInstances #-}
+    FlexibleInstances, UndecidableInstances #-}
 {-|
 Module      : YouDo.Web
 Description : Web application for YouDo
@@ -21,6 +21,7 @@ import Codec.MIME.Type (mimeType, MIMEType(Application))
 import Codec.MIME.Parse (parseMIMEType)
 import Control.Applicative ((<$>), (<*>))
 import Control.Concurrent.MVar (MVar, withMVar)
+import Control.Monad (liftM)
 import Control.Monad.Error (mapErrorT, throwError)
 import Control.Monad.IO.Class (liftIO, MonadIO)
 import Control.Monad.Reader (ReaderT(..), mapReaderT)
@@ -38,8 +39,9 @@ import Network.HTTP.Types (ok200, created201, badRequest400, notFound404,
     methodNotAllowed405, conflict409, unsupportedMediaType415,
     internalServerError500, Status, StdMethod(..))
 import Network.URI (URI(..), relativeTo, nullURI)
-import Web.Scotty (ScottyM, matchAny, status, header, addroute, params,
-    text, json, setHeader, ActionM, Parsable(..), body)
+import Web.Scotty (ScottyM, matchAny, header, addroute, params,
+    ActionM, Parsable(..), body)
+import qualified Web.Scotty as Scotty
 import Web.Scotty.Internal.Types (ActionT(..), ActionError(..),
     ScottyError(..))
 
@@ -53,6 +55,24 @@ type Based = ReaderT URI
 -- | Run a @Based@ with the given base URI.
 at :: Based m a -> URI -> m a
 at bma u = runReaderT bma u
+
+-- | Like 'Scotty.json', but for based representations.
+json :: BasedToJSON a => a -> Based ActionM ()
+json x = do
+    val <- basedToJSON x
+    lift $ Scotty.json val
+
+-- | Lifted version of 'Scotty.text'.
+text :: LT.Text -> Based ActionM ()
+text = lift . Scotty.text
+
+-- | Lifted version of 'Scotty.status'.
+status :: Status -> Based ActionM ()
+status = lift . Scotty.status
+
+-- | Lifted version of 'Scotty.setHeader'.
+setHeader :: LT.Text -> LT.Text -> Based ActionM ()
+setHeader h v = lift $ Scotty.setHeader h v
 
 -- | The Scotty application.
 -- Consists of 'webdb' interfaces for the given Youdo and User DB instances.
@@ -133,72 +153,63 @@ class WebResult r where
     report :: r                     -- ^The value to report.
               -> Based ActionM ()   -- ^An action that reports that value.
 
--- | Reporting versioned database objects as JSON.
-instance (NamedResource k, Show k, ToJSON v)
-         => WebResult (Versioned k v) where
-    report x = do
-        baseuri <- ask
-        lift $ json $ WebVersioned baseuri x
+-- | A value that can be serialized as JSON, respecting a base URI.
+class BasedToJSON a where
+    basedToJSON :: (Monad m) => a -> Based m Value
+instance BasedToJSON a => BasedToJSON [a] where
+    basedToJSON xs = liftM toJSON $ sequence $ map basedToJSON xs
 
--- | Reporting lists of versioned database objects as JSON.
-instance (NamedResource k, Show k, ToJSON v)
-         => WebResult [Versioned k v] where
-    report xs = do
-        baseuri <- ask
-        lift $ json $ map (WebVersioned baseuri) xs
-
--- | Shim which augments JSON representations of 'Versioned' objects
+-- | Augment JSON representations of 'Versioned' objects
 -- with @"url"@ and @"thisVersion"@ fields.
-data WebVersioned k v = WebVersioned URI (Versioned k v)
-instance (Show k, NamedResource k, ToJSON v) => ToJSON (WebVersioned k v) where
-    toJSON (WebVersioned baseuri ver) = Object augmentedmap
-        where augmentedmap = foldl' (flip (uncurry M.insert)) origmap
-                    [ "url" .= show (objurl `relative` baseuri)
-                    , "thisVersion" .= show (verurl `relative` baseuri)
-                    ]
-              verurl = objurl ++ (show verid)
-              objurl = resourceName (Just $ thingid $ version ver) ++ "/" ++ (show vid) ++ "/"
-              vid = thingid $ version ver
-              verid = txnid $ version ver
-              origmap = case toJSON (thing ver) of
-                            Object m -> m
-                            _ -> error "data did not encode as JSON object"
+instance (Show k, NamedResource k, ToJSON v)
+         => BasedToJSON (Versioned k v) where
+    basedToJSON v = do
+        objurl <- resourceURL $ thingid $ version v
+        verurl <- resourceVersionURL $ version v
+        let origmap = case toJSON (thing v) of
+                Object m -> m
+                _ -> error "data did not encode as JSON object"
+            augmentedmap = foldl' (flip (uncurry M.insert)) origmap
+                [ "url" .= show objurl
+                , "thisVersion" .= show verurl
+                ]
+        return $ Object augmentedmap
 
 -- | Reporting results from 'get' and other getting methods.
-instance (WebResult a) => WebResult (GetResult a) where
+instance (BasedToJSON a) => WebResult (GetResult a) where
     report (Right (Right a)) =
-        do lift $ status ok200  -- http://tools.ietf.org/html/rfc2616#section-10.2.1
-           report a
+        do status ok200  -- http://tools.ietf.org/html/rfc2616#section-10.2.1
+           json a
     report (Left NotFound) =
-        lift $ status notFound404  -- http://tools.ietf.org/html/rfc2616#section-10.4.5
+        status notFound404  -- http://tools.ietf.org/html/rfc2616#section-10.4.5
     report (Right (Left msg)) =
-        do lift $ status internalServerError500  -- http://tools.ietf.org/html/rfc2616#section-10.5.1
-           lift $ text msg
+        do status internalServerError500  -- http://tools.ietf.org/html/rfc2616#section-10.5.1
+           text msg
 
 -- | Reporting results from 'update'.
-instance (WebResult b, NamedResource k, Show k, ToJSON v)
+instance (BasedToJSON b, NamedResource k, Show k, ToJSON v)
          => WebResult (UpdateResult b (Versioned k v)) where
     report (Right (Right (Right a))) =
-        do lift $ status created201  -- http://tools.ietf.org/html/rfc2616#section-10.2.2
+        do status created201  -- http://tools.ietf.org/html/rfc2616#section-10.2.2
            url <- resourceVersionURL $ version a
-           lift $ setHeader "Location" $ LT.pack $ show $ url
-           report a
+           setHeader "Location" $ LT.pack $ show $ url
+           json a
     report (Left (NewerVersion b)) =
-        do lift $ status conflict409  -- http://tools.ietf.org/html/rfc2616#section-10.4.10
-           report b
+        do status conflict409  -- http://tools.ietf.org/html/rfc2616#section-10.4.10
+           json b
     report (Right gr) = report gr
 
 -- | Reporting results from 'create'.
 instance (NamedResource k, Show k, ToJSON v)
          => WebResult (CreateResult (Versioned k v)) where
     report (Right (Right (Right a))) =
-        do lift $ status created201  -- http://tools.ietf.org/html/rfc2616#section-10.2.2
+        do status created201  -- http://tools.ietf.org/html/rfc2616#section-10.2.2
            url <- resourceURL $ thingid $ version a
-           lift $ setHeader "Location" $ LT.pack $ show $ url
-           report a
+           setHeader "Location" $ LT.pack $ show $ url
+           json a
     report (Left (InvalidObject msgs)) =
-        do lift $ status badRequest400
-           lift $ text $ LT.concat [ LT.concat [msg, "\r\n"] | msg<-msgs ]
+        do status badRequest400
+           text $ LT.concat [ LT.concat [msg, "\r\n"] | msg<-msgs ]
     report (Right gr) = report gr
 
 -- | A web resource, with a complete list of its supported methods.
@@ -217,8 +228,8 @@ resource route acts =
         sequence_ [ mapReaderT (addroute method path) act
                   | (method, act) <- acts ]
         mapReaderT (matchAny path) $ do
-            lift $ status methodNotAllowed405  -- http://tools.ietf.org/html/rfc2616#section-10.4.6
-            lift $ setHeader "Allow" $ LT.pack allowedMethods
+            status methodNotAllowed405  -- http://tools.ietf.org/html/rfc2616#section-10.4.6
+            setHeader "Allow" $ LT.pack allowedMethods
 
 -- | Perform the given action, annotating any failures with the given
 -- HTTP status.
@@ -260,8 +271,8 @@ bindError act f = do
 statusErrors :: ActionStatusM () -> ActionM ()
 statusErrors = (`bindError` reportStatus)
     where reportStatus (ErrorWithStatus stat msg) =
-                do status stat
-                   text msg
+                do Scotty.status stat
+                   Scotty.text msg
 
 type ActionStatusM a = ActionT ErrorWithStatus IO a
 
