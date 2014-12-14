@@ -50,7 +50,8 @@ class (Monad m, NamedResource k)
     create :: v -> d -> m (CreateResult (Versioned k v))
 
     -- | Update an existing object.
-    update :: u -> d -> m (UpdateResult (Versioned k v) (Versioned k v))
+    update :: (Versioned k u) -> d
+        -> m (UpdateResult (Versioned k v) (Versioned k v))
 
     -- | The name of this resource.
     -- Obtained from the 'NamedResource' instance for 'k'.

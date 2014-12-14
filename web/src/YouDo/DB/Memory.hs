@@ -42,14 +42,14 @@ instance DB YoudoID YoudoData YoudoUpdate IO MemoryYoudoDB where
     update upd db = modifyMVar (mvar $ ymock db) $ \db' -> do
         let oldyd = listToMaybe
                 [yd | yd<-youdos db'
-                    , thingid (version yd) == thingid (oldVersion upd)]
+                    , thingid (version yd) == thingid (version upd)]
         case oldyd of
             Nothing -> return (db', notFound)
-            Just theyd -> if version theyd /= oldVersion upd
+            Just theyd -> if version theyd /= version upd
                             then return (db', newerVersion theyd)
                             else let newyd = Versioned
                                         (VersionedID (thingid (version theyd)) newtxn)
-                                        (doUpdate upd (thing theyd))
+                                        (doUpdate (thing upd) (thing theyd))
                                      newtxn = TransactionID $
                                          1 + case lasttxn db' of TransactionID n -> n
                                  in return (db' { youdos = newyd : (youdos db')
@@ -82,14 +82,14 @@ instance DB UserID UserData UserUpdate IO MemoryUserDB where
     update upd db = modifyMVar (mvar $ umock db) $ \db' -> do
         let oldu = listToMaybe
                 [u | u<-users db'
-                    , thingid (version u) == thingid (oldUserVersion upd)]
+                    , thingid (version u) == thingid (version upd)]
         case oldu of
             Nothing -> return (db', notFound)
-            Just theu -> if version theu /= oldUserVersion upd
+            Just theu -> if version theu /= version upd
                             then return (db', newerVersion theu)
                             else let newu = Versioned
                                         (VersionedID (thingid (version theu)) newtxn)
-                                        (doUpdate upd (thing theu))
+                                        (doUpdate (thing upd) (thing theu))
                                      newtxn = TransactionID $
                                          1 + case lasttxn db' of TransactionID n -> n
                                  in return (db' { users = newu : (users db')

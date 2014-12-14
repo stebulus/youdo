@@ -84,7 +84,7 @@ webdb :: ( NamedResource k, DB k v u IO d
          , Show k, ToJSON v
          , Default (RequestParser k)
          , Default (RequestParser v)
-         , Default (RequestParser u)
+         , Default (RequestParser (Versioned k u))
          ) => URI       -- ^The base URI of the API (including version number);
                         -- should end with a slash.
          -> MVar ()     -- ^All database access is under this MVar.
@@ -377,14 +377,15 @@ instance (IsString k, Eq k) => Default (Holex k ParamValue YoudoData) where
                     <*> defaultTo (DueDate Nothing) (parse "duedate")
                     <*> defaultTo False (parse "completed")
 
-instance (IsString k, Eq k) => Default (Holex k ParamValue YoudoUpdate) where
-    def = YoudoUpdate <$> (VersionedID <$> parse "id"
-                                       <*> parse "txnid")
-                      <*> optional (parse "assignerid")
-                      <*> optional (parse "assigneeid")
-                      <*> optional (parse "description")
-                      <*> optional (parse "duedate")
-                      <*> optional (parse "completed")
+instance (IsString k, Eq k)
+         => Default (Holex k ParamValue (Versioned YoudoID YoudoUpdate)) where
+    def = Versioned <$> (VersionedID <$> parse "id"
+                                     <*> parse "txnid")
+                    <*> (YoudoUpdate <$> optional (parse "assignerid")
+                                     <*> optional (parse "assigneeid")
+                                     <*> optional (parse "description")
+                                     <*> optional (parse "duedate")
+                                     <*> optional (parse "completed"))
 
 instance (IsString k, Eq k) => Default (Holex k ParamValue ()) where
     def = Const ()
@@ -413,7 +414,7 @@ instance (IsString k, Eq k) => Default (Holex k ParamValue UserID) where
 instance (IsString k, Eq k) => Default (Holex k ParamValue UserData) where
     def = UserData <$> parse "name"
 
-instance (IsString k, Eq k) => Default (Holex k ParamValue UserUpdate) where
-    def = UserUpdate <$> (VersionedID <$> parse "id"
+instance (IsString k, Eq k) => Default (Holex k ParamValue (Versioned UserID UserUpdate)) where
+    def = Versioned <$> (VersionedID <$> parse "id"
                                       <*> parse "txnid")
-                     <*> optional (parse "name")
+                    <*> (UserUpdate <$> optional (parse "name"))

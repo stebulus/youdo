@@ -50,8 +50,7 @@ data YoudoData = YoudoData { assignerid :: UserID
                            , completed :: Bool
                            } deriving (Show)
 
-data YoudoUpdate = YoudoUpdate { oldVersion :: VersionedID YoudoID
-                               , newAssignerid :: Maybe UserID
+data YoudoUpdate = YoudoUpdate { newAssignerid :: Maybe UserID
                                , newAssigneeid :: Maybe UserID
                                , newDescription :: Maybe String
                                , newDuedate :: Maybe DueDate
@@ -82,9 +81,7 @@ instance Parsable UserID where
 data UserData = UserData { name :: String }
     deriving (Show, Eq)
 
-data UserUpdate = UserUpdate { oldUserVersion :: VersionedID UserID
-                             , newName :: Maybe String
-                             } deriving (Show, Eq)
+data UserUpdate = UserUpdate { newName :: Maybe String } deriving (Show, Eq)
 
 -- This newtype avoids orphan instances.
 newtype DueDate = DueDate { toMaybeTime :: Maybe UTCTime } deriving (Eq, Show)
