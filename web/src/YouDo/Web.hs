@@ -10,7 +10,7 @@ module YouDo.Web (
     -- * Web application
     app, webdb, webfunc, resource,
     -- * Base URIs
-    Based, at,
+    Based, at, resourceURL, resourceVersionURL,
     -- * Interpreting requests
     RequestParser, parse, ParamValue(..),
     -- * Reporting results
