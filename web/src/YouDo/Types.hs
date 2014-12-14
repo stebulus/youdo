@@ -1,4 +1,5 @@
-{-# LANGUAGE OverloadedStrings, FlexibleInstances, MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings, FlexibleInstances, FlexibleContexts,
+    MultiParamTypeClasses #-}
 module YouDo.Types where
 
 import Control.Applicative ((<$>), (<*>), pure)
@@ -14,6 +15,10 @@ import Web.Scotty (Parsable(..))
 
 import YouDo.DB
 import YouDo.TimeParser (parseUTCTime)
+
+data ( DB YoudoID YoudoData YoudoUpdate IO yd
+     , DB UserID UserData UserUpdate IO ud
+     ) => YoudoDatabase yd ud = YoudoDatabase { youdos :: yd, users :: ud }
 
 type Youdo = Versioned YoudoID YoudoData
 instance NamedResource YoudoID where

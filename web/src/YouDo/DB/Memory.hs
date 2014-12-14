@@ -52,10 +52,6 @@ instance (Eq k, NamedResource k, Updater u v)
                                             (doUpdate (thing vu) (thing x))
                                 return (newx:xs, success newx)
 
-data ( DB YoudoID YoudoData YoudoUpdate IO yd
-     , DB UserID UserData UserUpdate IO ud
-     ) => YoudoDatabase yd ud = YoudoDatabase { youdos :: yd, users :: ud }
-
 empty :: IO (YoudoDatabase (MemoryDB YoudoID YoudoData YoudoUpdate)
                            (MemoryDB UserID UserData UserUpdate))
 empty = do

@@ -24,6 +24,7 @@ import Web.Scotty (scottyOpts, Options(..))
 
 import YouDo.DB.Memory
 import YouDo.DB.PostgreSQL
+import YouDo.Types (YoudoDatabase(..))
 import YouDo.Web (app)
 
 -- | The kind of database to connect to.

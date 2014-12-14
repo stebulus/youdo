@@ -31,7 +31,7 @@ import Web.Scotty (scottyApp, parseParam)
 import YouDo.DB.Memory
 import YouDo.Holex
 import YouDo.Test (plainTest)
-import YouDo.Types (DueDate)
+import YouDo.Types (DueDate, YoudoDatabase(..))
 import YouDo.Web
 
 tests :: IO [Test]
