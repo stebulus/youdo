@@ -5,7 +5,7 @@ Description : Command-line interface for YouDo web server
 Copyright   : (c) Steven Taschuk, 2014
 License     : GPL-3
 
-Command-line interface for the web server defined in "YouDo.Web".
+Command-line interface for the web server defined in "YouDo.WebApp".
 -}
 module YouDo.Web.Main (main, mainOpts, YDOptions(..), DBOption(..)) where
 
@@ -25,7 +25,8 @@ import Web.Scotty (scottyOpts, Options(..))
 import YouDo.DB.Memory
 import YouDo.DB.PostgreSQL
 import YouDo.Types (YoudoDatabase(..))
-import YouDo.Web (app, at)
+import YouDo.Web (at)
+import YouDo.WebApp (app)
 
 -- | The kind of database to connect to.
 data DBOption = InMemory            -- ^A transient in-memory database; see "YouDo.DB.Memory"

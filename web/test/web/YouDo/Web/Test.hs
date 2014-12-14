@@ -33,7 +33,8 @@ import YouDo.DB.Memory
 import YouDo.Holex
 import YouDo.Test (plainTest)
 import YouDo.Types (DueDate)
-import YouDo.Web
+import YouDo.Web (ParamValue(..), parse)
+import YouDo.WebApp
 
 tests :: IO [Test]
 tests = return $

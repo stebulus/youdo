@@ -44,6 +44,7 @@ library
                        , YouDo.TimeParser
                        , YouDo.Types
                        , YouDo.Web
+                       , YouDo.WebApp
   ghc-options:         -Wall
   build-depends:       base ==4.6.*
                        , Cabal ==1.16.*

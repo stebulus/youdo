@@ -2,42 +2,45 @@
     FlexibleInstances, UndecidableInstances #-}
 {-|
 Module      : YouDo.Web
-Description : Web application for YouDo
+Description : A tiny web framework on top of Scotty.
 Copyright   : (c) Steven Taschuk, 2014
 License     : GPL-3
 -}
 module YouDo.Web (
-    -- * Web application
-    app, webdb, webfunc, resource,
+    -- * IO actions as operations on resources
+    webfunc,
+    -- * Resources as bundles of operations
+    resource,
     -- * Base URIs
-    Based, at, resourceURL, resourceVersionURL,
+    Based, at, BasedToJSON(..), json, text, status, setHeader, relative,
     -- * Interpreting requests
-    RequestParser, parse, ParamValue(..),
+    fromRequest, RequestParser, parse, ParamValue(..), requestData,
     -- * Reporting results
-    WebResult(..)
+    WebResult(..),
+    -- * Error handling and HTTP status
+    ActionStatusM, ErrorWithStatus, raiseStatus, failWith,
+    catchActionError, bindError, statusErrors, badRequest, lift500
 ) where
 
 import Codec.MIME.Type (mimeType, MIMEType(Application))
 import Codec.MIME.Parse (parseMIMEType)
-import Control.Applicative ((<$>), (<*>))
-import Control.Concurrent.MVar (MVar, withMVar)
+import Control.Applicative ((<$>))
 import Control.Monad (liftM)
 import Control.Monad.Error (mapErrorT, throwError)
 import Control.Monad.IO.Class (liftIO, MonadIO)
 import Control.Monad.Reader (ReaderT(..), mapReaderT)
 import Control.Monad.Reader.Class (MonadReader(..))
 import Control.Monad.Trans.Class (lift)
-import Data.Aeson (ToJSON(..), FromJSON(..), Value(..), (.=))
+import Data.Aeson (ToJSON(..), FromJSON(..), Value(..))
 import Data.Aeson.Types (parseEither)
 import qualified Data.Aeson as A
 import qualified Data.HashMap.Strict as M
 import Data.Default
-import Data.List (foldl', intercalate)
+import Data.List (intercalate)
 import Data.String (IsString(..))
 import qualified Data.Text.Lazy as LT
-import Network.HTTP.Types (ok200, created201, badRequest400, notFound404,
-    methodNotAllowed405, conflict409, unsupportedMediaType415,
-    internalServerError500, Status, StdMethod(..))
+import Network.HTTP.Types (badRequest400, methodNotAllowed405,
+    unsupportedMediaType415, internalServerError500, Status, StdMethod(..))
 import Network.URI (URI(..), relativeTo, nullURI)
 import Web.Scotty (ScottyM, matchAny, header, addroute, params,
     ActionM, Parsable(..), body)
@@ -45,9 +48,42 @@ import qualified Web.Scotty as Scotty
 import Web.Scotty.Internal.Types (ActionT(..), ActionError(..),
     ScottyError(..))
 
-import YouDo.DB
 import YouDo.Holex
-import YouDo.Types
+
+-- | A web interface to a function.
+-- A value of type @a@ is obtained from the HTTP request using the
+-- type's default 'RequestParser'; then the given function is used
+-- to obtain a 'WebResult', which is sent to the client.  If an error
+-- occurs parsing the request, a 400 (Bad Request) response is sent;
+-- errors in later phases cause 500 (Internal Server Error).
+webfunc :: (WebResult r, Default (RequestParser a))
+           => (a -> IO r)   -- ^The function to perform.
+           -> Based ActionM ()
+webfunc f =
+    mapReaderT statusErrors $ do
+        a <- lift $ fromRequest $ def
+        mapReaderT lift500 $ do
+            r <- liftIO $ f a
+            report r
+
+-- | A web resource, with a complete list of its supported methods.
+-- Defining a resource this way causes a 405 (Method Not Allowed)
+-- responses when a request uses a method which is not in the
+-- given list.  (Scotty's default is 404 (Not Found), which is less
+-- appropriate.)
+resource :: String                    -- ^Route to this resource, relative to the base.
+            -> [(StdMethod, Based ActionM ())]    -- ^Allowed methods and their actions.
+            -> Based ScottyM ()
+resource route acts =
+    let allowedMethods = intercalate "," $ map (show . fst) acts
+    in do
+        baseuri <- ask
+        let path = fromString $ uriPath $ route `relative` baseuri
+        sequence_ [ mapReaderT (addroute method path) act
+                  | (method, act) <- acts ]
+        mapReaderT (matchAny path) $ do
+            status methodNotAllowed405  -- http://tools.ietf.org/html/rfc2616#section-10.4.6
+            setHeader "Allow" $ LT.pack allowedMethods
 
 -- | Monad transformer for managing a base URI.
 type Based = ReaderT URI
@@ -74,79 +110,11 @@ status = lift . Scotty.status
 setHeader :: LT.Text -> LT.Text -> Based ActionM ()
 setHeader h v = lift $ Scotty.setHeader h v
 
--- | The Scotty application.
--- Consists of 'webdb' interfaces for the given Youdo and User DB instances.
-app :: ( DB YoudoID YoudoData YoudoUpdate IO ydb
-       , DB UserID UserData UserUpdate IO udb
-       ) => YoudoDatabase ydb udb     -- ^The database.
-       -> MVar ()       -- ^All database access is under this MVar.
-       -> Based ScottyM ()
-app db mv =
-    local ("./0/" `relative`) $ do
-        webdb mv (youdos db)
-        webdb mv (users db)
-
--- | A web interface to an instance of 'DB'.
--- The following endpoints are created, relative to the given base URI
--- (which should probably end with a slash):
---
--- @
---      GET objs                (list of all current objs)
---      POST objs               (create new obj)
---      GET objs\//id/\/             (current version of obj)
---      GET objs\//id/\/versions    (all versions of obj)
---      GET objs\//id/\//txnid/       (specified version of obj)
---      POST objs\//id/\//txnid/      (create new version of obj)
--- @
---
--- These correspond directly to the methods of 'DB'.  The name @objs@
--- is obtained from the instance 'NamedResource' @k@.  Requests that
--- return objects return them in JSON format, using the instances
--- 'Show' @k@ and 'ToJSON' @v@.  The @/id/@ parameter is interpreted
--- via the instance 'Parsable' @k@.  (The 'FromJSON' @k@ instance
--- would only be used if the id were passed in the JSON request
--- body, which it shouldn't be.)  The request body, when needed,
--- is interpreted via default 'RequestParser' for the appropriate type.
-webdb :: ( NamedResource k, DB k v u IO d
-         , Parsable k, A.FromJSON k
-         , Show k, ToJSON v
-         , Default (RequestParser k)
-         , Default (RequestParser v)
-         , Default (RequestParser (Versioned k u))
-         ) => MVar ()     -- ^All database access is under this MVar.
-         -> d           -- ^The database.
-         -> Based ScottyM ()
-webdb mv db = do
-    let rtype = dbResourceName db
-        onweb f = webfunc $ lock mv $ flip f db
-    resource rtype
-             [ (GET, onweb (\() -> getAll))
-             , (POST, onweb create)
-             ]
-    resource (rtype ++ "/:id/")
-             [ (GET, onweb get) ]
-    resource (rtype ++ "/:id/versions")
-             [ (GET, onweb getVersions) ]
-    resource (rtype ++ "/:id/:txnid")
-             [ (GET, onweb getVersion)
-             , (POST, onweb update)
-             ]
-
--- | A web interface to a function.
--- A value of type @a@ is obtained from the HTTP request using the
--- type's default 'RequestParser'; then the given function is used
--- to obtain a 'WebResult', which is sent to the client.  If an error
--- occurs parsing the request, a 400 (Bad Request) response is sent;
--- errors in later phases cause 500 (Internal Server Error).
-webfunc :: (WebResult r, Default (RequestParser a))
-           => (a -> IO r)   -- ^The function to perform.
-           -> Based ActionM ()
-webfunc f =
-    mapReaderT statusErrors $ do
-        a <- lift $ fromRequest $ def
-        mapReaderT lift500 $ do
-            r <- liftIO $ f a
-            report r
+-- | Dereference a relative URI path.  Usually used infix.
+relative :: String      -- ^The path.
+            -> URI      -- ^The base URI.
+            -> URI
+relative s u = nullURI { uriPath = s } `relativeTo` u
 
 -- | A value that can be reported to a web client.
 class WebResult r where
@@ -159,77 +127,15 @@ class BasedToJSON a where
 instance BasedToJSON a => BasedToJSON [a] where
     basedToJSON xs = liftM toJSON $ sequence $ map basedToJSON xs
 
--- | Augment JSON representations of 'Versioned' objects
--- with @"url"@ and @"thisVersion"@ fields.
-instance (Show k, NamedResource k, ToJSON v)
-         => BasedToJSON (Versioned k v) where
-    basedToJSON v = do
-        objurl <- resourceURL $ thingid $ version v
-        verurl <- resourceVersionURL $ version v
-        let origmap = case toJSON (thing v) of
-                Object m -> m
-                _ -> error "data did not encode as JSON object"
-            augmentedmap = foldl' (flip (uncurry M.insert)) origmap
-                [ "url" .= show objurl
-                , "thisVersion" .= show verurl
-                ]
-        return $ Object augmentedmap
+type ActionStatusM a = ActionT ErrorWithStatus IO a
 
--- | Reporting results from 'get' and other getting methods.
-instance (BasedToJSON a) => WebResult (GetResult a) where
-    report (Right (Right a)) =
-        do status ok200  -- http://tools.ietf.org/html/rfc2616#section-10.2.1
-           json a
-    report (Left NotFound) =
-        status notFound404  -- http://tools.ietf.org/html/rfc2616#section-10.4.5
-    report (Right (Left msg)) =
-        do status internalServerError500  -- http://tools.ietf.org/html/rfc2616#section-10.5.1
-           text msg
+data ErrorWithStatus = ErrorWithStatus Status LT.Text
+instance ScottyError ErrorWithStatus where
+    stringError msg = ErrorWithStatus internalServerError500 (LT.pack msg)
+    showError (ErrorWithStatus _ msg) = msg
 
--- | Reporting results from 'update'.
-instance (BasedToJSON b, NamedResource k, Show k, ToJSON v)
-         => WebResult (UpdateResult b (Versioned k v)) where
-    report (Right (Right (Right a))) =
-        do status created201  -- http://tools.ietf.org/html/rfc2616#section-10.2.2
-           url <- resourceVersionURL $ version a
-           setHeader "Location" $ LT.pack $ show $ url
-           json a
-    report (Left (NewerVersion b)) =
-        do status conflict409  -- http://tools.ietf.org/html/rfc2616#section-10.4.10
-           json b
-    report (Right gr) = report gr
-
--- | Reporting results from 'create'.
-instance (NamedResource k, Show k, ToJSON v)
-         => WebResult (CreateResult (Versioned k v)) where
-    report (Right (Right (Right a))) =
-        do status created201  -- http://tools.ietf.org/html/rfc2616#section-10.2.2
-           url <- resourceURL $ thingid $ version a
-           setHeader "Location" $ LT.pack $ show $ url
-           json a
-    report (Left (InvalidObject msgs)) =
-        do status badRequest400
-           text $ LT.concat [ LT.concat [msg, "\r\n"] | msg<-msgs ]
-    report (Right gr) = report gr
-
--- | A web resource, with a complete list of its supported methods.
--- Defining a resource this way causes a 405 (Method Not Allowed)
--- responses when a request uses a method which is not in the
--- given list.  (Scotty's default is 404 (Not Found), which is less
--- appropriate.)
-resource :: String                    -- ^Route to this resource, relative to the base.
-            -> [(StdMethod, Based ActionM ())]    -- ^Allowed methods and their actions.
-            -> Based ScottyM ()
-resource route acts =
-    let allowedMethods = intercalate "," $ map (show . fst) acts
-    in do
-        baseuri <- ask
-        let path = fromString $ uriPath $ route `relative` baseuri
-        sequence_ [ mapReaderT (addroute method path) act
-                  | (method, act) <- acts ]
-        mapReaderT (matchAny path) $ do
-            status methodNotAllowed405  -- http://tools.ietf.org/html/rfc2616#section-10.4.6
-            setHeader "Allow" $ LT.pack allowedMethods
+raiseStatus :: Status -> LT.Text -> ActionStatusM a
+raiseStatus stat msg = throwError $ ActionError $ ErrorWithStatus stat msg
 
 -- | Perform the given action, annotating any failures with the given
 -- HTTP status.
@@ -274,16 +180,6 @@ statusErrors = (`bindError` reportStatus)
                 do Scotty.status stat
                    Scotty.text msg
 
-type ActionStatusM a = ActionT ErrorWithStatus IO a
-
-data ErrorWithStatus = ErrorWithStatus Status LT.Text
-instance ScottyError ErrorWithStatus where
-    stringError msg = ErrorWithStatus internalServerError500 (LT.pack msg)
-    showError (ErrorWithStatus _ msg) = msg
-
-raiseStatus :: Status -> LT.Text -> ActionStatusM a
-raiseStatus stat msg = throwError $ ActionError $ ErrorWithStatus stat msg
-
 -- | <http://tools.ietf.org/html/rfc2616#section-10.4.1>
 badRequest :: LT.Text -> ActionStatusM a
 badRequest = raiseStatus badRequest400
@@ -292,26 +188,6 @@ badRequest = raiseStatus badRequest400
 -- (See <http://tools.ietf.org/html/rfc2616#section-10.5.1>.)
 lift500 :: ActionM a -> ActionStatusM a
 lift500 = failWith internalServerError500
-
--- | The relative URL for a 'NamedResource' object.
-resourceRelativeURLString :: (Show k, NamedResource k) => k -> String
-resourceRelativeURLString k = "./" ++ resourceName (Just k) ++ "/"
-                              ++ show k ++ "/"
-
--- | The URL for a 'NamedResource' object.
-resourceURL :: (Show k, NamedResource k, Monad m) => k -> Based m URI
-resourceURL k = do
-    baseuri <- ask
-    return $ resourceRelativeURLString k `relative` baseuri
-
--- | The URL for a specific version of a 'NamedResource' object.
-resourceVersionURL :: (Show k, NamedResource k, Monad m)
-                      => VersionedID k -> Based m URI
-resourceVersionURL verk = do
-    baseuri <- ask
-    return $ (resourceRelativeURLString (thingid verk)
-                ++ (show $ txnid $ verk))
-             `relative` baseuri
 
 -- | Use the given 'Holex' to interpret the data in the HTTP request.
 fromRequest :: Holex LT.Text ParamValue a -> ActionStatusM a
@@ -379,41 +255,8 @@ showHolexErrors :: (Show k) => [HolexError k v] -> LT.Text
 showHolexErrors es = LT.concat [ LT.concat [ showHolexError e, "\r\n" ]
                                | e<-es ]
 
--- | Dereference a relative URI path.  Usually used infix.
-relative :: String      -- ^The path.
-            -> URI      -- ^The base URI.
-            -> URI
-relative s u = nullURI { uriPath = s } `relativeTo` u
-
-lock :: MVar a -> (b -> IO c) -> b -> IO c
-lock mv f x = withMVar mv $ const (f x)
-
 -- | A 'Holex' for parsing data from HTTP requests.
 type RequestParser = Holex LT.Text ParamValue
-
-instance (IsString k, Eq k, Parsable a, FromJSON a)
-         => Default (Holex k ParamValue (VersionedID a)) where
-    def = VersionedID <$> parse "id" <*> parse "txnid"
-
-instance (IsString k, Eq k) => Default (Holex k ParamValue YoudoID) where
-    def = parse "id"
-
-instance (IsString k, Eq k) => Default (Holex k ParamValue YoudoData) where
-    def = YoudoData <$> parse "assignerid"
-                    <*> parse "assigneeid"
-                    <*> defaultTo "" (parse "description")
-                    <*> defaultTo (DueDate Nothing) (parse "duedate")
-                    <*> defaultTo False (parse "completed")
-
-instance (IsString k, Eq k)
-         => Default (Holex k ParamValue (Versioned YoudoID YoudoUpdate)) where
-    def = Versioned <$> (VersionedID <$> parse "id"
-                                     <*> parse "txnid")
-                    <*> (YoudoUpdate <$> optional (parse "assignerid")
-                                     <*> optional (parse "assigneeid")
-                                     <*> optional (parse "description")
-                                     <*> optional (parse "duedate")
-                                     <*> optional (parse "completed"))
 
 instance (IsString k, Eq k) => Default (Holex k ParamValue ()) where
     def = Const ()
@@ -435,14 +278,3 @@ parse k = tryApply
 data ParamValue = ScottyParam LT.Text
                 | JSONField Value
     deriving (Eq, Show)
-
-instance (IsString k, Eq k) => Default (Holex k ParamValue UserID) where
-    def = parse "id"
-
-instance (IsString k, Eq k) => Default (Holex k ParamValue UserData) where
-    def = UserData <$> parse "name"
-
-instance (IsString k, Eq k) => Default (Holex k ParamValue (Versioned UserID UserUpdate)) where
-    def = Versioned <$> (VersionedID <$> parse "id"
-                                      <*> parse "txnid")
-                    <*> (UserUpdate <$> optional (parse "name"))
