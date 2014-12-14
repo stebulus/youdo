@@ -5,7 +5,9 @@ module YouDo.Types where
 import Control.Applicative ((<$>), (<*>), pure)
 import Data.Aeson (ToJSON(..), FromJSON(..), (.=), object, Value(..))
 import Data.Aeson.Types (typeMismatch)
+import Data.Default
 import Data.Maybe (fromMaybe)
+import Data.String
 import qualified Data.Text.Lazy as LT
 import Data.Time (UTCTime)
 import Database.PostgreSQL.Simple.FromField (FromField(..))
@@ -14,7 +16,9 @@ import Database.PostgreSQL.Simple.ToField (ToField(..))
 import Web.Scotty (Parsable(..))
 
 import YouDo.DB
+import YouDo.Holex
 import YouDo.TimeParser (parseUTCTime)
+import YouDo.Web (parse, ParamValue)
 
 data ( DB YoudoID YoudoData YoudoUpdate IO yd
      , DB UserID UserData UserUpdate IO ud
@@ -48,6 +52,8 @@ instance FromJSON YoudoID where
     parseJSON x = YoudoID <$> parseJSON x
 instance Parsable YoudoID where
     parseParam x = YoudoID <$> parseParam x
+instance (IsString k, Eq k) => Default (Holex k ParamValue YoudoID) where
+    def = parse "id"
 
 data YoudoData = YoudoData { assignerid :: UserID
                            , assigneeid :: UserID
@@ -55,6 +61,12 @@ data YoudoData = YoudoData { assignerid :: UserID
                            , duedate :: DueDate
                            , completed :: Bool
                            } deriving (Show)
+instance (IsString k, Eq k) => Default (Holex k ParamValue YoudoData) where
+    def = YoudoData <$> parse "assignerid"
+                    <*> parse "assigneeid"
+                    <*> defaultTo "" (parse "description")
+                    <*> defaultTo (DueDate Nothing) (parse "duedate")
+                    <*> defaultTo False (parse "completed")
 
 data YoudoUpdate = YoudoUpdate { newAssignerid :: Maybe UserID
                                , newAssigneeid :: Maybe UserID
@@ -62,6 +74,15 @@ data YoudoUpdate = YoudoUpdate { newAssignerid :: Maybe UserID
                                , newDuedate :: Maybe DueDate
                                , newCompleted :: Maybe Bool
                                } deriving (Show)
+instance (IsString k, Eq k)
+         => Default (Holex k ParamValue (Versioned YoudoID YoudoUpdate)) where
+    def = Versioned <$> (VersionedID <$> parse "id"
+                                     <*> parse "txnid")
+                    <*> (YoudoUpdate <$> optional (parse "assignerid")
+                                     <*> optional (parse "assigneeid")
+                                     <*> optional (parse "description")
+                                     <*> optional (parse "duedate")
+                                     <*> optional (parse "completed"))
 
 instance Updater YoudoUpdate YoudoData where
     doUpdate upd yd =
@@ -92,11 +113,20 @@ instance FromJSON UserID where
     parseJSON x = UserID <$> parseJSON x
 instance Parsable UserID where
     parseParam x = UserID <$> parseParam x
+instance (IsString k, Eq k) => Default (Holex k ParamValue UserID) where
+    def = parse "id"
 
 data UserData = UserData { name :: String }
     deriving (Show, Eq)
+instance (IsString k, Eq k) => Default (Holex k ParamValue UserData) where
+    def = UserData <$> parse "name"
 
 data UserUpdate = UserUpdate { newName :: Maybe String } deriving (Show, Eq)
+
+instance (IsString k, Eq k) => Default (Holex k ParamValue (Versioned UserID UserUpdate)) where
+    def = Versioned <$> (VersionedID <$> parse "id"
+                                      <*> parse "txnid")
+                    <*> (UserUpdate <$> optional (parse "name"))
 
 instance Updater UserUpdate UserData where
     doUpdate upd u = case newName upd of

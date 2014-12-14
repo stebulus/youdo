@@ -10,6 +10,7 @@ License     : GPL-3
 module YouDo.DB (
     -- *Database
     DB(..), NamedResource(..), Updater(..),
+    resourceURL, resourceVersionURL,
     -- *Versioning of database objects
     Versioned(..), VersionedID(..), TransactionID(..),
     -- *Results of database operations
@@ -21,11 +22,23 @@ module YouDo.DB (
     one, some
 ) where
 
-import Control.Applicative ((<$>))
-import Data.Aeson (FromJSON(..))
+import Control.Applicative ((<$>), (<*>))
+import Control.Monad.Reader (ask)
+import Data.Aeson (FromJSON(..), ToJSON(..), (.=), Value(..))
+import Data.Default
+import qualified Data.HashMap.Strict as M
+import Data.List (foldl')
+import Data.String
 import qualified Data.Text.Lazy as LT
 import Database.PostgreSQL.Simple.FromField (FromField(..))
+import Network.HTTP.Types (ok200, created201, badRequest400, notFound404,
+    conflict409, internalServerError500)
+import Network.URI
 import Web.Scotty (Parsable(..))
+
+import YouDo.Holex
+import YouDo.Web (BasedToJSON(..), Based, relative, ParamValue, parse,
+    WebResult(..), status, json, text, setHeader)
 
 {- |
     @d@ contains versioned key-value pairs of type @(k,v)@, which
@@ -82,6 +95,26 @@ class Updater u a where
 class NamedResource a where
     resourceName :: Maybe a -> String
 
+-- | The relative URL for a 'NamedResource' object.
+resourceRelativeURLString :: (Show k, NamedResource k) => k -> String
+resourceRelativeURLString k = "./" ++ resourceName (Just k) ++ "/"
+                              ++ show k ++ "/"
+
+-- | The URL for a 'NamedResource' object.
+resourceURL :: (Show k, NamedResource k, Monad m) => k -> Based m URI
+resourceURL k = do
+    baseuri <- ask
+    return $ resourceRelativeURLString k `relative` baseuri
+
+-- | The URL for a specific version of a 'NamedResource' object.
+resourceVersionURL :: (Show k, NamedResource k, Monad m)
+                      => VersionedID k -> Based m URI
+resourceVersionURL verk = do
+    baseuri <- ask
+    return $ (resourceRelativeURLString (thingid verk)
+                ++ (show $ txnid $ verk))
+             `relative` baseuri
+
 {- |
     An identifier of a version of a thing, as was produced in a
     particular transaction.
@@ -91,11 +124,31 @@ data VersionedID a = VersionedID
     , txnid :: TransactionID
     } deriving (Show, Eq)
 
+instance (IsString k, Eq k, Parsable a, FromJSON a)
+         => Default (Holex k ParamValue (VersionedID a)) where
+    def = VersionedID <$> parse "id" <*> parse "txnid"
+
 -- | A version of a thing, as was produced in a particular transaction.
 data Versioned a b = Versioned
     { version :: VersionedID a
     , thing :: b
     } deriving (Show, Eq)
+
+-- | Augment JSON representations of 'Versioned' objects
+-- with @"url"@ and @"thisVersion"@ fields.
+instance (Show k, NamedResource k, ToJSON v)
+         => BasedToJSON (Versioned k v) where
+    basedToJSON v = do
+        objurl <- resourceURL $ thingid $ version v
+        verurl <- resourceVersionURL $ version v
+        let origmap = case toJSON (thing v) of
+                Object m -> m
+                _ -> error "data did not encode as JSON object"
+            augmentedmap = foldl' (flip (uncurry M.insert)) origmap
+                [ "url" .= show objurl
+                , "thisVersion" .= show verurl
+                ]
+        return $ Object augmentedmap
 
 -- | Transaction identifier.
 newtype TransactionID = TransactionID Int deriving (Eq)
@@ -144,6 +197,17 @@ instance Result (GetResult a) a where
     failure msg = Right $ Left msg
     success x = Right $ Right x
 
+-- | Reporting results from 'get' and other getting methods.
+instance (BasedToJSON a) => WebResult (GetResult a) where
+    report (Right (Right a)) =
+        do status ok200  -- http://tools.ietf.org/html/rfc2616#section-10.2.1
+           json a
+    report (Left NotFound) =
+        status notFound404  -- http://tools.ietf.org/html/rfc2616#section-10.4.5
+    report (Right (Left msg)) =
+        do status internalServerError500  -- http://tools.ietf.org/html/rfc2616#section-10.5.1
+           text msg
+
 {- |
     Result of a 'DB' update operation.  The operation failed because
     a newer version exists (and that version is enclosed), the object
@@ -166,6 +230,19 @@ instance Result (UpdateResult b a) a where
 newerVersion :: b -> UpdateResult b a
 newerVersion x = Left $ NewerVersion x
 
+-- | Reporting results from 'update'.
+instance (BasedToJSON b, NamedResource k, Show k, ToJSON v)
+         => WebResult (UpdateResult b (Versioned k v)) where
+    report (Right (Right (Right a))) =
+        do status created201  -- http://tools.ietf.org/html/rfc2616#section-10.2.2
+           url <- resourceVersionURL $ version a
+           setHeader "Location" $ LT.pack $ show $ url
+           json a
+    report (Left (NewerVersion b)) =
+        do status conflict409  -- http://tools.ietf.org/html/rfc2616#section-10.4.10
+           json b
+    report (Right gr) = report gr
+
 {- |
     Result of a 'DB' create operation.  The data supplied describes
     an invalid object (and reasons are enclosed), the object was not
@@ -179,6 +256,19 @@ instance Result (CreateResult a) a where
     success = Right . success
 invalidObject :: [LT.Text] -> CreateResult a
 invalidObject errs = Left $ InvalidObject errs
+
+-- | Reporting results from 'create'.
+instance (NamedResource k, Show k, ToJSON v)
+         => WebResult (CreateResult (Versioned k v)) where
+    report (Right (Right (Right a))) =
+        do status created201  -- http://tools.ietf.org/html/rfc2616#section-10.2.2
+           url <- resourceURL $ thingid $ version a
+           setHeader "Location" $ LT.pack $ show $ url
+           json a
+    report (Left (InvalidObject msgs)) =
+        do status badRequest400
+           text $ LT.concat [ LT.concat [msg, "\r\n"] | msg<-msgs ]
+    report (Right gr) = report gr
 
 {- |
     Make a result of the contents of a singleton list.
