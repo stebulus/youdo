@@ -85,13 +85,15 @@ time = p <?> "parsing time"
                 return $ picosecondsToDiffTime $ milliseconds*1000000000
 
 hour :: Parser Int
-hour = decimal2 >>= between 0 24 <?> "parsing hour (hh)"  -- allow midnight at end of day
+hour = decimal2 >>= between 0 24  -- allow midnight at end of day
+    <?> "parsing hour (hh)"
 
 minute :: Parser Int
 minute = decimal2 >>= between 0 59 <?> "parsing minute (mm)"
 
 second :: Parser Int
-second = decimal2 >>= between 0 60 <?> "parsing second (ss)"  -- allow leap second
+second = decimal2 >>= between 0 60  -- allow leap second
+    <?> "parsing second (ss)"
 
 subsecond :: Parser Int
 subsecond = decimal3 <?> "parsing subsecond (sss)"
