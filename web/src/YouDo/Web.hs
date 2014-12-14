@@ -180,8 +180,8 @@ instance (WebResult b, NamedResource k, Show k, ToJSON v)
          => WebResult (UpdateResult b (Versioned k v)) where
     report (Right (Right (Right a))) =
         do lift $ status created201  -- http://tools.ietf.org/html/rfc2616#section-10.2.2
-           baseuri <- ask
-           lift $ setHeader "Location" $ LT.pack $ show $ resourceVersionURL baseuri (version a)
+           url <- resourceVersionURL $ version a
+           lift $ setHeader "Location" $ LT.pack $ show $ url
            report a
     report (Left (NewerVersion b)) =
         do lift $ status conflict409  -- http://tools.ietf.org/html/rfc2616#section-10.4.10
@@ -193,8 +193,8 @@ instance (NamedResource k, Show k, ToJSON v)
          => WebResult (CreateResult (Versioned k v)) where
     report (Right (Right (Right a))) =
         do lift $ status created201  -- http://tools.ietf.org/html/rfc2616#section-10.2.2
-           baseuri <- ask
-           lift $ setHeader "Location" $ LT.pack $ show $ resourceURL baseuri $ thingid $ version a
+           url <- resourceURL $ thingid $ version a
+           lift $ setHeader "Location" $ LT.pack $ show $ url
            report a
     report (Left (InvalidObject msgs)) =
         do lift $ status badRequest400
@@ -287,14 +287,19 @@ resourceRelativeURLString :: (Show k, NamedResource k) => k -> String
 resourceRelativeURLString k = "./" ++ resourceName (Just k) ++ "/" ++ show k
 
 -- | The URL for a 'NamedResource' object.
-resourceURL :: (Show k, NamedResource k) => URI -> k -> URI
-resourceURL baseuri k = resourceRelativeURLString k `relative` baseuri
+resourceURL :: (Show k, NamedResource k, Monad m) => k -> Based m URI
+resourceURL k = do
+    baseuri <- ask
+    return $ resourceRelativeURLString k `relative` baseuri
 
 -- | The URL for a specific version of a 'NamedResource' object.
-resourceVersionURL :: (Show k, NamedResource k) => URI -> VersionedID k -> URI
-resourceVersionURL baseuri verk =
-    (resourceRelativeURLString (thingid verk) ++ "/" ++ (show $ txnid $ verk))
-    `relative` baseuri
+resourceVersionURL :: (Show k, NamedResource k, Monad m)
+                      => VersionedID k -> Based m URI
+resourceVersionURL verk = do
+    baseuri <- ask
+    return $ (resourceRelativeURLString (thingid verk)
+                ++ "/" ++ (show $ txnid $ verk))
+             `relative` baseuri
 
 -- | Use the given 'Holex' to interpret the data in the HTTP request.
 fromRequest :: Holex LT.Text ParamValue a -> ActionStatusM a
