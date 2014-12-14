@@ -1,6 +1,5 @@
-{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE MultiParamTypeClasses, FlexibleContexts, FlexibleInstances #-}
 module YouDo.DB.Memory where
-import Control.Applicative ((<$>))
 import Control.Concurrent.MVar (MVar, withMVar, modifyMVar, newMVar)
 import Data.Function (on)
 import Data.List (nubBy)
@@ -9,94 +8,49 @@ import Data.Maybe (listToMaybe, fromMaybe)
 import YouDo.DB
 import YouDo.Types
 
-data BareMemoryDB = BareMemoryDB
-    { youdos :: [Youdo]
-    , users :: [User]
-    , lasttxn :: TransactionID
-    }
-data MemoryDB = MemoryDB { mvar :: MVar BareMemoryDB }
+data (Updater u v) => MemoryDB k v u
+    = MemoryDB { mvar :: MVar [Versioned k v]
+               , nextID :: IO k
+               , nextTxnID :: IO TransactionID
+               }
 
-newtype MemoryYoudoDB = MemoryYoudoDB { ymock :: MemoryDB }
-instance DB YoudoID YoudoData YoudoUpdate IO MemoryYoudoDB where
-    get ydid db = withMVar (mvar $ ymock db) $ \db' ->
-        return $ one $ [yd | yd<-youdos db', thingid (version yd) == ydid]
-    getVersions ydid db = withMVar (mvar $ ymock db) $ \db' ->
-        return $ some $ [yd | yd<-youdos db', thingid (version yd) == ydid]
-    getVersion ydver db = withMVar (mvar $ ymock db) $ \db' ->
-        return $ one $ [yd | yd<-youdos db', version yd == ydver]
-    getAll db = withMVar (mvar $ ymock db) $ \db' ->
-        return $ success $ nubBy ((==) `on` thingid . version) $ youdos db'
-    create yd db = modifyMVar (mvar $ ymock db) $ \db' -> do
-        let newid = YoudoID $
-                1 + case thingid . version <$> (listToMaybe $ youdos db') of
-                        Nothing -> 0
-                        Just (YoudoID n) -> n
-            newtxn = TransactionID $
-                1 + case lasttxn db' of TransactionID n -> n
-            newy = Versioned (VersionedID newid newtxn) yd
-        return ( db' { youdos = newy : (youdos db')
-                     , lasttxn = newtxn
-                     }
-               , success newy
-               )
-    update upd db = modifyMVar (mvar $ ymock db) $ \db' -> do
-        let oldyd = listToMaybe
-                [yd | yd<-youdos db'
-                    , thingid (version yd) == thingid (version upd)]
-        case oldyd of
-            Nothing -> return (db', notFound)
-            Just theyd -> if version theyd /= version upd
-                            then return (db', newerVersion theyd)
-                            else let newyd = Versioned
-                                        (VersionedID (thingid (version theyd)) newtxn)
-                                        (doUpdate (thing upd) (thing theyd))
-                                     newtxn = TransactionID $
-                                         1 + case lasttxn db' of TransactionID n -> n
-                                 in return (db' { youdos = newyd : (youdos db')
-                                                , lasttxn = newtxn
-                                                }
-                                           , success newyd
-                                           )
+newdb :: (Updater u v) => (Int->k) -> IO TransactionID -> IO (MemoryDB k v u)
+newdb toID nextTxn = do
+    mv <- newMVar []
+    incr <- (fmap.fmap) toID $ newIncrementer 1
+    return $ MemoryDB mv incr nextTxn
 
-newtype MemoryUserDB = MemoryUserDB { umock :: MemoryDB }
-instance DB UserID UserData UserUpdate IO MemoryUserDB where
-    get uid db = withMVar (mvar $ umock db) $ \db' ->
-        return $ one $ [u | u<-users db', thingid (version u) == uid]
-    getVersion verid db = withMVar (mvar $ umock db) $ \db' ->
-        return $ one $ [u | u<-users db', version u == verid]
-    getVersions verid db = withMVar (mvar $ umock db) $ \db' ->
-        return $ some $ [u | u<-users db', thingid (version u) == verid]
-    create ud db = modifyMVar (mvar $ umock db) $ \db' -> do
-        let newid = UserID $
-                1 + case thingid . version <$> (listToMaybe $ users db') of
-                        Nothing -> 0
-                        Just (UserID n) -> n
-            newtxn = TransactionID $
-                1 + case lasttxn db' of TransactionID n -> n
-            newu = Versioned (VersionedID newid newtxn) ud
-        return ( db' { users = newu : (users db')
-                     , lasttxn = newtxn
-                     }
-               , success newu
-               )
-    update upd db = modifyMVar (mvar $ umock db) $ \db' -> do
-        let oldu = listToMaybe
-                [u | u<-users db'
-                    , thingid (version u) == thingid (version upd)]
-        case oldu of
-            Nothing -> return (db', notFound)
-            Just theu -> if version theu /= version upd
-                            then return (db', newerVersion theu)
-                            else let newu = Versioned
-                                        (VersionedID (thingid (version theu)) newtxn)
-                                        (doUpdate (thing upd) (thing theu))
-                                     newtxn = TransactionID $
-                                         1 + case lasttxn db' of TransactionID n -> n
-                                 in return (db' { users = newu : (users db')
-                                                , lasttxn = newtxn
-                                                }
-                                           , success newu
-                                           )
+newIncrementer :: (Enum a) => a -> IO (IO a)
+newIncrementer initial = do
+    mv <- newMVar initial
+    return $ modifyMVar mv $ \n -> return (succ n, n)
+
+instance (Eq k, NamedResource k, Updater u v)
+         => DB k v u IO (MemoryDB k v u) where
+    get k d = withMVar (mvar d) $ \xs ->
+        return $ one $ [x | x<-xs, thingid (version x) == k]
+    getVersions k d = withMVar (mvar d) $ \xs ->
+        return $ some $ [x | x<-xs, thingid (version x) == k]
+    getVersion vk d = withMVar (mvar d) $ \xs ->
+        return $ one $ [x | x<-xs, version x == vk]
+    getAll d = withMVar (mvar d) $ \xs ->
+        return $ success $ nubBy ((==) `on` thingid . version) xs
+    create v d = modifyMVar (mvar d) $ \xs -> do
+        newid <- nextID d
+        newtxn <- nextTxnID d
+        let newx = Versioned (VersionedID newid newtxn) v
+        return (newx : xs, success newx)
+    update vu d = modifyMVar (mvar d) $ \xs -> do
+        let oldx = listToMaybe [ x | x<-xs, thingid (version x) == thingid (version vu) ]
+        case oldx of
+            Nothing -> return (xs, notFound)
+            Just x -> if version x /= version vu
+                        then return (xs, newerVersion x)
+                        else do newtxn <- nextTxnID d
+                                let newx = Versioned
+                                            (VersionedID (thingid (version x)) newtxn)
+                                            (doUpdate (thing vu) (thing x))
+                                return (newx:xs, success newx)
 
 class Updater u d where
     doUpdate :: u -> d -> d
@@ -113,13 +67,17 @@ instance Updater UserUpdate UserData where
         Nothing -> u
         Just n -> u { name = n }
 
-empty :: IO MemoryDB
+data ( DB YoudoID YoudoData YoudoUpdate IO yd
+     , DB UserID UserData UserUpdate IO ud
+     ) => YoudoDatabase yd ud = YoudoDatabase { youdos :: yd, users :: ud }
+
+empty :: IO (YoudoDatabase (MemoryDB YoudoID YoudoData YoudoUpdate)
+                           (MemoryDB UserID UserData UserUpdate))
 empty = do
-    mv <- newMVar $ BareMemoryDB
-            { youdos = []
-            , users = [Versioned (VersionedID (UserID 0)
-                                              (TransactionID 0))
-                                 (UserData "yddb")]
-            , lasttxn = TransactionID 0
-            }
-    return $ MemoryDB mv
+    txnIncr <- (fmap.fmap) TransactionID $ newIncrementer 0
+    yd <- newdb YoudoID txnIncr
+    ud <- newdb UserID txnIncr
+    result <- create (UserData "yddb") ud
+    case result of
+        Right (Right (Right _)) -> return $ YoudoDatabase yd ud
+        _ -> error "could not create yddb user"
