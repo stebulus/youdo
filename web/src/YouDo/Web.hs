@@ -49,14 +49,13 @@ app :: ( DB YoudoID YoudoData YoudoUpdate IO ydb
        , DB UserID UserData UserUpdate IO udb
        ) => URI         -- ^The base URI of the app (without version number);
                         -- should end with a slash.
-       -> ydb           -- ^A 'DB' instance for 'Youdo' objects.
-       -> udb           -- ^A 'DB' instance for 'User' objects.
+       -> YoudoDatabase ydb udb     -- ^The database.
        -> MVar ()       -- ^All database access is under this MVar.
        -> ScottyM ()
-app baseuri ydb udb mv = do
+app baseuri db mv = do
     let apibase = "./0/" `relative` baseuri
-    webdb apibase mv ydb
-    webdb apibase mv udb
+    webdb apibase mv (youdos db)
+    webdb apibase mv (users db)
 
 -- | A web interface to an instance of 'DB'.
 -- The following endpoints are created, relative to the given base URI

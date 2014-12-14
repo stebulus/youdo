@@ -78,11 +78,12 @@ mainOpts opts = do
     case dbopt opts of
         InMemory -> do
             db <- YouDo.DB.Memory.empty
-            scotty $ app baseuri (youdos db) (users db) mv
+            scotty $ app baseuri db mv
         Postgres connstr -> do
             bracket (connectPostgreSQL (pack connstr))
                     (\conn -> close conn)
                     (\conn -> scotty $ app baseuri
-                                           (PostgresYoudoDB conn)
-                                           (PostgresUserDB conn)
+                                           (YoudoDatabase
+                                               (PostgresYoudoDB conn)
+                                               (PostgresUserDB conn))
                                            mv)

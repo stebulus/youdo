@@ -31,7 +31,7 @@ import Web.Scotty (scottyApp, parseParam)
 import YouDo.DB.Memory
 import YouDo.Holex
 import YouDo.Test (plainTest)
-import YouDo.Types (DueDate, YoudoDatabase(..))
+import YouDo.Types (DueDate)
 import YouDo.Web
 
 tests :: IO [Test]
@@ -327,8 +327,7 @@ serverTest testName f = Test $ TestInstance
     { run = do
         db <- empty
         mv <- newMVar ()
-        waiApp <- scottyApp $ app (fromJust $ parseURI "http://example.com")
-                                  (youdos db) (users db) mv
+        waiApp <- scottyApp $ app (fromJust $ parseURI "http://example.com") db mv
         result <- runEitherT $ f $ request waiApp
         return $ Finished $ case result of
             Left msg -> Fail msg
