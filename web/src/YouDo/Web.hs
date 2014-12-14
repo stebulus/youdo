@@ -38,9 +38,8 @@ import Network.HTTP.Types (ok200, created201, badRequest400, notFound404,
     methodNotAllowed405, conflict409, unsupportedMediaType415,
     internalServerError500, Status, StdMethod(..))
 import Network.URI (URI(..), relativeTo, nullURI)
-import Web.Scotty (ScottyM, matchAny, status, header,
-    addroute, RoutePattern, params, text, json, setHeader,
-    ActionM, Parsable(..), body)
+import Web.Scotty (ScottyM, matchAny, status, header, addroute, params,
+    text, json, setHeader, ActionM, Parsable(..), body)
 import Web.Scotty.Internal.Types (ActionT(..), ActionError(..),
     ScottyError(..))
 
@@ -98,23 +97,20 @@ webdb :: ( NamedResource k, DB k v u IO d
          -> d           -- ^The database.
          -> Based ScottyM ()
 webdb mv db = do
-    baseuri <- ask
-    let basepath = nullURI { uriPath = uriPath baseuri }
-        rtype = dbResourceName db
-        pat s = fromString $ show $ s `relative` basepath
+    let rtype = dbResourceName db
         onweb f = webfunc $ lock mv $ flip f db
-    resource (pat rtype)
-        [ (GET, onweb (\() -> getAll))
-        , (POST, onweb create)
-        ]
-    resource (pat (rtype ++ "/:id"))
-        [ (GET, onweb get) ]
-    resource (pat (rtype ++ "/:id/versions"))
-        [ (GET, onweb getVersions) ]
-    resource (pat (rtype ++ "/:id/:txnid"))
-        [ (GET, onweb getVersion)
-        , (POST, onweb update)
-        ]
+    resource rtype
+             [ (GET, onweb (\() -> getAll))
+             , (POST, onweb create)
+             ]
+    resource (rtype ++ "/:id")
+             [ (GET, onweb get) ]
+    resource (rtype ++ "/:id/versions")
+             [ (GET, onweb getVersions) ]
+    resource (rtype ++ "/:id/:txnid")
+             [ (GET, onweb getVersion)
+             , (POST, onweb update)
+             ]
 
 -- | A web interface to a function.
 -- A value of type @a@ is obtained from the HTTP request using the
@@ -210,15 +206,17 @@ instance (NamedResource k, Show k, ToJSON v)
 -- responses when a request uses a method which is not in the
 -- given list.  (Scotty's default is 404 (Not Found), which is less
 -- appropriate.)
-resource :: RoutePattern                    -- ^Route to this resource.
+resource :: String                    -- ^Route to this resource, relative to the base.
             -> [(StdMethod, Based ActionM ())]    -- ^Allowed methods and their actions.
             -> Based ScottyM ()
 resource route acts =
     let allowedMethods = intercalate "," $ map (show . fst) acts
     in do
-        sequence_ [ mapReaderT (addroute method route) act
+        baseuri <- ask
+        let path = fromString $ uriPath $ route `relative` baseuri
+        sequence_ [ mapReaderT (addroute method path) act
                   | (method, act) <- acts ]
-        mapReaderT (matchAny route) $ do
+        mapReaderT (matchAny path) $ do
             lift $ status methodNotAllowed405  -- http://tools.ietf.org/html/rfc2616#section-10.4.6
             lift $ setHeader "Allow" $ LT.pack allowedMethods
 
