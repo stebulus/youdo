@@ -73,7 +73,7 @@ class (Monad m, NamedResource k)
         @Versioned k u@ identifies the /existing/ version that this
         is an update to; if that is no longer the current version,
         the update will fail and this function will return @Left
-        (NewerVersion x)@, where $x :: Versioned k v@ is the current
+        (NewerVersion x)@, where @x :: Versioned k v@ is the current
         version.  It's up to the caller to determine whether their
         update should be attempted again on that new version, and if
         so, to retry.
