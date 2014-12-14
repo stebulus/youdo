@@ -8,10 +8,12 @@ var h = require('mercury').h;
 /**
  * Regex to capture the date
  */
-// var dateRegex = /((tomorrow|today|next week|soon)\s?)/;
-
 var dateRegex = /([a-z]{3}[0-9]{1,2}|tomorrow|today|nextweek|soon|whenever)/i;
 
+/**
+ * initialization state for the reducer responsible for parsing
+ * text and finding mentions and tags.
+ */
 var initYouDoReducerState = function() {
   return {
     mentions: [],
@@ -20,6 +22,10 @@ var initYouDoReducerState = function() {
   };
 };
 
+/**
+ * initialization state for the reducer responsible for styling
+ * YouDo text
+ */
 var initYouDoReducerStylerState = function() {
   return {
     styledText: [],
@@ -28,6 +34,9 @@ var initYouDoReducerStylerState = function() {
 };
 
 /**
+ * Reducer method responsible for parsing assignees, dates, and 
+ * tags from the text.
+ *
  * State looks like:
  * acc = { mentions: []
  *       , tags: []
@@ -56,12 +65,15 @@ var youDoReducer = function(acc, value) {
 }
 
 /**
+ * Reducer responsible for stylizing the text. uses mercury's
+ * weird styling `h` function.
+ *
  * State looks like:
  * acc = { styledText: [] // array text or h('',...)
  *       , buffer: [] // array of characters
  *       }
  */
-var youDoReducerStyler = function(acc, value) {
+var youDoReducerStyler = function(acc, value, index) {
 
   if(value == '@') {
     acc.styledText.unshift(h('span.red', '@' + acc.buffer.join("")));
@@ -72,6 +84,8 @@ var youDoReducerStyler = function(acc, value) {
   } else if (value == ' ') {
     acc.styledText.unshift(' ' + acc.buffer.join(""));
     acc.buffer = [];
+  } else if (index == 0) {
+    acc.styledText.unshift(value + acc.buffer.join(""));
   } else {
     acc.buffer.unshift(value);
   }
@@ -766,7 +780,7 @@ function hiddenStore(obj, key) {
 
 },{}],12:[function(require,module,exports){
 module.exports=require(2)
-},{"/home/aaron/dev/youdo/ui/node_modules/global/document.js":2,"min-document":124}],13:[function(require,module,exports){
+},{"/home/aaron/dev/youdo/frontend/node_modules/global/document.js":2,"min-document":124}],13:[function(require,module,exports){
 (function (global){
 var root = typeof window !== 'undefined' ?
     window : typeof global !== 'undefined' ?
@@ -836,7 +850,7 @@ function createStore() {
 
 },{"./hidden-store.js":16}],16:[function(require,module,exports){
 module.exports=require(11)
-},{"/home/aaron/dev/youdo/ui/node_modules/mercury/node_modules/dom-delegator/node_modules/data-set/node_modules/weakmap-shim/hidden-store.js":11}],17:[function(require,module,exports){
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/dom-delegator/node_modules/data-set/node_modules/weakmap-shim/hidden-store.js":11}],17:[function(require,module,exports){
 var inherits = require("inherits")
 
 var ALL_PROPS = [
@@ -1578,7 +1592,7 @@ function ascending(a, b) {
 
 },{}],31:[function(require,module,exports){
 module.exports=require(2)
-},{"/home/aaron/dev/youdo/ui/node_modules/global/document.js":2,"min-document":124}],32:[function(require,module,exports){
+},{"/home/aaron/dev/youdo/frontend/node_modules/global/document.js":2,"min-document":124}],32:[function(require,module,exports){
 module.exports = isObject
 
 function isObject(x) {
@@ -2260,9 +2274,9 @@ function isWidget(w) {
 
 },{}],44:[function(require,module,exports){
 module.exports=require(32)
-},{"/home/aaron/dev/youdo/ui/node_modules/mercury/node_modules/main-loop/node_modules/vdom/node_modules/is-object/index.js":32}],45:[function(require,module,exports){
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vdom/node_modules/is-object/index.js":32}],45:[function(require,module,exports){
 module.exports=require(33)
-},{"/home/aaron/dev/youdo/ui/node_modules/mercury/node_modules/main-loop/node_modules/vdom/node_modules/x-is-array/index.js":33}],46:[function(require,module,exports){
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vdom/node_modules/x-is-array/index.js":33}],46:[function(require,module,exports){
 module.exports = "1"
 
 },{}],47:[function(require,module,exports){
@@ -3219,7 +3233,7 @@ function checkKey (key) {
 
 },{"observ":61,"xtend":59}],59:[function(require,module,exports){
 module.exports=require(57)
-},{"/home/aaron/dev/youdo/ui/node_modules/mercury/node_modules/observ-struct/node_modules/xtend/index.js":57}],60:[function(require,module,exports){
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/observ-struct/node_modules/xtend/index.js":57}],60:[function(require,module,exports){
 var Observable = require("./index.js")
 
 module.exports = computed
@@ -3722,23 +3736,23 @@ function shallowEq(currentArgs, previousArgs) {
 
 },{}],79:[function(require,module,exports){
 module.exports=require(28)
-},{"/home/aaron/dev/youdo/ui/node_modules/mercury/node_modules/main-loop/node_modules/vdom/apply-properties.js":28,"is-object":83,"vtree/is-vhook":113}],80:[function(require,module,exports){
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vdom/apply-properties.js":28,"is-object":83,"vtree/is-vhook":113}],80:[function(require,module,exports){
 module.exports=require(29)
-},{"./apply-properties":79,"/home/aaron/dev/youdo/ui/node_modules/mercury/node_modules/main-loop/node_modules/vdom/create-element.js":29,"global/document":82,"vtree/handle-thunk":111,"vtree/is-vnode":114,"vtree/is-vtext":115,"vtree/is-widget":116}],81:[function(require,module,exports){
+},{"./apply-properties":79,"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vdom/create-element.js":29,"global/document":82,"vtree/handle-thunk":111,"vtree/is-vnode":114,"vtree/is-vtext":115,"vtree/is-widget":116}],81:[function(require,module,exports){
 module.exports=require(30)
-},{"/home/aaron/dev/youdo/ui/node_modules/mercury/node_modules/main-loop/node_modules/vdom/dom-index.js":30}],82:[function(require,module,exports){
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vdom/dom-index.js":30}],82:[function(require,module,exports){
 module.exports=require(2)
-},{"/home/aaron/dev/youdo/ui/node_modules/global/document.js":2,"min-document":124}],83:[function(require,module,exports){
+},{"/home/aaron/dev/youdo/frontend/node_modules/global/document.js":2,"min-document":124}],83:[function(require,module,exports){
 module.exports=require(32)
-},{"/home/aaron/dev/youdo/ui/node_modules/mercury/node_modules/main-loop/node_modules/vdom/node_modules/is-object/index.js":32}],84:[function(require,module,exports){
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vdom/node_modules/is-object/index.js":32}],84:[function(require,module,exports){
 module.exports=require(33)
-},{"/home/aaron/dev/youdo/ui/node_modules/mercury/node_modules/main-loop/node_modules/vdom/node_modules/x-is-array/index.js":33}],85:[function(require,module,exports){
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vdom/node_modules/x-is-array/index.js":33}],85:[function(require,module,exports){
 module.exports=require(34)
-},{"./apply-properties":79,"./create-element":80,"./update-widget":87,"/home/aaron/dev/youdo/ui/node_modules/mercury/node_modules/main-loop/node_modules/vdom/patch-op.js":34,"vtree/is-widget":116,"vtree/vpatch":120}],86:[function(require,module,exports){
+},{"./apply-properties":79,"./create-element":80,"./update-widget":87,"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vdom/patch-op.js":34,"vtree/is-widget":116,"vtree/vpatch":120}],86:[function(require,module,exports){
 module.exports=require(35)
-},{"./dom-index":81,"./patch-op":85,"/home/aaron/dev/youdo/ui/node_modules/mercury/node_modules/main-loop/node_modules/vdom/patch.js":35,"global/document":82,"x-is-array":84}],87:[function(require,module,exports){
+},{"./dom-index":81,"./patch-op":85,"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vdom/patch.js":35,"global/document":82,"x-is-array":84}],87:[function(require,module,exports){
 module.exports=require(36)
-},{"/home/aaron/dev/youdo/ui/node_modules/mercury/node_modules/main-loop/node_modules/vdom/update-widget.js":36,"vtree/is-widget":116}],88:[function(require,module,exports){
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vdom/update-widget.js":36,"vtree/is-widget":116}],88:[function(require,module,exports){
 var DataSet = require("data-set")
 
 module.exports = DataSetHook;
@@ -3933,33 +3947,33 @@ function isChildren(x) {
 
 },{"./hooks/data-set-hook.js":88,"./hooks/ev-hook.js":89,"./hooks/soft-set-hook.js":90,"./parse-tag.js":108,"error/typed":99,"vtree/is-thunk":100,"vtree/is-vhook":101,"vtree/is-vnode":102,"vtree/is-vtext":103,"vtree/is-widget":104,"vtree/vnode.js":106,"vtree/vtext.js":107}],92:[function(require,module,exports){
 module.exports=require(8)
-},{"/home/aaron/dev/youdo/ui/node_modules/mercury/node_modules/dom-delegator/node_modules/data-set/create-hash.js":8}],93:[function(require,module,exports){
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/dom-delegator/node_modules/data-set/create-hash.js":8}],93:[function(require,module,exports){
 module.exports=require(9)
-},{"./create-hash.js":92,"/home/aaron/dev/youdo/ui/node_modules/mercury/node_modules/dom-delegator/node_modules/data-set/index.js":9,"individual":94,"weakmap-shim/create-store":95}],94:[function(require,module,exports){
+},{"./create-hash.js":92,"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/dom-delegator/node_modules/data-set/index.js":9,"individual":94,"weakmap-shim/create-store":95}],94:[function(require,module,exports){
 module.exports=require(13)
-},{"/home/aaron/dev/youdo/ui/node_modules/mercury/node_modules/dom-delegator/node_modules/individual/index.js":13}],95:[function(require,module,exports){
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/dom-delegator/node_modules/individual/index.js":13}],95:[function(require,module,exports){
 module.exports=require(10)
-},{"./hidden-store.js":96,"/home/aaron/dev/youdo/ui/node_modules/mercury/node_modules/dom-delegator/node_modules/data-set/node_modules/weakmap-shim/create-store.js":10}],96:[function(require,module,exports){
+},{"./hidden-store.js":96,"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/dom-delegator/node_modules/data-set/node_modules/weakmap-shim/create-store.js":10}],96:[function(require,module,exports){
 module.exports=require(11)
-},{"/home/aaron/dev/youdo/ui/node_modules/mercury/node_modules/dom-delegator/node_modules/data-set/node_modules/weakmap-shim/hidden-store.js":11}],97:[function(require,module,exports){
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/dom-delegator/node_modules/data-set/node_modules/weakmap-shim/hidden-store.js":11}],97:[function(require,module,exports){
 module.exports=require(23)
-},{"/home/aaron/dev/youdo/ui/node_modules/mercury/node_modules/main-loop/node_modules/error/node_modules/camelize/index.js":23}],98:[function(require,module,exports){
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/error/node_modules/camelize/index.js":23}],98:[function(require,module,exports){
 module.exports=require(24)
-},{"/home/aaron/dev/youdo/ui/node_modules/mercury/node_modules/main-loop/node_modules/error/node_modules/string-template/index.js":24}],99:[function(require,module,exports){
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/error/node_modules/string-template/index.js":24}],99:[function(require,module,exports){
 module.exports=require(25)
-},{"/home/aaron/dev/youdo/ui/node_modules/mercury/node_modules/main-loop/node_modules/error/typed.js":25,"camelize":97,"string-template":98,"xtend/mutable":122}],100:[function(require,module,exports){
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/error/typed.js":25,"camelize":97,"string-template":98,"xtend/mutable":122}],100:[function(require,module,exports){
 module.exports=require(39)
-},{"/home/aaron/dev/youdo/ui/node_modules/mercury/node_modules/main-loop/node_modules/vtree/is-thunk.js":39}],101:[function(require,module,exports){
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vtree/is-thunk.js":39}],101:[function(require,module,exports){
 module.exports=require(40)
-},{"/home/aaron/dev/youdo/ui/node_modules/mercury/node_modules/main-loop/node_modules/vtree/is-vhook.js":40}],102:[function(require,module,exports){
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vtree/is-vhook.js":40}],102:[function(require,module,exports){
 module.exports=require(41)
-},{"./version":105,"/home/aaron/dev/youdo/ui/node_modules/mercury/node_modules/main-loop/node_modules/vtree/is-vnode.js":41}],103:[function(require,module,exports){
+},{"./version":105,"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vtree/is-vnode.js":41}],103:[function(require,module,exports){
 module.exports=require(42)
-},{"./version":105,"/home/aaron/dev/youdo/ui/node_modules/mercury/node_modules/main-loop/node_modules/vtree/is-vtext.js":42}],104:[function(require,module,exports){
+},{"./version":105,"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vtree/is-vtext.js":42}],104:[function(require,module,exports){
 module.exports=require(43)
-},{"/home/aaron/dev/youdo/ui/node_modules/mercury/node_modules/main-loop/node_modules/vtree/is-widget.js":43}],105:[function(require,module,exports){
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vtree/is-widget.js":43}],105:[function(require,module,exports){
 module.exports=require(46)
-},{"/home/aaron/dev/youdo/ui/node_modules/mercury/node_modules/main-loop/node_modules/vtree/version.js":46}],106:[function(require,module,exports){
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vtree/version.js":46}],106:[function(require,module,exports){
 var version = require("./version")
 var isVNode = require("./is-vnode")
 var isWidget = require("./is-widget")
@@ -4122,29 +4136,29 @@ function isChildren(x) {
 
 },{"./index.js":91}],110:[function(require,module,exports){
 module.exports=require(37)
-},{"./handle-thunk":111,"./is-thunk":112,"./is-vhook":113,"./is-vnode":114,"./is-vtext":115,"./is-widget":116,"./vpatch":120,"/home/aaron/dev/youdo/ui/node_modules/mercury/node_modules/main-loop/node_modules/vtree/diff.js":37,"is-object":117,"x-is-array":118}],111:[function(require,module,exports){
+},{"./handle-thunk":111,"./is-thunk":112,"./is-vhook":113,"./is-vnode":114,"./is-vtext":115,"./is-widget":116,"./vpatch":120,"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vtree/diff.js":37,"is-object":117,"x-is-array":118}],111:[function(require,module,exports){
 module.exports=require(38)
-},{"./is-thunk":112,"./is-vnode":114,"./is-vtext":115,"./is-widget":116,"/home/aaron/dev/youdo/ui/node_modules/mercury/node_modules/main-loop/node_modules/vtree/handle-thunk.js":38}],112:[function(require,module,exports){
+},{"./is-thunk":112,"./is-vnode":114,"./is-vtext":115,"./is-widget":116,"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vtree/handle-thunk.js":38}],112:[function(require,module,exports){
 module.exports=require(39)
-},{"/home/aaron/dev/youdo/ui/node_modules/mercury/node_modules/main-loop/node_modules/vtree/is-thunk.js":39}],113:[function(require,module,exports){
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vtree/is-thunk.js":39}],113:[function(require,module,exports){
 module.exports=require(40)
-},{"/home/aaron/dev/youdo/ui/node_modules/mercury/node_modules/main-loop/node_modules/vtree/is-vhook.js":40}],114:[function(require,module,exports){
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vtree/is-vhook.js":40}],114:[function(require,module,exports){
 module.exports=require(41)
-},{"./version":119,"/home/aaron/dev/youdo/ui/node_modules/mercury/node_modules/main-loop/node_modules/vtree/is-vnode.js":41}],115:[function(require,module,exports){
+},{"./version":119,"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vtree/is-vnode.js":41}],115:[function(require,module,exports){
 module.exports=require(42)
-},{"./version":119,"/home/aaron/dev/youdo/ui/node_modules/mercury/node_modules/main-loop/node_modules/vtree/is-vtext.js":42}],116:[function(require,module,exports){
+},{"./version":119,"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vtree/is-vtext.js":42}],116:[function(require,module,exports){
 module.exports=require(43)
-},{"/home/aaron/dev/youdo/ui/node_modules/mercury/node_modules/main-loop/node_modules/vtree/is-widget.js":43}],117:[function(require,module,exports){
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vtree/is-widget.js":43}],117:[function(require,module,exports){
 module.exports=require(32)
-},{"/home/aaron/dev/youdo/ui/node_modules/mercury/node_modules/main-loop/node_modules/vdom/node_modules/is-object/index.js":32}],118:[function(require,module,exports){
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vdom/node_modules/is-object/index.js":32}],118:[function(require,module,exports){
 module.exports=require(33)
-},{"/home/aaron/dev/youdo/ui/node_modules/mercury/node_modules/main-loop/node_modules/vdom/node_modules/x-is-array/index.js":33}],119:[function(require,module,exports){
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vdom/node_modules/x-is-array/index.js":33}],119:[function(require,module,exports){
 module.exports=require(46)
-},{"/home/aaron/dev/youdo/ui/node_modules/mercury/node_modules/main-loop/node_modules/vtree/version.js":46}],120:[function(require,module,exports){
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vtree/version.js":46}],120:[function(require,module,exports){
 module.exports=require(47)
-},{"./version":119,"/home/aaron/dev/youdo/ui/node_modules/mercury/node_modules/main-loop/node_modules/vtree/vpatch.js":47}],121:[function(require,module,exports){
+},{"./version":119,"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vtree/vpatch.js":47}],121:[function(require,module,exports){
 module.exports=require(57)
-},{"/home/aaron/dev/youdo/ui/node_modules/mercury/node_modules/observ-struct/node_modules/xtend/index.js":57}],122:[function(require,module,exports){
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/observ-struct/node_modules/xtend/index.js":57}],122:[function(require,module,exports){
 module.exports = extend
 
 function extend(target) {

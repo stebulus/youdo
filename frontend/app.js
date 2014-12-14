@@ -72,7 +72,7 @@ var youDoReducer = function(acc, value) {
  *       , buffer: [] // array of characters
  *       }
  */
-var youDoReducerStyler = function(acc, value) {
+var youDoReducerStyler = function(acc, value, index) {
 
   if(value == '@') {
     acc.styledText.unshift(h('span.red', '@' + acc.buffer.join("")));
@@ -83,6 +83,8 @@ var youDoReducerStyler = function(acc, value) {
   } else if (value == ' ') {
     acc.styledText.unshift(' ' + acc.buffer.join(""));
     acc.buffer = [];
+  } else if (index == 0) {
+    acc.styledText.unshift(value + acc.buffer.join(""));
   } else {
     acc.buffer.unshift(value);
   }
