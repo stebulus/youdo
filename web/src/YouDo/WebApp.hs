@@ -9,9 +9,8 @@ License     : GPL-3
 module YouDo.WebApp (app, webdb) where
 
 import Control.Concurrent.MVar (MVar, withMVar)
-import Control.Monad.Reader.Class (MonadReader(..))
-import Data.Aeson (ToJSON(..))
-import qualified Data.Aeson as A
+import Control.Monad.Reader.Class (local)
+import Data.Aeson (ToJSON, FromJSON)
 import Data.Default
 import Network.HTTP.Types (StdMethod(..))
 import Web.Scotty (ScottyM, Parsable(..))
@@ -54,7 +53,7 @@ app db mv =
 -- body, which it shouldn't be.)  The request body, when needed,
 -- is interpreted via default 'RequestParser' for the appropriate type.
 webdb :: ( NamedResource k, DB k v u IO d
-         , Parsable k, A.FromJSON k
+         , Parsable k, FromJSON k
          , Show k, ToJSON v
          , Default (RequestParser k)
          , Default (RequestParser v)
