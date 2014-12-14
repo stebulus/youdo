@@ -61,10 +61,10 @@ year :: Parser Int
 year = decimal <?> "parsing year (YYYY)"
 
 month :: Parser Int
-month = between 1 12 decimal2 <?> "parsing month (MM)"
+month = decimal2 >>= between 1 12 <?> "parsing month (MM)"
 
 day :: Parser Int
-day = between 1 31 decimal2 <?> "parsing day (DD)"
+day = decimal2 >>= between 1 31 <?> "parsing day (DD)"
 
 time :: Parser DiffTime
 time = p <?> "parsing time"
@@ -85,13 +85,13 @@ time = p <?> "parsing time"
                 return $ picosecondsToDiffTime $ milliseconds*1000000000
 
 hour :: Parser Int
-hour = between 0 24 decimal2 <?> "parsing hour (hh)"  -- allow midnight at end of day
+hour = decimal2 >>= between 0 24 <?> "parsing hour (hh)"  -- allow midnight at end of day
 
 minute :: Parser Int
-minute = between 0 59 decimal2 <?> "parsing minute (mm)"
+minute = decimal2 >>= between 0 59 <?> "parsing minute (mm)"
 
 second :: Parser Int
-second = between 0 60 decimal2 <?> "parsing second (ss)"  -- allow leap second
+second = decimal2 >>= between 0 60 <?> "parsing second (ss)"  -- allow leap second
 
 subsecond :: Parser Int
 subsecond = decimal3 <?> "parsing subsecond (sss)"
@@ -112,16 +112,15 @@ decimal2 = numeral <:> numeral
 decimal3 :: Parser Int
 decimal3 = numeral <:> numeral <:> numeral
 
-check :: (Monad m) => (a->Bool) -> (a->String) -> m a -> m a
-check f msg ma = do
-    a <- ma
+check :: (Monad m) => (a->Bool) -> (a->String) -> a -> m a
+check f msg a =
     if f a
         then return a
         else fail $ msg a
 
-between :: (Monad m, Ord a, Show a) => a -> a -> m a -> m a
-between lo hi ma =
+between :: (Monad m, Ord a, Show a) => a -> a -> a -> m a
+between lo hi a =
     check (\n -> lo <= n && n <= hi)
           (\n -> (show n) ++ " is not in range ["
                  ++ (show lo) ++ "," ++ (show hi) ++ "]")
-          ma
+          a
