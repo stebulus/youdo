@@ -25,7 +25,7 @@ import Web.Scotty (scottyOpts, Options(..))
 import YouDo.DB.Memory
 import YouDo.DB.PostgreSQL
 import YouDo.Types (YoudoDatabase(..))
-import YouDo.Web (app)
+import YouDo.Web (app, at)
 
 -- | The kind of database to connect to.
 data DBOption = InMemory            -- ^A transient in-memory database; see "YouDo.DB.Memory"
@@ -73,17 +73,17 @@ mainOpts opts = do
                                           $ setHost "127.0.0.1"  -- for now
                                           $ defaultSettings
                                }
+        runApp db mv = scotty $ app db mv `at` baseuri
         p = port opts
     mv <- newMVar ()
     case dbopt opts of
         InMemory -> do
             db <- YouDo.DB.Memory.empty
-            scotty $ app baseuri db mv
+            runApp db mv
         Postgres connstr -> do
             bracket (connectPostgreSQL (pack connstr))
                     (\conn -> close conn)
-                    (\conn -> scotty $ app baseuri
-                                           (YoudoDatabase
-                                               (PostgresYoudoDB conn)
-                                               (PostgresUserDB conn))
-                                           mv)
+                    (\conn -> runApp (YoudoDatabase
+                                        (PostgresYoudoDB conn)
+                                        (PostgresUserDB conn))
+                                     mv)

@@ -5,6 +5,7 @@ import Control.Applicative ((<$>), (<*>))
 import Control.Concurrent.MVar (newEmptyMVar, newMVar, takeMVar, putMVar,
     modifyMVar_, modifyMVar)
 import Control.Monad.IO.Class (liftIO)
+import Control.Monad.Reader (ReaderT(..))
 import Control.Monad.Trans.Either (EitherT(..), left, right, hoistEither)
 import Data.Aeson (eitherDecode, Object, Value(..), parseJSON)
 import Data.Aeson.Types (parseEither)
@@ -327,7 +328,9 @@ serverTest testName f = Test $ TestInstance
     { run = do
         db <- empty
         mv <- newMVar ()
-        waiApp <- scottyApp $ app (fromJust $ parseURI "http://example.com") db mv
+        waiApp <- scottyApp
+                  $ runReaderT (app db mv)
+                  $ (fromJust $ parseURI "http://example.com")
         result <- runEitherT $ f $ request waiApp
         return $ Finished $ case result of
             Left msg -> Fail msg

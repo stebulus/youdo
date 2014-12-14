@@ -9,6 +9,8 @@ License     : GPL-3
 module YouDo.Web (
     -- * Web application
     app, webdb, webfunc, resource,
+    -- * Base URIs
+    Based, at,
     -- * Interpreting requests
     RequestParser, parse, ParamValue(..),
     -- * Reporting results
@@ -21,6 +23,9 @@ import Control.Applicative ((<$>), (<*>))
 import Control.Concurrent.MVar (MVar, withMVar)
 import Control.Monad.Error (mapErrorT, throwError)
 import Control.Monad.IO.Class (liftIO, MonadIO)
+import Control.Monad.Reader (ReaderT(..), mapReaderT)
+import Control.Monad.Reader.Class (MonadReader(..))
+import Control.Monad.Trans.Class (lift)
 import Data.Aeson (ToJSON(..), FromJSON(..), Value(..), (.=))
 import Data.Aeson.Types (parseEither)
 import qualified Data.Aeson as A
@@ -43,19 +48,24 @@ import YouDo.DB
 import YouDo.Holex
 import YouDo.Types
 
+-- | Monad transformer for managing a base URI.
+type Based = ReaderT URI
+
+-- | Run a @Based@ with the given base URI.
+at :: Based m a -> URI -> m a
+at bma u = runReaderT bma u
+
 -- | The Scotty application.
 -- Consists of 'webdb' interfaces for the given Youdo and User DB instances.
 app :: ( DB YoudoID YoudoData YoudoUpdate IO ydb
        , DB UserID UserData UserUpdate IO udb
-       ) => URI         -- ^The base URI of the app (without version number);
-                        -- should end with a slash.
-       -> YoudoDatabase ydb udb     -- ^The database.
+       ) => YoudoDatabase ydb udb     -- ^The database.
        -> MVar ()       -- ^All database access is under this MVar.
-       -> ScottyM ()
-app baseuri db mv = do
-    let apibase = "./0/" `relative` baseuri
-    webdb apibase mv (youdos db)
-    webdb apibase mv (users db)
+       -> Based ScottyM ()
+app db mv =
+    local ("./0/" `relative`) $ do
+        webdb mv (youdos db)
+        webdb mv (users db)
 
 -- | A web interface to an instance of 'DB'.
 -- The following endpoints are created, relative to the given base URI
@@ -84,28 +94,27 @@ webdb :: ( NamedResource k, DB k v u IO d
          , Default (RequestParser k)
          , Default (RequestParser v)
          , Default (RequestParser (Versioned k u))
-         ) => URI       -- ^The base URI of the API (including version number);
-                        -- should end with a slash.
-         -> MVar ()     -- ^All database access is under this MVar.
+         ) => MVar ()     -- ^All database access is under this MVar.
          -> d           -- ^The database.
-         -> ScottyM()
-webdb baseuri mv db =
+         -> Based ScottyM ()
+webdb mv db = do
+    baseuri <- ask
     let basepath = nullURI { uriPath = uriPath baseuri }
         rtype = dbResourceName db
         pat s = fromString $ show $ s `relative` basepath
-        onweb f = webfunc baseuri $ lock mv $ flip f db
-    in do resource (pat rtype)
-            [ (GET, onweb (\() -> getAll))
-            , (POST, onweb create)
-            ]
-          resource (pat (rtype ++ "/:id"))
-            [ (GET, onweb get) ]
-          resource (pat (rtype ++ "/:id/versions"))
-            [ (GET, onweb getVersions) ]
-          resource (pat (rtype ++ "/:id/:txnid"))
-            [ (GET, onweb getVersion)
-            , (POST, onweb update)
-            ]
+        onweb f = webfunc $ lock mv $ flip f db
+    resource (pat rtype)
+        [ (GET, onweb (\() -> getAll))
+        , (POST, onweb create)
+        ]
+    resource (pat (rtype ++ "/:id"))
+        [ (GET, onweb get) ]
+    resource (pat (rtype ++ "/:id/versions"))
+        [ (GET, onweb getVersions) ]
+    resource (pat (rtype ++ "/:id/:txnid"))
+        [ (GET, onweb getVersion)
+        , (POST, onweb update)
+        ]
 
 -- | A web interface to a function.
 -- A value of type @a@ is obtained from the HTTP request using the
@@ -114,31 +123,33 @@ webdb baseuri mv db =
 -- occurs parsing the request, a 400 (Bad Request) response is sent;
 -- errors in later phases cause 500 (Internal Server Error).
 webfunc :: (WebResult r, Default (RequestParser a))
-           => URI           -- ^The base URI of the app.
-           -> (a -> IO r)   -- ^The function to perform.
-           -> ActionM ()
-webfunc u f =
-    statusErrors $ do
-        a <- fromRequest $ def
-        lift500 $ do
+           => (a -> IO r)   -- ^The function to perform.
+           -> Based ActionM ()
+webfunc f =
+    mapReaderT statusErrors $ do
+        a <- lift $ fromRequest $ def
+        mapReaderT lift500 $ do
             r <- liftIO $ f a
-            report u r
+            report r
 
 -- | A value that can be reported to a web client.
 class WebResult r where
-    report :: URI               -- ^The base URI of the app.
-              -> r              -- ^The value to report.
-              -> ActionM ()     -- ^An action that reports that value.
+    report :: r                     -- ^The value to report.
+              -> Based ActionM ()   -- ^An action that reports that value.
 
 -- | Reporting versioned database objects as JSON.
 instance (NamedResource k, Show k, ToJSON v)
          => WebResult (Versioned k v) where
-    report baseuri x = json $ WebVersioned baseuri x
+    report x = do
+        baseuri <- ask
+        lift $ json $ WebVersioned baseuri x
 
 -- | Reporting lists of versioned database objects as JSON.
 instance (NamedResource k, Show k, ToJSON v)
          => WebResult [Versioned k v] where
-    report baseuri xs = json $ map (WebVersioned baseuri) xs
+    report xs = do
+        baseuri <- ask
+        lift $ json $ map (WebVersioned baseuri) xs
 
 -- | Shim which augments JSON representations of 'Versioned' objects
 -- with @"url"@ and @"thisVersion"@ fields.
@@ -159,38 +170,40 @@ instance (Show k, NamedResource k, ToJSON v) => ToJSON (WebVersioned k v) where
 
 -- | Reporting results from 'get' and other getting methods.
 instance (WebResult a) => WebResult (GetResult a) where
-    report baseuri (Right (Right a)) =
-        do status ok200  -- http://tools.ietf.org/html/rfc2616#section-10.2.1
-           report baseuri a
-    report _ (Left NotFound) =
-        status notFound404  -- http://tools.ietf.org/html/rfc2616#section-10.4.5
-    report _ (Right (Left msg)) =
-        do status internalServerError500  -- http://tools.ietf.org/html/rfc2616#section-10.5.1
-           text msg
+    report (Right (Right a)) =
+        do lift $ status ok200  -- http://tools.ietf.org/html/rfc2616#section-10.2.1
+           report a
+    report (Left NotFound) =
+        lift $ status notFound404  -- http://tools.ietf.org/html/rfc2616#section-10.4.5
+    report (Right (Left msg)) =
+        do lift $ status internalServerError500  -- http://tools.ietf.org/html/rfc2616#section-10.5.1
+           lift $ text msg
 
 -- | Reporting results from 'update'.
 instance (WebResult b, NamedResource k, Show k, ToJSON v)
          => WebResult (UpdateResult b (Versioned k v)) where
-    report baseuri (Right (Right (Right a))) =
-        do status created201  -- http://tools.ietf.org/html/rfc2616#section-10.2.2
-           setHeader "Location" $ LT.pack $ show $ resourceVersionURL baseuri (version a)
-           report baseuri a
-    report baseuri (Left (NewerVersion b)) =
-        do status conflict409  -- http://tools.ietf.org/html/rfc2616#section-10.4.10
-           report baseuri b
-    report baseuri (Right gr) = report baseuri gr
+    report (Right (Right (Right a))) =
+        do lift $ status created201  -- http://tools.ietf.org/html/rfc2616#section-10.2.2
+           baseuri <- ask
+           lift $ setHeader "Location" $ LT.pack $ show $ resourceVersionURL baseuri (version a)
+           report a
+    report (Left (NewerVersion b)) =
+        do lift $ status conflict409  -- http://tools.ietf.org/html/rfc2616#section-10.4.10
+           report b
+    report (Right gr) = report gr
 
 -- | Reporting results from 'create'.
 instance (NamedResource k, Show k, ToJSON v)
          => WebResult (CreateResult (Versioned k v)) where
-    report baseuri (Right (Right (Right a))) =
-        do status created201  -- http://tools.ietf.org/html/rfc2616#section-10.2.2
-           setHeader "Location" $ LT.pack $ show $ resourceURL baseuri $ thingid $ version a
-           report baseuri a
-    report _ (Left (InvalidObject msgs)) =
-        do status badRequest400
-           text $ LT.concat [ LT.concat [msg, "\r\n"] | msg<-msgs ]
-    report baseuri (Right gr) = report baseuri gr
+    report (Right (Right (Right a))) =
+        do lift $ status created201  -- http://tools.ietf.org/html/rfc2616#section-10.2.2
+           baseuri <- ask
+           lift $ setHeader "Location" $ LT.pack $ show $ resourceURL baseuri $ thingid $ version a
+           report a
+    report (Left (InvalidObject msgs)) =
+        do lift $ status badRequest400
+           lift $ text $ LT.concat [ LT.concat [msg, "\r\n"] | msg<-msgs ]
+    report (Right gr) = report gr
 
 -- | A web resource, with a complete list of its supported methods.
 -- Defining a resource this way causes a 405 (Method Not Allowed)
@@ -198,15 +211,16 @@ instance (NamedResource k, Show k, ToJSON v)
 -- given list.  (Scotty's default is 404 (Not Found), which is less
 -- appropriate.)
 resource :: RoutePattern                    -- ^Route to this resource.
-            -> [(StdMethod, ActionM ())]    -- ^Allowed methods and their actions.
-            -> ScottyM ()
+            -> [(StdMethod, Based ActionM ())]    -- ^Allowed methods and their actions.
+            -> Based ScottyM ()
 resource route acts =
     let allowedMethods = intercalate "," $ map (show . fst) acts
     in do
-        sequence_ [addroute method route act | (method, act) <- acts]
-        matchAny route $ do
-            status methodNotAllowed405  -- http://tools.ietf.org/html/rfc2616#section-10.4.6
-            setHeader "Allow" $ LT.pack allowedMethods
+        sequence_ [ mapReaderT (addroute method route) act
+                  | (method, act) <- acts ]
+        mapReaderT (matchAny route) $ do
+            lift $ status methodNotAllowed405  -- http://tools.ietf.org/html/rfc2616#section-10.4.6
+            lift $ setHeader "Allow" $ LT.pack allowedMethods
 
 -- | Perform the given action, annotating any failures with the given
 -- HTTP status.
