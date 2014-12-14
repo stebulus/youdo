@@ -9,7 +9,7 @@ License     : GPL-3
 -}
 module YouDo.DB (
     -- *Database
-    DB(..), NamedResource(..),
+    DB(..), NamedResource(..), Updater(..),
     -- *Versioning of database objects
     Versioned(..), VersionedID(..), TransactionID(..),
     -- *Results of database operations
@@ -30,6 +30,9 @@ import Web.Scotty (Parsable(..))
 {- |
     @d@ contains versioned key-value pairs of type @(k,v)@, which
     can be updated by objects of type @u@, all in monad @m@.
+
+    Often 'Updater' @u v@ will hold (see "YouDo.DB.Memory", for
+    example), but it's not required.
 -}
 class (Monad m, NamedResource k)
       => DB k v u m d | d->v, d->k, d->u, d->m where
@@ -58,6 +61,10 @@ class (Monad m, NamedResource k)
     dbResourceName :: d -> String
     dbResourceName = const $ resourceName x
         where x = Nothing :: Maybe k    -- ScopedTypeVariables used!
+
+-- | A @u@ represents a change to an @a@.
+class Updater u a where
+    doUpdate :: u -> a -> a
 
 {- |
     Class for types that have a name.  Typically the implementation

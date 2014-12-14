@@ -1,9 +1,10 @@
-{-# LANGUAGE OverloadedStrings, FlexibleInstances #-}
+{-# LANGUAGE OverloadedStrings, FlexibleInstances, MultiParamTypeClasses #-}
 module YouDo.Types where
 
 import Control.Applicative ((<$>), (<*>), pure)
 import Data.Aeson (ToJSON(..), FromJSON(..), (.=), object, Value(..))
 import Data.Aeson.Types (typeMismatch)
+import Data.Maybe (fromMaybe)
 import qualified Data.Text.Lazy as LT
 import Data.Time (UTCTime)
 import Database.PostgreSQL.Simple.FromField (FromField(..))
@@ -57,6 +58,15 @@ data YoudoUpdate = YoudoUpdate { newAssignerid :: Maybe UserID
                                , newCompleted :: Maybe Bool
                                } deriving (Show)
 
+instance Updater YoudoUpdate YoudoData where
+    doUpdate upd yd =
+        yd { assignerid = fromMaybe (assignerid yd) (newAssignerid upd)
+           , assigneeid = fromMaybe (assigneeid yd) (newAssigneeid upd)
+           , description = fromMaybe (description yd) (newDescription upd)
+           , duedate = fromMaybe (duedate yd) (newDuedate upd)
+           , completed = fromMaybe (completed yd) (newCompleted upd)
+           }
+
 type User = Versioned UserID UserData
 instance NamedResource UserID where
     resourceName = const "users"
@@ -82,6 +92,11 @@ data UserData = UserData { name :: String }
     deriving (Show, Eq)
 
 data UserUpdate = UserUpdate { newName :: Maybe String } deriving (Show, Eq)
+
+instance Updater UserUpdate UserData where
+    doUpdate upd u = case newName upd of
+        Nothing -> u
+        Just n -> u { name = n }
 
 -- This newtype avoids orphan instances.
 newtype DueDate = DueDate { toMaybeTime :: Maybe UTCTime } deriving (Eq, Show)

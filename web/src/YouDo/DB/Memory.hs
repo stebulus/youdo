@@ -3,7 +3,7 @@ module YouDo.DB.Memory where
 import Control.Concurrent.MVar (MVar, withMVar, modifyMVar, newMVar)
 import Data.Function (on)
 import Data.List (nubBy)
-import Data.Maybe (listToMaybe, fromMaybe)
+import Data.Maybe (listToMaybe)
 
 import YouDo.DB
 import YouDo.Types
@@ -51,21 +51,6 @@ instance (Eq k, NamedResource k, Updater u v)
                                             (VersionedID (thingid (version x)) newtxn)
                                             (doUpdate (thing vu) (thing x))
                                 return (newx:xs, success newx)
-
-class Updater u d where
-    doUpdate :: u -> d -> d
-instance Updater YoudoUpdate YoudoData where
-    doUpdate upd yd =
-        yd { assignerid = fromMaybe (assignerid yd) (newAssignerid upd)
-           , assigneeid = fromMaybe (assigneeid yd) (newAssigneeid upd)
-           , description = fromMaybe (description yd) (newDescription upd)
-           , duedate = fromMaybe (duedate yd) (newDuedate upd)
-           , completed = fromMaybe (completed yd) (newCompleted upd)
-           }
-instance Updater UserUpdate UserData where
-    doUpdate upd u = case newName upd of
-        Nothing -> u
-        Just n -> u { name = n }
 
 data ( DB YoudoID YoudoData YoudoUpdate IO yd
      , DB UserID UserData UserUpdate IO ud
