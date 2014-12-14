@@ -8,8 +8,8 @@ Copyright   : (c) Steven Taschuk, 2014
 License     : GPL-3
 -}
 module YouDo.DB (
-    -- *Database
-    DB(..), NamedResource(..), Updater(..),
+    -- *Database and web interface
+    DB(..), webdb, NamedResource(..), Updater(..),
     resourceURL, resourceVersionURL,
     -- *Versioning of database objects
     Versioned(..), VersionedID(..), TransactionID(..),
@@ -23,6 +23,7 @@ module YouDo.DB (
 ) where
 
 import Control.Applicative ((<$>), (<*>))
+import Control.Concurrent.MVar
 import Control.Monad.Reader (ask)
 import Data.Aeson (FromJSON(..), ToJSON(..), (.=), Value(..))
 import Data.Default
@@ -32,13 +33,12 @@ import Data.String
 import qualified Data.Text.Lazy as LT
 import Database.PostgreSQL.Simple.FromField (FromField(..))
 import Network.HTTP.Types (ok200, created201, badRequest400, notFound404,
-    conflict409, internalServerError500)
+    conflict409, internalServerError500, StdMethod(..))
 import Network.URI
-import Web.Scotty (Parsable(..))
+import Web.Scotty (Parsable(..), ScottyM)
 
 import YouDo.Holex
-import YouDo.Web (BasedToJSON(..), Based, relative, ParamValue, parse,
-    WebResult(..), status, json, text, setHeader)
+import YouDo.Web
 
 {- |
     @d@ contains versioned key-value pairs of type @(k,v)@, which
@@ -74,6 +74,53 @@ class (Monad m, NamedResource k)
     dbResourceName :: d -> String
     dbResourceName = const $ resourceName x
         where x = Nothing :: Maybe k    -- ScopedTypeVariables used!
+
+-- | A web interface to an instance of 'DB'.
+-- The following endpoints are created, relative to the given base URI
+-- (which should probably end with a slash):
+--
+-- @
+--      GET objs                (list of all current objs)
+--      POST objs               (create new obj)
+--      GET objs\//id/\/             (current version of obj)
+--      GET objs\//id/\/versions    (all versions of obj)
+--      GET objs\//id/\//txnid/       (specified version of obj)
+--      POST objs\//id/\//txnid/      (create new version of obj)
+-- @
+--
+-- These correspond directly to the methods of 'DB'.  The name @objs@
+-- is obtained from the instance 'NamedResource' @k@.  Requests that
+-- return objects return them in JSON format, using the instances
+-- 'Show' @k@ and 'ToJSON' @v@.  The @/id/@ parameter is interpreted
+-- via the instance 'Parsable' @k@.  (The 'FromJSON' @k@ instance
+-- would only be used if the id were passed in the JSON request
+-- body, which it shouldn't be.)  The request body, when needed,
+-- is interpreted via default 'RequestParser' for the appropriate type.
+webdb :: ( NamedResource k, DB k v u IO d
+         , Parsable k, FromJSON k
+         , Show k, ToJSON v
+         , Default (RequestParser k)
+         , Default (RequestParser v)
+         , Default (RequestParser (Versioned k u))
+         ) => MVar ()     -- ^All database access is under this MVar.
+         -> d           -- ^The database.
+         -> Based ScottyM ()
+webdb mv db = do
+    let rtype = dbResourceName db
+        onweb f = webfunc $ lock $ flip f db
+        lock f x = withMVar mv $ const (f x)
+    resource rtype
+             [ (GET, onweb (\() -> getAll))
+             , (POST, onweb create)
+             ]
+    resource (rtype ++ "/:id/")
+             [ (GET, onweb get) ]
+    resource (rtype ++ "/:id/versions")
+             [ (GET, onweb getVersions) ]
+    resource (rtype ++ "/:id/:txnid")
+             [ (GET, onweb getVersion)
+             , (POST, onweb update)
+             ]
 
 -- | A @u@ represents a change to an @a@.
 class Updater u a where
