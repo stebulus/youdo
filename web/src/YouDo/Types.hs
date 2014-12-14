@@ -18,7 +18,7 @@ import Web.Scotty (Parsable(..))
 import YouDo.DB
 import YouDo.Holex
 import YouDo.TimeParser (parseUTCTime)
-import YouDo.Web (parse, ParamValue)
+import YouDo.Web (parse, ParamValue, BasedToJSON(..))
 
 data ( DB YoudoID YoudoData YoudoUpdate IO yd
      , DB UserID UserData UserUpdate IO ud
@@ -30,24 +30,27 @@ instance NamedResource YoudoID where
 instance FromRow Youdo where
     fromRow = Versioned <$> (VersionedID <$> field <*> field)
         <*> (YoudoData <$> field <*> field <*> field <*> field <*> field)
-instance ToJSON YoudoData where
-    toJSON yd = object
-        [ "assignerid" .= assignerid yd
-        , "assigneeid" .= assigneeid yd
-        , "description" .= description yd
-        , "duedate" .= duedate yd
-        , "completed" .= completed yd
-        ]
+instance BasedToJSON YoudoData where
+    basedToJSON yd = do
+        assigner <- basedToJSON $ assignerid yd
+        assignee <- basedToJSON $ assigneeid yd
+        return $ object
+            [ "assigner" .= assigner
+            , "assignee" .= assignee
+            , "description" .= description yd
+            , "duedate" .= duedate yd
+            , "completed" .= completed yd
+            ]
 
 newtype YoudoID = YoudoID Int deriving (Eq)
 instance Show YoudoID where
     show (YoudoID n) = show n
+instance BasedToJSON YoudoID where
+    basedToJSON = idjson
 instance FromField YoudoID where
     fromField fld = (fmap.fmap) YoudoID $ fromField fld
 instance ToField YoudoID where
     toField (YoudoID n) = toField n
-instance ToJSON YoudoID where
-    toJSON (YoudoID n) = toJSON n
 instance FromJSON YoudoID where
     parseJSON x = YoudoID <$> parseJSON x
 instance Parsable YoudoID where
@@ -99,16 +102,18 @@ instance NamedResource UserID where
 instance FromRow User where
     fromRow = Versioned <$> (VersionedID <$> field <*> field)
                         <*> (UserData <$> field)
-instance ToJSON UserData where
-    toJSON yduser = object [ "name" .= name yduser ]
+instance BasedToJSON UserData where
+    basedToJSON yduser = return $ object [ "name" .= name yduser ]
 
-newtype UserID = UserID Int deriving (Show, Eq)
+newtype UserID = UserID Int deriving (Eq)
+instance Show UserID where
+    show (UserID n) = show n
+instance BasedToJSON UserID where
+    basedToJSON = idjson
 instance FromField UserID where
     fromField fld = (fmap.fmap) UserID $ fromField fld
 instance ToField UserID where
     toField (UserID n) = toField n
-instance ToJSON UserID where
-    toJSON (UserID n) = toJSON n
 instance FromJSON UserID where
     parseJSON x = UserID <$> parseJSON x
 instance Parsable UserID where

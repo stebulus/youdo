@@ -10,7 +10,7 @@ License     : GPL-3
 module YouDo.DB (
     -- *Database and web interface
     DB(..), Updater(..), webdb, NamedResource(..),
-    resourceURL, resourceVersionURL,
+    resourceURL, resourceVersionURL, idjson, veridjson,
     -- *Versioning of database objects
     Versioned(..), VersionedID(..), TransactionID(..),
     -- *Results of database operations
@@ -24,12 +24,14 @@ module YouDo.DB (
 
 import Control.Applicative ((<$>), (<*>))
 import Control.Concurrent.MVar
+import Control.Monad (liftM)
 import Control.Monad.Reader (ask)
-import Data.Aeson (FromJSON(..), ToJSON(..), (.=), Value(..))
+import Data.Aeson (FromJSON(..), (.=), Value(..))
 import Data.Default
 import qualified Data.HashMap.Strict as M
 import Data.List (foldl')
 import Data.String
+import qualified Data.Text as ST
 import qualified Data.Text.Lazy as LT
 import Database.PostgreSQL.Simple.FromField (FromField(..))
 import Network.HTTP.Types (ok200, created201, badRequest400, notFound404,
@@ -110,7 +112,7 @@ class Updater u a where
     These correspond directly to the methods of 'DB'.  The name @objs@
     is obtained from the instance 'NamedResource' @k@.  Requests that
     return objects return them in JSON format, using the instances
-    'Show' @k@ and 'ToJSON' @v@.  The @/id/@ parameter is interpreted
+    'Show' @k@ and 'BasedToJSON' @v@.  The @/id/@ parameter is interpreted
     via the instance 'Parsable' @k@.  (The 'FromJSON' @k@ instance
     would only be used if the id were passed in the JSON request
     body, which it shouldn't be.)  The request body, when needed,
@@ -118,7 +120,7 @@ class Updater u a where
 -}
 webdb :: ( NamedResource k, DB k v u IO d
          , Parsable k, FromJSON k
-         , Show k, ToJSON v
+         , Show k, BasedToJSON v
          , Default (RequestParser k)
          , Default (RequestParser v)
          , Default (RequestParser (Versioned k u))
@@ -178,6 +180,17 @@ resourceVersionURL verk = do
                 ++ (show $ txnid $ verk))
              `relative` baseuri
 
+jsonurl :: URI -> Value
+jsonurl = String . ST.pack . show
+
+-- | The URL for a 'NamedResource' object, as a JSON 'Value'.
+idjson :: (Show k, NamedResource k, Monad m) => k -> Based m Value
+idjson k = liftM jsonurl $ resourceURL k
+
+-- | The URL for a specific version of a 'NamedResource' object, as a JSON 'Value'.
+veridjson :: (Show k, NamedResource k, Monad m) => VersionedID k -> Based m Value
+veridjson k = liftM jsonurl $ resourceVersionURL k
+
 {- |
     An identifier of a version of a thing, as was produced in a
     particular transaction.
@@ -199,12 +212,13 @@ data Versioned a b = Versioned
 
 -- | Augment JSON representations of 'Versioned' objects
 -- with @"url"@ and @"thisVersion"@ fields.
-instance (Show k, NamedResource k, ToJSON v)
+instance (Show k, NamedResource k, BasedToJSON v)
          => BasedToJSON (Versioned k v) where
     basedToJSON v = do
         objurl <- resourceURL $ thingid $ version v
         verurl <- resourceVersionURL $ version v
-        let origmap = case toJSON (thing v) of
+        origval <- basedToJSON $ thing v
+        let origmap = case origval of
                 Object m -> m
                 _ -> error "data did not encode as JSON object"
             augmentedmap = foldl' (flip (uncurry M.insert)) origmap
@@ -292,7 +306,7 @@ instance Result (UpdateResult b a) a where
 newerVersion :: b -> UpdateResult b a
 newerVersion x = Left $ NewerVersion x
 
-instance (BasedToJSON b, NamedResource k, Show k, ToJSON v)
+instance (BasedToJSON b, NamedResource k, Show k, BasedToJSON v)
          => WebResult (UpdateResult b (Versioned k v)) where
     report (Right (Right (Right a))) =
         do status created201  -- http://tools.ietf.org/html/rfc2616#section-10.2.2
@@ -318,7 +332,7 @@ instance Result (CreateResult a) a where
 invalidObject :: [LT.Text] -> CreateResult a
 invalidObject errs = Left $ InvalidObject errs
 
-instance (NamedResource k, Show k, ToJSON v)
+instance (NamedResource k, Show k, BasedToJSON v)
          => WebResult (CreateResult (Versioned k v)) where
     report (Right (Right (Right a))) =
         do status created201  -- http://tools.ietf.org/html/rfc2616#section-10.2.2

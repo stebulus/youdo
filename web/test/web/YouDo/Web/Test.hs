@@ -52,8 +52,8 @@ tests = return $
         lookup (mk "Content-Type") headers'
             ~= Just "application/json; charset=utf-8"
         obj <- hoistEither (eitherDecode bod :: Either String Object)
-        M.lookup "assignerid" obj ~= Just (Number 0)
-        M.lookup "assigneeid" obj ~= Just (Number 0)
+        M.lookup "assigner" obj ~= Just (String "http://example.com/0/users/0/")
+        M.lookup "assignee" obj ~= Just (String "http://example.com/0/users/0/")
         M.lookup "description" obj ~= Just (String "blah")
         M.lookup "duedate" obj ~= Just Null
         M.lookup "completed" obj ~= Just (Bool False)
@@ -77,8 +77,8 @@ tests = return $
         lookup (mk "Content-Type") headers'
             ~= Just "application/json; charset=utf-8"
         obj <- hoistEither (eitherDecode bod :: Either String Object)
-        M.lookup "assignerid" obj ~= Just (Number 0)
-        M.lookup "assigneeid" obj ~= Just (Number 0)
+        M.lookup "assigner" obj ~= Just (String "http://example.com/0/users/0/")
+        M.lookup "assignee" obj ~= Just (String "http://example.com/0/users/0/")
         M.lookup "description" obj ~= Just (String "blah")
         M.lookup "duedate" obj ~= Just Null
         M.lookup "completed" obj ~= Just (Bool False)
@@ -102,8 +102,8 @@ tests = return $
         lookup (mk "Content-Type") headers'
             ~= Just "application/json; charset=utf-8"
         obj <- hoistEither (eitherDecode bod :: Either String Object)
-        M.lookup "assignerid" obj ~= Just (Number 0)
-        M.lookup "assigneeid" obj ~= Just (Number 0)
+        M.lookup "assigner" obj ~= Just (String "http://example.com/0/users/0/")
+        M.lookup "assignee" obj ~= Just (String "http://example.com/0/users/0/")
         M.lookup "description" obj ~= Just (String "blah")
         M.lookup "duedate" obj ~= Just (String "2014-11-30T14:10:05.038Z")
         M.lookup "completed" obj ~= Just (Bool False)
@@ -126,8 +126,8 @@ tests = return $
         lookup (mk "Content-Type") headers'
             ~= Just "application/json; charset=utf-8"
         obj <- hoistEither (eitherDecode bod :: Either String Object)
-        M.lookup "assignerid" obj ~= Just (Number 0)
-        M.lookup "assigneeid" obj ~= Just (Number 0)
+        M.lookup "assigner" obj ~= Just (String "http://example.com/0/users/0/")
+        M.lookup "assignee" obj ~= Just (String "http://example.com/0/users/0/")
         M.lookup "description" obj ~= Just (String "blah")
         M.lookup "duedate" obj ~= Just (String "2014-11-30T14:10:05.038Z")
         M.lookup "completed" obj ~= Just (Bool False)
@@ -211,8 +211,8 @@ tests = return $
         (stat5, _, bod5) <- liftIO $ req $ get $ T.unpack urltext5
         stat5 ~= ok200
         obj5 <- hoistEither (eitherDecode bod5 :: Either String Object)
-        M.lookup "assignerid" obj5 ~= Just (Number 0)
-        M.lookup "assigneeid" obj5 ~= Just (Number 0)
+        M.lookup "assigner" obj5 ~= Just (String "http://example.com/0/users/0/")
+        M.lookup "assignee" obj5 ~= Just (String "http://example.com/0/users/0/")
         M.lookup "description" obj5 ~= Just (String "blah")
         M.lookup "duedate" obj5 ~= Just Null
         M.lookup "completed" obj5 ~= Just (Bool True)

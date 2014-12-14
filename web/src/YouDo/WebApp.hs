@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings, RankNTypes, FlexibleContexts,
-    FlexibleInstances, UndecidableInstances #-}
+    FlexibleInstances #-}
 {-|
 Module      : YouDo.WebApp
 Description : Web application for YouDo
