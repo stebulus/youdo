@@ -68,7 +68,7 @@ webfunc f =
 
 -- | A web resource, with a complete list of its supported methods.
 -- Defining a resource this way causes a 405 (Method Not Allowed)
--- responses when a request uses a method which is not in the
+-- response when a request uses a method which is not in the
 -- given list.  (Scotty's default is 404 (Not Found), which is less
 -- appropriate.)
 resource :: String                    -- ^Route to this resource, relative to the base.

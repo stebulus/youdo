@@ -65,7 +65,17 @@ class (Monad m, NamedResource k)
     -- | Store a new object.
     create :: v -> d -> m (CreateResult (Versioned k v))
 
-    -- | Update an existing object.
+    {- |
+        Update an existing object.  The @u@ in the given @Versioned
+        k u@ is the update to make.  The 'VersionedID' @k@ in the
+        @Versioned k u@ identifies the /existing/ version that this
+        is an update to; if that is no longer the current version,
+        the update will fail and this function will return @Left
+        (NewerVersion x)@, where $x :: Versioned k v@ is the current
+        version.  It's up to the caller to determine whether their
+        update should be attempted again on that new version, and if
+        so, to retry.
+    -}
     update :: (Versioned k u) -> d
         -> m (UpdateResult (Versioned k v) (Versioned k v))
 
@@ -75,27 +85,29 @@ class (Monad m, NamedResource k)
     dbResourceName = const $ resourceName x
         where x = Nothing :: Maybe k    -- ScopedTypeVariables used!
 
--- | A web interface to an instance of 'DB'.
--- The following endpoints are created, relative to the given base URI
--- (which should probably end with a slash):
---
--- @
---      GET objs                (list of all current objs)
---      POST objs               (create new obj)
---      GET objs\//id/\/             (current version of obj)
---      GET objs\//id/\/versions    (all versions of obj)
---      GET objs\//id/\//txnid/       (specified version of obj)
---      POST objs\//id/\//txnid/      (create new version of obj)
--- @
---
--- These correspond directly to the methods of 'DB'.  The name @objs@
--- is obtained from the instance 'NamedResource' @k@.  Requests that
--- return objects return them in JSON format, using the instances
--- 'Show' @k@ and 'ToJSON' @v@.  The @/id/@ parameter is interpreted
--- via the instance 'Parsable' @k@.  (The 'FromJSON' @k@ instance
--- would only be used if the id were passed in the JSON request
--- body, which it shouldn't be.)  The request body, when needed,
--- is interpreted via default 'RequestParser' for the appropriate type.
+{- |
+    A web interface to an instance of 'DB'.
+    The following endpoints are created, relative to the given base URI
+    (which should probably end with a slash):
+
+    @
+         GET objs                (list of all current objs)
+         POST objs               (create new obj)
+         GET objs\//id/\/             (current version of obj)
+         GET objs\//id/\/versions    (all versions of obj)
+         GET objs\//id/\//txnid/       (specified version of obj)
+         POST objs\//id/\//txnid/      (create new version of obj)
+    @
+
+    These correspond directly to the methods of 'DB'.  The name @objs@
+    is obtained from the instance 'NamedResource' @k@.  Requests that
+    return objects return them in JSON format, using the instances
+    'Show' @k@ and 'ToJSON' @v@.  The @/id/@ parameter is interpreted
+    via the instance 'Parsable' @k@.  (The 'FromJSON' @k@ instance
+    would only be used if the id were passed in the JSON request
+    body, which it shouldn't be.)  The request body, when needed,
+    is interpreted via default 'RequestParser' for the appropriate type.
+-}
 webdb :: ( NamedResource k, DB k v u IO d
          , Parsable k, FromJSON k
          , Show k, ToJSON v
@@ -122,7 +134,11 @@ webdb mv db = do
              , (POST, onweb update)
              ]
 
--- | A @u@ represents a change to an @a@.
+{- |
+    A @u@ can be used to change an @a@.
+    In an instance 'DB' @k v u m d@, we might well have @Updater u v@
+    (see "YouDo.DB.Memory", for example), but this is not required.
+-}
 class Updater u a where
     doUpdate :: u -> a -> a
 
@@ -244,7 +260,6 @@ instance Result (GetResult a) a where
     failure msg = Right $ Left msg
     success x = Right $ Right x
 
--- | Reporting results from 'get' and other getting methods.
 instance (BasedToJSON a) => WebResult (GetResult a) where
     report (Right (Right a)) =
         do status ok200  -- http://tools.ietf.org/html/rfc2616#section-10.2.1
@@ -277,7 +292,6 @@ instance Result (UpdateResult b a) a where
 newerVersion :: b -> UpdateResult b a
 newerVersion x = Left $ NewerVersion x
 
--- | Reporting results from 'update'.
 instance (BasedToJSON b, NamedResource k, Show k, ToJSON v)
          => WebResult (UpdateResult b (Versioned k v)) where
     report (Right (Right (Right a))) =
@@ -304,7 +318,6 @@ instance Result (CreateResult a) a where
 invalidObject :: [LT.Text] -> CreateResult a
 invalidObject errs = Left $ InvalidObject errs
 
--- | Reporting results from 'create'.
 instance (NamedResource k, Show k, ToJSON v)
          => WebResult (CreateResult (Versioned k v)) where
     report (Right (Right (Right a))) =
