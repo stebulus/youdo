@@ -61,10 +61,10 @@ year :: Parser Int
 year = decimal <?> "parsing year (YYYY)"
 
 month :: Parser Int
-month = inRange 1 12 decimal2 <?> "parsing month (MM)"
+month = between 1 12 decimal2 <?> "parsing month (MM)"
 
 day :: Parser Int
-day = inRange 1 31 decimal2 <?> "parsing day (DD)"
+day = between 1 31 decimal2 <?> "parsing day (DD)"
 
 time :: Parser DiffTime
 time = p <?> "parsing time"
@@ -85,13 +85,13 @@ time = p <?> "parsing time"
                 return $ picosecondsToDiffTime $ milliseconds*1000000000
 
 hour :: Parser Int
-hour = inRange 0 24 decimal2 <?> "parsing hour (hh)"  -- allow midnight at end of day
+hour = between 0 24 decimal2 <?> "parsing hour (hh)"  -- allow midnight at end of day
 
 minute :: Parser Int
-minute = inRange 0 59 decimal2 <?> "parsing minute (mm)"
+minute = between 0 59 decimal2 <?> "parsing minute (mm)"
 
 second :: Parser Int
-second = inRange 0 60 decimal2 <?> "parsing second (ss)"  -- allow leap second
+second = between 0 60 decimal2 <?> "parsing second (ss)"  -- allow leap second
 
 subsecond :: Parser Int
 subsecond = decimal3 <?> "parsing subsecond (sss)"
@@ -119,8 +119,8 @@ check f msg ma = do
         then return a
         else fail $ msg a
 
-inRange :: (Monad m, Ord a, Show a) => a -> a -> m a -> m a
-inRange lo hi ma =
+between :: (Monad m, Ord a, Show a) => a -> a -> m a -> m a
+between lo hi ma =
     check (\n -> lo <= n && n <= hi)
           (\n -> (show n) ++ " is not in range ["
                  ++ (show lo) ++ "," ++ (show hi) ++ "]")
