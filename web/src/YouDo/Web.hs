@@ -73,7 +73,7 @@ app db mv =
 -- @
 --      GET objs                (list of all current objs)
 --      POST objs               (create new obj)
---      GET objs\//id/             (current version of obj)
+--      GET objs\//id/\/             (current version of obj)
 --      GET objs\//id/\/versions    (all versions of obj)
 --      GET objs\//id/\//txnid/       (specified version of obj)
 --      POST objs\//id/\//txnid/      (create new version of obj)
@@ -103,7 +103,7 @@ webdb mv db = do
              [ (GET, onweb (\() -> getAll))
              , (POST, onweb create)
              ]
-    resource (rtype ++ "/:id")
+    resource (rtype ++ "/:id/")
              [ (GET, onweb get) ]
     resource (rtype ++ "/:id/versions")
              [ (GET, onweb getVersions) ]
@@ -156,8 +156,8 @@ instance (Show k, NamedResource k, ToJSON v) => ToJSON (WebVersioned k v) where
                     [ "url" .= show (objurl `relative` baseuri)
                     , "thisVersion" .= show (verurl `relative` baseuri)
                     ]
-              verurl = objurl ++ "/" ++ (show verid)
-              objurl = resourceName (Just $ thingid $ version ver) ++ "/" ++ (show vid)
+              verurl = objurl ++ (show verid)
+              objurl = resourceName (Just $ thingid $ version ver) ++ "/" ++ (show vid) ++ "/"
               vid = thingid $ version ver
               verid = txnid $ version ver
               origmap = case toJSON (thing ver) of
@@ -284,7 +284,8 @@ lift500 = failWith internalServerError500
 
 -- | The relative URL for a 'NamedResource' object.
 resourceRelativeURLString :: (Show k, NamedResource k) => k -> String
-resourceRelativeURLString k = "./" ++ resourceName (Just k) ++ "/" ++ show k
+resourceRelativeURLString k = "./" ++ resourceName (Just k) ++ "/"
+                              ++ show k ++ "/"
 
 -- | The URL for a 'NamedResource' object.
 resourceURL :: (Show k, NamedResource k, Monad m) => k -> Based m URI
@@ -298,7 +299,7 @@ resourceVersionURL :: (Show k, NamedResource k, Monad m)
 resourceVersionURL verk = do
     baseuri <- ask
     return $ (resourceRelativeURLString (thingid verk)
-                ++ "/" ++ (show $ txnid $ verk))
+                ++ (show $ txnid $ verk))
              `relative` baseuri
 
 -- | Use the given 'Holex' to interpret the data in the HTTP request.

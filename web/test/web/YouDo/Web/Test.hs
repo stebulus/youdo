@@ -57,7 +57,7 @@ tests = return $
         M.lookup "duedate" obj ~= Just Null
         M.lookup "completed" obj ~= Just (Bool False)
         M.lookup "url" obj ~= (Just $ String $ T.pack ydurl)
-        M.lookup "thisVersion" obj ~= (Just $ String $ T.pack $ ydurl <> "/1")
+        M.lookup "thisVersion" obj ~= (Just $ String $ T.pack $ ydurl <> "1")
     , serverTest "new youdo, json body" $ \req -> do
         (stat, headers, _) <- liftIO $ req
             $ post "http://example.com/0/youdos"
@@ -82,7 +82,7 @@ tests = return $
         M.lookup "duedate" obj ~= Just Null
         M.lookup "completed" obj ~= Just (Bool False)
         M.lookup "url" obj ~= (Just $ String $ T.pack ydurl)
-        M.lookup "thisVersion" obj ~= (Just $ String $ T.pack $ ydurl <> "/1")
+        M.lookup "thisVersion" obj ~= (Just $ String $ T.pack $ ydurl <> "1")
     , serverTest "new youdo with duedate" $ \req -> do
         -- In the request and the response the duedate is in the
         -- same format that JavaScript's Date.toJSON method returns,
@@ -131,7 +131,7 @@ tests = return $
         M.lookup "duedate" obj ~= Just (String "2014-11-30T14:10:05.038Z")
         M.lookup "completed" obj ~= Just (Bool False)
         M.lookup "url" obj ~= (Just $ String $ T.pack ydurl)
-        M.lookup "thisVersion" obj ~= (Just $ String $ T.pack $ ydurl <> "/1")
+        M.lookup "thisVersion" obj ~= (Just $ String $ T.pack $ ydurl <> "1")
     , serverTest "new youdo with bad content-type" $ \req -> do
         (stat, _, _) <- liftIO $ req
             $ post "http://example.com/0/youdos"
@@ -186,7 +186,7 @@ tests = return $
         stat1 ~= created201
         let ydurl = SB.unpack $ fromJust $ lookup (mk "Location") headers
         -- check versions
-        (stat2, _, bod) <- liftIO $ req $ get $ ydurl ++ "/versions"
+        (stat2, _, bod) <- liftIO $ req $ get $ ydurl ++ "versions"
         stat2 ~= ok200
         objs2 <- hoistEither (eitherDecode bod :: Either String [Object])
         map (! "thisVersion") objs2 ~= [ String "http://example.com/0/youdos/1/1" ]
@@ -199,7 +199,7 @@ tests = return $
         stat3 ~= created201
         lookup (mk "Location") hdrs3 ~= Just "http://example.com/0/youdos/1/2"
         -- check versions
-        (stat4, _, bod4) <- liftIO $ req $ get $ ydurl ++ "/versions"
+        (stat4, _, bod4) <- liftIO $ req $ get $ ydurl ++ "versions"
         stat4 ~= ok200
         objs4 <- hoistEither (eitherDecode bod4 :: Either String [Object])
         map (! "thisVersion") objs4 ~= [ String "http://example.com/0/youdos/1/2"
