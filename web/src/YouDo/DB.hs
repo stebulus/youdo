@@ -9,7 +9,7 @@ License     : GPL-3
 -}
 module YouDo.DB (
     -- *Database and web interface
-    DB(..), webdb, NamedResource(..), Updater(..),
+    DB(..), Updater(..), webdb, NamedResource(..),
     resourceURL, resourceVersionURL,
     -- *Versioning of database objects
     Versioned(..), VersionedID(..), TransactionID(..),
@@ -86,6 +86,14 @@ class (Monad m, NamedResource k)
         where x = Nothing :: Maybe k    -- ScopedTypeVariables used!
 
 {- |
+    A @u@ can be used to change an @a@.
+    In an instance 'DB' @k v u m d@, we might well have @Updater u v@
+    (see "YouDo.DB.Memory", for example), but this is not required.
+-}
+class Updater u a where
+    doUpdate :: u -> a -> a
+
+{- |
     A web interface to an instance of 'DB'.
     The following endpoints are created, relative to the given base URI
     (which should probably end with a slash):
@@ -133,14 +141,6 @@ webdb mv db = do
              [ (GET, onweb getVersion)
              , (POST, onweb update)
              ]
-
-{- |
-    A @u@ can be used to change an @a@.
-    In an instance 'DB' @k v u m d@, we might well have @Updater u v@
-    (see "YouDo.DB.Memory", for example), but this is not required.
--}
-class Updater u a where
-    doUpdate :: u -> a -> a
 
 {- |
     Class for types that have a name.  Typically the implementation
