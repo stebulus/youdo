@@ -15,7 +15,7 @@ module YouDo.Web (
     Based, at, BasedToJSON(..), json, text, status, setHeader, relative,
     -- * Interpreting requests
     fromRequest, RequestParser, parse, ParamValue(..), requestData,
-    ConstructiveError(..), defaultTo, optional,
+    EvaluationError(..), defaultTo, optional,
     Constructor, Constructible(..),
     -- * Reporting results
     WebResult(..),
@@ -197,7 +197,7 @@ fromRequest :: RequestParser a -> ActionStatusM a
 fromRequest expr = do
     kvs <- requestData
     case evaluateE expr kvs of
-        Left errs -> badRequest $ showConstructiveErrors errs
+        Left errs -> badRequest $ showEvaluationErrors errs
         Right a -> return a
 
 -- | Get HTTP request data as key-value pairs, including
@@ -237,11 +237,11 @@ requestData = do
 
 class ( Applicative f
       , Holes LT.Text ParamValue f
-      , Errs [ConstructiveError LT.Text ParamValue] f
+      , Errs [EvaluationError LT.Text ParamValue] f
       )
      => Constructor f
 instance Constructor (Compose ((->) [(LT.Text,ParamValue)])
-                              (Errors [ConstructiveError LT.Text ParamValue]))
+                              (Errors [EvaluationError LT.Text ParamValue]))
 
 class Constructible a where
     construct :: a
@@ -249,7 +249,7 @@ instance (Applicative f) => Constructible (f ()) where
     construct = pure ()
 
 -- | An error encountered in 'construct'.
-data ConstructiveError k v
+data EvaluationError k v
     = MissingKey k             -- ^A hole named @k@ was not filled.
     | UnusedKey k              -- ^A value for a hole named @k@ was given,
                                -- but there is no such hole.
@@ -259,48 +259,49 @@ data ConstructiveError k v
     | CheckError LT.Text       -- ^An error was detected by 'check'.
     deriving (Show, Eq)
 
-defaultTo :: (Applicative f, Errs [ConstructiveError k v] f)
+defaultTo :: (Applicative f, Errs [EvaluationError k v] f)
           => f a -> a -> f a
 defaultTo fa d = fa `catch` \es ->
     case es of
         [MissingKey _] -> pure d
         _ -> throw $ pure es
 
-optional :: (Applicative f, Errs [ConstructiveError k v] f)
+optional :: (Applicative f, Errs [EvaluationError k v] f)
          => f a -> f (Maybe a)
 optional fa = (Just <$> fa) `defaultTo` Nothing
 
--- | English description of a 'ConstructiveError'.
-showConstructiveError :: (Show k) => ConstructiveError k v -> LT.Text
-showConstructiveError (MissingKey k) = LT.concat [ "missing mandatory parameter "
-                                                 , LT.pack (show k)
-                                                 ]
-showConstructiveError (UnusedKey k) = LT.concat [ "unknown parameter "
-                                                , LT.pack (show k)
-                                                ]
-showConstructiveError (DuplicateValue k _) = LT.concat [ "duplicate value for parameter "
-                                                       , LT.pack (show k)
-                                                       ]
-showConstructiveError (ParseError k _ msg) = LT.concat [ "cannot parse parameter "
-                                                       , LT.pack (show k)
-                                                       , ": "
-                                                       , msg
-                                                       ]
-showConstructiveError (CheckError e) = LT.pack (show e)
+-- | English description of an 'EvaluationError'.
+showEvaluationError :: (Show k) => EvaluationError k v -> LT.Text
+showEvaluationError (MissingKey k) = LT.concat [ "missing mandatory parameter "
+                                               , LT.pack (show k)
+                                               ]
+showEvaluationError (UnusedKey k) = LT.concat [ "unknown parameter "
+                                              , LT.pack (show k)
+                                              ]
+showEvaluationError (DuplicateValue k _) = LT.concat [ "duplicate value for parameter "
+                                                     , LT.pack (show k)
+                                                     ]
+showEvaluationError (ParseError k _ msg) = LT.concat [ "cannot parse parameter "
+                                                     , LT.pack (show k)
+                                                     , ": "
+                                                     , msg
+                                                     ]
+showEvaluationError (CheckError e) = LT.pack (show e)
 
--- | English description of a list of 'ConstructiveError's.
-showConstructiveErrors :: (Show k) => [ConstructiveError k v] -> LT.Text
-showConstructiveErrors es = LT.concat [ LT.concat [ showConstructiveError e, "\r\n" ]
-                               | e<-es ]
+-- | English description of a list of 'EvaluationError's.
+showEvaluationErrors :: (Show k) => [EvaluationError k v] -> LT.Text
+showEvaluationErrors es = LT.concat [ LT.concat [ showEvaluationError e, "\r\n" ]
+                                    | e<-es ]
 
-type RequestParser a = EvaluatorE LT.Text ParamValue [ConstructiveError LT.Text ParamValue] a
-instance MissingKeyError LT.Text [ConstructiveError LT.Text ParamValue] where
+type RequestParser a = EvaluatorE LT.Text ParamValue [EvaluationError LT.Text ParamValue] a
+
+instance MissingKeyError LT.Text [EvaluationError LT.Text ParamValue] where
     missingKeyError k = [MissingKey k]
 
 parse :: ( Functor f
          , Parsable a, FromJSON a
          , Holes k ParamValue f
-         , Errs [ConstructiveError k ParamValue] f
+         , Errs [EvaluationError k ParamValue] f
          )
       => k -> f a
 parse k = throwLeft $ enlist <$> (parseEither k <$> hole k)
@@ -308,7 +309,7 @@ parse k = throwLeft $ enlist <$> (parseEither k <$> hole k)
           enlist (Right a) = Right a
 
 parseEither :: (Parsable a, FromJSON a)
-            => k -> ParamValue -> Either (ConstructiveError k ParamValue) a
+            => k -> ParamValue -> Either (EvaluationError k ParamValue) a
 parseEither k x@(ScottyParam txt) =
     case parseParam txt of
         Left err -> Left (ParseError k x err)

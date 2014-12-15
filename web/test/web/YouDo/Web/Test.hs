@@ -33,7 +33,7 @@ import YouDo.DB.Memory
 import YouDo.Holes
 import YouDo.Test (plainTest)
 import YouDo.Types (DueDate)
-import YouDo.Web (ParamValue(..), parse, ConstructiveError(..), Constructor)
+import YouDo.Web (ParamValue(..), parse, EvaluationError(..), Constructor)
 import YouDo.WebApp (app)
 
 tests :: IO [Test]
