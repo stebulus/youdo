@@ -2,11 +2,12 @@
     MultiParamTypeClasses #-}
 module YouDo.Types where
 
-import Control.Applicative ((<$>), (<*>), Applicative(..), (<*))
+import Control.Applicative ((<$>), (<*>), Applicative(..))
+import Control.Monad.Reader (ask, local)
 import Control.Monad.Trans.Class (lift)
 import Data.Aeson (ToJSON(..), FromJSON(..), (.=), object, Value(..),
     withText)
-import Data.Aeson.Types (typeMismatch)
+import Data.Aeson.Types (typeMismatch, Parser)
 import Data.Maybe (fromMaybe)
 import qualified Data.Text as ST
 import qualified Data.Text.Lazy as LT
@@ -48,6 +49,10 @@ instance Show YoudoID where
     show (YoudoID n) = show n
 instance BasedToJSON YoudoID where
     basedToJSON = idjson
+instance BasedFromJSON YoudoID where
+    basedParseJSON val = do
+        resourcebase <- resourceBaseURL (Nothing :: Maybe YoudoID)
+        fmap YoudoID $ local (const resourcebase) $ basedIDFromJSON val
 instance FromField YoudoID where
     fromField fld = (fmap.fmap) YoudoID $ fromField fld
 instance ToField YoudoID where
@@ -112,14 +117,8 @@ instance BasedToJSON UserID where
     basedToJSON = idjson
 instance BasedFromJSON UserID where
     basedParseJSON val = do
-        baseuri <- resourceBaseURL (Nothing :: Maybe UserID)
-        let parseText s = do
-                uri <- fromJustM "invalid URL" $ parseURI (ST.unpack s)
-                case reads $ show $ uri `relativeFrom` baseuri of
-                    (n,""):_ -> return $ UserID n
-                    (n,"/"):_ -> return $ UserID n
-                    _ -> fail "invalid ID"
-        lift $ withText "UserID URL" parseText val
+        resourcebase <- resourceBaseURL (Nothing :: Maybe UserID)
+        fmap UserID $ local (const resourcebase) $ basedIDFromJSON val
 instance FromField UserID where
     fromField fld = (fmap.fmap) UserID $ fromField fld
 instance ToField UserID where
@@ -132,6 +131,17 @@ instance FromParam Int UserID where
     fromParam = UserID
 instance (Constructor f) => Constructible (f UserID) where
     construct = UserID <$> parse "id"
+
+basedIDFromJSON :: Value -> Based Parser Int
+basedIDFromJSON val = do
+    resourcebase <- ask
+    let parseText s = do
+            uri <- fromJustM "invalid URL" $ parseURI (ST.unpack s)
+            case reads $ show $ uri `relativeFrom` resourcebase of
+                (n,""):_ -> return n
+                (n,"/"):_ -> return n
+                _ -> fail "invalid ID"
+    lift $ withText "ID URL" parseText val
 
 data UserData = UserData { name :: String }
     deriving (Show, Eq)
