@@ -39,7 +39,6 @@ import qualified Data.Aeson as A
 import qualified Data.Aeson.Types as A
 import Data.Functor.Compose
 import qualified Data.HashMap.Strict as M
-import Data.Default
 import Data.List (intercalate)
 import Data.String (IsString(..))
 import qualified Data.Text.Lazy as LT
@@ -297,8 +296,6 @@ showConstructiveErrors es = LT.concat [ LT.concat [ showConstructiveError e, "\r
 type RequestParser a = EvaluatorE LT.Text ParamValue [ConstructiveError LT.Text ParamValue] a
 instance MissingKeyError LT.Text [ConstructiveError LT.Text ParamValue] where
     missingKeyError k = [MissingKey k]
-instance Default (RequestParser ()) where
-    def = pure ()
 
 parse :: ( Functor f
          , Parsable a, FromJSON a
