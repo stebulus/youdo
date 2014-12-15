@@ -10,7 +10,7 @@ License     : GPL-3
 module YouDo.DB (
     -- *Database and web interface
     DB(..), Updater(..), webdb, NamedResource(..),
-    resourceURL, resourceVersionURL, idjson, veridjson,
+    idjson, veridjson,
     -- *Versioning of database objects
     Versioned(..), VersionedID(..), TransactionID(..),
     -- *Results of database operations
@@ -30,7 +30,7 @@ import Control.Monad.Reader (ask, mapReaderT)
 import Control.Monad.Trans (lift)
 import Data.Aeson (FromJSON(..), (.=), Value(..))
 import qualified Data.HashMap.Strict as M
-import Data.List (foldl')
+import Data.List (foldl', intercalate)
 import qualified Data.Text as ST
 import qualified Data.Text.Lazy as LT
 import Database.PostgreSQL.Simple.FromField (FromField(..))
@@ -145,9 +145,10 @@ webdb mv db = do
                 ]
 
 {- |
-    Class for types that have a name.  Typically the implementation
-    will ignore the argument, which is included only for type-checking.
-    (So, it may be @Nothing@.)
+    Class for types that have a name.  Minimum implementation:
+    'resourceName'.  Typically the implementation will ignore the
+    argument, which is included only for type-checking.  (So, it may
+    be @Nothing@.)
 
     This name is used in the web interface to construct URLs for the
     resources that represent operations on objects of type @a@.  It's
@@ -157,28 +158,30 @@ webdb mv db = do
     (For example, 'Youdo' contains some 'UserID's which should be
     sent to the client as URLs containing the name for user objects.)
 -}
-class NamedResource a where
+class (Show a) => NamedResource a where
     resourceName :: Maybe a -> String
+    resourceBaseURL :: (Monad m) => Maybe a -> Based m URI
+    resourceBaseURL x = namedResourceURL [ resourceName x
+                                         ,""
+                                         ]
+    resourceURL :: (Monad m) => a -> Based m URI
+    resourceURL x = namedResourceURL [ resourceName (Just x)
+                                     , show x
+                                     , ""
+                                     ]
+    resourceVersionURL :: (Monad m) => VersionedID a -> Based m URI
+    resourceVersionURL x = namedResourceURL [ resourceName (Just (thingid x))
+                                            , show (thingid x)
+                                            , show (txnid x)
+                                            ]
 
--- | The relative URL for a 'NamedResource' object.
-resourceRelativeURLString :: (Show k, NamedResource k) => k -> String
-resourceRelativeURLString k = "./" ++ resourceName (Just k) ++ "/"
-                              ++ show k ++ "/"
+namedResourceURL :: (Monad m) => [String] -> Based m URI
+namedResourceURL xs = relativeToBase $ intercalate "/" (".":xs)
 
--- | The URL for a 'NamedResource' object.
-resourceURL :: (Show k, NamedResource k, Monad m) => k -> Based m URI
-resourceURL k = do
+relativeToBase :: (Monad m) => String -> Based m URI
+relativeToBase uri = do
     baseuri <- ask
-    return $ resourceRelativeURLString k `relative` baseuri
-
--- | The URL for a specific version of a 'NamedResource' object.
-resourceVersionURL :: (Show k, NamedResource k, Monad m)
-                      => VersionedID k -> Based m URI
-resourceVersionURL verk = do
-    baseuri <- ask
-    return $ (resourceRelativeURLString (thingid verk)
-                ++ (show $ txnid $ verk))
-             `relative` baseuri
+    return $ uri `relative` baseuri
 
 jsonurl :: URI -> Value
 jsonurl = String . ST.pack . show
