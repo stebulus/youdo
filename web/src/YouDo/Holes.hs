@@ -34,13 +34,13 @@ fx ?: y = fx `catch` const (pure y)
 suppressError :: (Applicative f, Errs e f) => f a -> f (Maybe a)
 suppressError fx = (Just <$> fx) ?: Nothing
 
-type Evaluator k v a = [(k,v)]->a
+type Evaluator k v = (->) [(k,v)]
 evaluate :: Evaluator k v a -> [(k,v)] -> a
 evaluate = id
 instance (Eq k) => Holes k v ((->) [(k,v)]) where
     hole k = fromJust . lookup k
 
-type EvaluatorE k v e a = Compose ((->) [(k,v)]) (Errors e) a
+type EvaluatorE k v e = Compose ((->) [(k,v)]) (Errors e)
 evaluateE :: (Eq k, Monoid e) => EvaluatorE k v e a -> [(k,v)] -> Either e a
 evaluateE x kvs =
     case getCompose x kvs of
@@ -69,7 +69,7 @@ class MissingKeyError k e where
 instance (Show k) => MissingKeyError k [String] where
     missingKeyError k = ["missing key " ++ show k]
 
-type NamesOnly k v e a = Phantom (v,e) (Constant [k]) a
+type NamesOnly k v e = Phantom (v,e) (Constant [k])
 names :: NamesOnly k v e a -> [k]
 names = getConstant . dePhantom
 -- Phantom is needed to satisfy the coverage condition.

@@ -27,7 +27,6 @@ module YouDo.Web (
 import Codec.MIME.Type (mimeType, MIMEType(Application))
 import Codec.MIME.Parse (parseMIMEType)
 import Control.Applicative ((<$>), Applicative(..))
-import Control.Applicative.Lift (Errors)
 import Control.Monad (liftM)
 import Control.Monad.Error (mapErrorT, throwError)
 import Control.Monad.IO.Class (liftIO, MonadIO)
@@ -37,7 +36,6 @@ import Control.Monad.Trans.Class (lift)
 import Data.Aeson (ToJSON(..), FromJSON(..), Value(..))
 import qualified Data.Aeson as A
 import qualified Data.Aeson.Types as A
-import Data.Functor.Compose
 import qualified Data.HashMap.Strict as M
 import Data.List (intercalate)
 import Data.String (IsString(..))
@@ -267,10 +265,7 @@ class ( Applicative f
       )
      => Constructor f
 
--- | This is the instance for 'RequestParser', whose name doesn't appear
--- literally here because that would be a partially applied type synonym.
-instance Constructor (Compose ((->) [(LT.Text,ParamValue)])
-                              (Errors [EvaluationError LT.Text ParamValue]))
+instance Constructor RequestParser
 
 -- | An object that can be constructed by a 'Constructor'.
 -- Typically the 'construct' method should be implemented as an
@@ -336,7 +331,7 @@ showEvaluationErrors es = LT.concat [ LT.concat [ showEvaluationError e, "\r\n" 
                                     | e<-es ]
 
 -- | Type synonym for our usual evaluation applicative.
-type RequestParser a = EvaluatorE LT.Text ParamValue [EvaluationError LT.Text ParamValue] a
+type RequestParser = EvaluatorE LT.Text ParamValue [EvaluationError LT.Text ParamValue]
 
 -- | How to report missing keys in a 'RequestParser'.
 instance MissingKeyError LT.Text [EvaluationError LT.Text ParamValue] where
