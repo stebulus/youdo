@@ -303,6 +303,17 @@ tests = return $
         parseEither (`at` baseuri)
                     (basedParseJSON (String "http://example.com/0/users/../users/3/"))
         ~= Right (UserID 3)
+    , plainTest "parsing UserID with no trailing slash in JSON String" $ do
+        let Just baseuri = parseURI "http://example.com/0/"
+        parseEither (`at` baseuri)
+                    (basedParseJSON (String "http://example.com/0/users/3"))
+        ~= Right (UserID 3)
+    , plainTest "parsing UserID with no ID in JSON String" $ do
+        let Just baseuri = parseURI "http://example.com/0/"
+        (parseEither (`at` baseuri)
+                     (basedParseJSON (String "http://example.com/0/users/"))
+            :: Either String UserID)
+        ~= Left "invalid URL"
     ]
 
 unintersperse :: (Eq a) => a -> [a] -> [[a]]
