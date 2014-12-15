@@ -13,23 +13,35 @@ class Holes k v f | f->k v where
     hole :: k -> f v
 
 class Errs e f | f->e where
-    check :: (a->Bool) -> e -> f a -> f a
-    catch :: f a -> (e -> a) -> f a
+    throwLeft :: (Errs e f) => f (Either e a) -> f a
+    catch :: f a -> (e -> f a) -> f a
 
-(?:) :: (Errs e f) => f a -> a -> f a
-fx ?: y = fx `catch` const y
+throw :: (Functor f, Errs e f) => f e -> f a
+throw fe = throwLeft (Left <$> fe)
 
-optional :: (Functor f, Errs e f) => f a -> f (Maybe a)
-optional fx = (Just <$> fx) ?: Nothing
+throwIf :: (Applicative f, Errs e f) => f e -> f Bool -> f ()
+throwIf fe fbool = throwLeft $
+    (\e b -> if b then Left e else Right ()) <$> fe <*> fbool
 
-evaluate :: ([(k,v)]->a) -> [(k,v)] -> a
+check :: (Errs e f, Applicative f)
+      => (a->Bool) -> f e -> f a -> f a
+check good ferr x = throwLeft $ annotate <$> ferr <*> x
+    where annotate e a = if good a then Right a else Left e
+
+(?:) :: (Applicative f, Errs e f) => f a -> a -> f a
+fx ?: y = fx `catch` const (pure y)
+
+suppressError :: (Applicative f, Errs e f) => f a -> f (Maybe a)
+suppressError fx = (Just <$> fx) ?: Nothing
+
+type Evaluator k v a = [(k,v)]->a
+evaluate :: Evaluator k v a -> [(k,v)] -> a
 evaluate = id
 instance (Eq k) => Holes k v ((->) [(k,v)]) where
     hole k = fromJust . lookup k
 
-evaluateE :: (Eq k)
-    => (Compose ((->) [(k,v)]) (Errors [String]) a)
-    -> [(k,v)] -> Either [String] a
+type EvaluatorE k v e a = Compose ((->) [(k,v)]) (Errors e) a
+evaluateE :: (Eq k, Monoid e) => EvaluatorE k v e a -> [(k,v)] -> Either e a
 evaluateE x kvs =
     case getCompose x kvs of
         Pure a -> Right a
@@ -42,26 +54,29 @@ instance (Eq k, Monoid e, MissingKeyError k e)
             Just v -> pure v
 instance (Monoid e, MissingKeyError k e)
          => Errs e (Compose ((->) [(k,v)]) (Errors e)) where
-    check good err x = Compose $ \kvs ->
-        case getCompose x kvs of
-            Other (Constant e) -> failure e
-            Pure a -> if good a then pure a else failure err
+    throwLeft fe = Compose $ \kvs ->
+        case getCompose fe kvs of
+            Pure (Left e) -> Other (Constant e)
+            Pure (Right a) -> Pure a
+            Other (Constant e') -> Other (Constant e')
     x `catch` handle = Compose $ \kvs ->
         case getCompose x kvs of
-            Other (Constant e) -> pure $ handle e
+            Other (Constant e) ->
+                getCompose (handle e) kvs
             Pure a -> pure a
 class MissingKeyError k e where
     missingKeyError :: k -> e
 instance (Show k) => MissingKeyError k [String] where
     missingKeyError k = ["missing key " ++ show k]
 
-names :: Phantom (v,e) (Constant [k]) a -> [k]
+type NamesOnly k v e a = Phantom (v,e) (Constant [k]) a
+names :: NamesOnly k v e a -> [k]
 names = getConstant . dePhantom
 -- Phantom is needed to satisfy the coverage condition.
 instance Holes k v (Phantom (v,e) (Constant [k])) where
     hole k = Phantom $ Constant [k]
 instance Errs e (Phantom (v,e) (Constant [k])) where
-    check _ _ x = x
+    throwLeft fe = Phantom $ Constant $ getConstant $ dePhantom fe
     x `catch` _ = x
 newtype Phantom ph f a = Phantom { dePhantom :: f a }
 instance (Applicative f) => Applicative (Phantom ph f) where

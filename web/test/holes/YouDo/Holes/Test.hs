@@ -8,8 +8,8 @@ import YouDo.Holes
 expr :: (Applicative f, Holes String Int f, Errs [String] f)
      => f Int
 expr = (+) <$> hole "a"
-           <*> ((+) <$> check (>0) ["not an error"] (hole "b") ?: 0
-                    <*> check (>0) ["c should be positive"] (hole "c"))
+           <*> ((+) <$> check (>0) (pure ["not an error"]) (hole "b") ?: 0
+                    <*> check (>0) (pure ["c should be positive"]) (hole "c"))
 
 tests :: IO [Test]
 tests = return

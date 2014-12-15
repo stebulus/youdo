@@ -30,10 +30,10 @@ import Network.Wai (Application, responseToStream, RequestBodyLength(..), reques
 import Network.Wai.Internal (Request(..), ResponseReceived(..))
 import Web.Scotty (scottyApp, parseParam)
 import YouDo.DB.Memory
-import YouDo.Holex
+import YouDo.Holes
 import YouDo.Test (plainTest)
 import YouDo.Types (DueDate)
-import YouDo.Web (ParamValue(..), parse)
+import YouDo.Web (ParamValue(..), parse, ConstructiveError(..), Constructor)
 import YouDo.WebApp (app)
 
 tests :: IO [Test]
@@ -255,13 +255,14 @@ tests = return $
                     stat ~= badRequest400
                     bod ~= LB.pack ("cannot parse parameter \"duedate\": "
                                     ++ errmsg ++ "\r\n")
-             , plainTest ("holex parsing, " ++ descr) $
-                    (runHolex (parse "duedate")
+             , plainTest ("holex parsing, " ++ descr) $ do
+                    let expr :: (Constructor f) => f DueDate
+                        expr = parse "duedate"
+                    evaluateE expr
                               [("duedate", JSONField (String $ T.pack datestr))]
-                    :: Either [HolexError String ParamValue] DueDate)
-                    ~= Left [ParseError "duedate"
-                             (JSONField (String $ T.pack datestr))
-                             (LT.pack errmsg)]
+                        ~= Left [ParseError "duedate"
+                                 (JSONField (String $ T.pack datestr))
+                                 (LT.pack errmsg)]
              , plainTest ("aeson parsing, " ++ descr) $
                     (parseEither parseJSON (String $ T.pack datestr)
                     :: Either String DueDate)
@@ -274,19 +275,19 @@ tests = return $
 
     ++
     [ plainTest "Holex parsing from Scotty parameters" $ do
-        let expr :: Holex String ParamValue Int
+        let expr :: (Constructor f) => f Int
             expr = (+) <$> (parse "a") <*> (parse "b")
-            val = runHolex expr [("a", ScottyParam "1"), ("b", ScottyParam "-3")]
-            val' = runHolex expr [("a", ScottyParam "1"), ("b", ScottyParam "q")]
+            val = evaluateE expr [("a", ScottyParam "1"), ("b", ScottyParam "-3")]
+            val' = evaluateE expr [("a", ScottyParam "1"), ("b", ScottyParam "q")]
         (val,val') ~= (Right (-2),
             Left [ParseError "b" (ScottyParam "q") "readEither: no parse"])
     , plainTest "Holex parsing from JSON fields" $ do
-        let expr :: Holex String ParamValue Int
+        let expr :: (Constructor f) => f Int
             expr = (+) <$> (parse "a") <*> (parse "b")
-            val = runHolex expr [("a", JSONField (Number 1)),
-                                 ("b", JSONField (Number (-3)))]
-            val' = runHolex expr [("a", JSONField (Number 1)),
-                                  ("b", JSONField (String "q"))]
+            val = evaluateE expr [("a", JSONField (Number 1)),
+                                  ("b", JSONField (Number (-3)))]
+            val' = evaluateE expr [("a", JSONField (Number 1)),
+                                   ("b", JSONField (String "q"))]
         (val,val') ~= (Right (-2),
             Left [ParseError "b" (JSONField (String "q"))
                 "when expecting a Int, encountered String instead"])

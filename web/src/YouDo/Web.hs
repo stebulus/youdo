@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings, RankNTypes, FlexibleContexts,
-    FlexibleInstances #-}
+    FlexibleInstances, MultiParamTypeClasses #-}
 {-|
 Module      : YouDo.Web
 Description : A tiny web framework on top of Scotty.
@@ -15,6 +15,8 @@ module YouDo.Web (
     Based, at, BasedToJSON(..), json, text, status, setHeader, relative,
     -- * Interpreting requests
     fromRequest, RequestParser, parse, ParamValue(..), requestData,
+    ConstructiveError(..), defaultTo, optional,
+    Constructor, Constructible(..),
     -- * Reporting results
     WebResult(..),
     -- * Error handling and HTTP status
@@ -24,7 +26,8 @@ module YouDo.Web (
 
 import Codec.MIME.Type (mimeType, MIMEType(Application))
 import Codec.MIME.Parse (parseMIMEType)
-import Control.Applicative ((<$>))
+import Control.Applicative ((<$>), Applicative(..))
+import Control.Applicative.Lift (Errors)
 import Control.Monad (liftM)
 import Control.Monad.Error (mapErrorT, throwError)
 import Control.Monad.IO.Class (liftIO, MonadIO)
@@ -32,8 +35,9 @@ import Control.Monad.Reader (ReaderT(..), mapReaderT)
 import Control.Monad.Reader.Class (MonadReader(..))
 import Control.Monad.Trans.Class (lift)
 import Data.Aeson (ToJSON(..), FromJSON(..), Value(..))
-import Data.Aeson.Types (parseEither)
 import qualified Data.Aeson as A
+import qualified Data.Aeson.Types as A
+import Data.Functor.Compose
 import qualified Data.HashMap.Strict as M
 import Data.Default
 import Data.List (intercalate)
@@ -48,7 +52,7 @@ import qualified Web.Scotty as Scotty
 import Web.Scotty.Internal.Types (ActionT(..), ActionError(..),
     ScottyError(..))
 
-import YouDo.Holex
+import YouDo.Holes
 
 -- | A web interface to a function.
 -- A value of type @a@ is obtained from the HTTP request using the
@@ -56,12 +60,12 @@ import YouDo.Holex
 -- to obtain a 'WebResult', which is sent to the client.  If an error
 -- occurs parsing the request, a 400 (Bad Request) response is sent;
 -- errors in later phases cause 500 (Internal Server Error).
-webfunc :: (WebResult r, Default (RequestParser a))
+webfunc :: (WebResult r, Constructible (RequestParser a))
            => (a -> IO r)   -- ^The function to perform.
            -> Based ActionM ()
 webfunc f =
     mapReaderT statusErrors $ do
-        a <- lift $ fromRequest $ def
+        a <- lift $ fromRequest $ construct
         mapReaderT lift500 $ do
             r <- liftIO $ f a
             report r
@@ -190,11 +194,11 @@ lift500 :: ActionM a -> ActionStatusM a
 lift500 = failWith internalServerError500
 
 -- | Use the given 'Holex' to interpret the data in the HTTP request.
-fromRequest :: Holex LT.Text ParamValue a -> ActionStatusM a
+fromRequest :: RequestParser a -> ActionStatusM a
 fromRequest expr = do
     kvs <- requestData
-    case runHolex expr kvs of
-        Left errs -> badRequest $ showHolexErrors errs
+    case evaluateE expr kvs of
+        Left errs -> badRequest $ showConstructiveErrors errs
         Right a -> return a
 
 -- | Get HTTP request data as key-value pairs, including
@@ -232,48 +236,90 @@ requestData = do
                         LT.concat ["Don't know how to handle Content-Type: ", hdr]
     return $ paramdata ++ bodydata
 
--- | English description of a 'HolexError'.
-showHolexError :: (Show k) => HolexError k v -> LT.Text
-showHolexError (MissingKey k) = LT.concat [ "missing mandatory parameter "
-                                          , LT.pack (show k)
-                                          ]
-showHolexError (UnusedKey k) = LT.concat [ "unknown parameter "
-                                         , LT.pack (show k)
-                                         ]
-showHolexError (DuplicateValue k _) = LT.concat [ "duplicate value for parameter "
-                                                , LT.pack (show k)
-                                                ]
-showHolexError (ParseError k _ msg) = LT.concat [ "cannot parse parameter "
-                                                , LT.pack (show k)
-                                                , ": "
-                                                , msg
-                                                ]
-showHolexError (CustomError e) = LT.pack (show e)
+class ( Applicative f
+      , Holes LT.Text ParamValue f
+      , Errs [ConstructiveError LT.Text ParamValue] f
+      )
+     => Constructor f
+instance Constructor (Compose ((->) [(LT.Text,ParamValue)])
+                              (Errors [ConstructiveError LT.Text ParamValue]))
 
--- | English description of a list of 'HolexError's.
-showHolexErrors :: (Show k) => [HolexError k v] -> LT.Text
-showHolexErrors es = LT.concat [ LT.concat [ showHolexError e, "\r\n" ]
+class Constructible a where
+    construct :: a
+instance (Applicative f) => Constructible (f ()) where
+    construct = pure ()
+
+-- | An error encountered in 'construct'.
+data ConstructiveError k v
+    = MissingKey k             -- ^A hole named @k@ was not filled.
+    | UnusedKey k              -- ^A value for a hole named @k@ was given,
+                               -- but there is no such hole.
+    | DuplicateValue k v       -- ^Value @v@ was given for a hole named @k@,
+                               -- after another value was already given.
+    | ParseError k v LT.Text   -- ^An error was detected by 'parse'.
+    | CheckError LT.Text       -- ^An error was detected by 'check'.
+    deriving (Show, Eq)
+
+defaultTo :: (Applicative f, Errs [ConstructiveError k v] f)
+          => f a -> a -> f a
+defaultTo fa d = fa `catch` \es ->
+    case es of
+        [MissingKey _] -> pure d
+        _ -> throw $ pure es
+
+optional :: (Applicative f, Errs [ConstructiveError k v] f)
+         => f a -> f (Maybe a)
+optional fa = (Just <$> fa) `defaultTo` Nothing
+
+-- | English description of a 'ConstructiveError'.
+showConstructiveError :: (Show k) => ConstructiveError k v -> LT.Text
+showConstructiveError (MissingKey k) = LT.concat [ "missing mandatory parameter "
+                                                 , LT.pack (show k)
+                                                 ]
+showConstructiveError (UnusedKey k) = LT.concat [ "unknown parameter "
+                                                , LT.pack (show k)
+                                                ]
+showConstructiveError (DuplicateValue k _) = LT.concat [ "duplicate value for parameter "
+                                                       , LT.pack (show k)
+                                                       ]
+showConstructiveError (ParseError k _ msg) = LT.concat [ "cannot parse parameter "
+                                                       , LT.pack (show k)
+                                                       , ": "
+                                                       , msg
+                                                       ]
+showConstructiveError (CheckError e) = LT.pack (show e)
+
+-- | English description of a list of 'ConstructiveError's.
+showConstructiveErrors :: (Show k) => [ConstructiveError k v] -> LT.Text
+showConstructiveErrors es = LT.concat [ LT.concat [ showConstructiveError e, "\r\n" ]
                                | e<-es ]
 
--- | A 'Holex' for parsing data from HTTP requests.
-type RequestParser = Holex LT.Text ParamValue
+type RequestParser a = EvaluatorE LT.Text ParamValue [ConstructiveError LT.Text ParamValue] a
+instance MissingKeyError LT.Text [ConstructiveError LT.Text ParamValue] where
+    missingKeyError k = [MissingKey k]
+instance Default (RequestParser ()) where
+    def = pure ()
 
-instance (IsString k, Eq k) => Default (Holex k ParamValue ()) where
-    def = Const ()
+parse :: ( Functor f
+         , Parsable a, FromJSON a
+         , Holes k ParamValue f
+         , Errs [ConstructiveError k ParamValue] f
+         )
+      => k -> f a
+parse k = throwLeft $ enlist <$> (parseEither k <$> hole k)
+    where enlist (Left e) = Left [e]
+          enlist (Right a) = Right a
 
-parse :: (Eq k, Parsable a, FromJSON a) => k -> Holex k ParamValue a
-parse k = tryApply
-    (Const (\x ->
-        case x of
-            ScottyParam txt ->
-                case parseParam txt of
-                    Left err -> Left (ParseError k x err)
-                    Right val -> Right val
-            JSONField jsonval ->
-                case parseEither parseJSON jsonval of
-                    Left err -> Left (ParseError k x (LT.pack err))
-                    Right val -> Right val))
-    $ hole k
+parseEither :: (Parsable a, FromJSON a)
+            => k -> ParamValue -> Either (ConstructiveError k ParamValue) a
+parseEither k x@(ScottyParam txt) =
+    case parseParam txt of
+        Left err -> Left (ParseError k x err)
+        Right val -> Right val
+parseEither k x@(JSONField jsonval) =
+    case A.parseEither parseJSON jsonval of
+        Left err -> Left (ParseError k x (LT.pack err))
+        Right val -> Right val
 
 data ParamValue = ScottyParam LT.Text
                 | JSONField Value

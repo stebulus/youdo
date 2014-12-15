@@ -22,15 +22,13 @@ module YouDo.DB (
     one, some
 ) where
 
-import Control.Applicative ((<$>), (<*>))
+import Control.Applicative (Applicative, (<$>), (<*>))
 import Control.Concurrent.MVar
 import Control.Monad (liftM)
 import Control.Monad.Reader (ask)
 import Data.Aeson (FromJSON(..), (.=), Value(..))
-import Data.Default
 import qualified Data.HashMap.Strict as M
 import Data.List (foldl')
-import Data.String
 import qualified Data.Text as ST
 import qualified Data.Text.Lazy as LT
 import Database.PostgreSQL.Simple.FromField (FromField(..))
@@ -39,7 +37,6 @@ import Network.HTTP.Types (ok200, created201, badRequest400, notFound404,
 import Network.URI
 import Web.Scotty (Parsable(..), ScottyM)
 
-import YouDo.Holex
 import YouDo.Web
 
 {- |
@@ -121,9 +118,10 @@ class Updater u a where
 webdb :: ( NamedResource k, DB k v u IO d
          , Parsable k, FromJSON k
          , Show k, BasedToJSON v
-         , Default (RequestParser k)
-         , Default (RequestParser v)
-         , Default (RequestParser (Versioned k u))
+         , Constructible (RequestParser v)
+         , Constructible (RequestParser k)
+         , Constructible (RequestParser (VersionedID k))
+         , Constructible (RequestParser (Versioned k u))
          ) => MVar ()     -- ^All database access is under this MVar.
          -> d           -- ^The database.
          -> Based ScottyM ()
@@ -200,15 +198,19 @@ data VersionedID a = VersionedID
     , txnid :: TransactionID
     } deriving (Show, Eq)
 
-instance (IsString k, Eq k, Parsable a, FromJSON a)
-         => Default (Holex k ParamValue (VersionedID a)) where
-    def = VersionedID <$> parse "id" <*> parse "txnid"
+instance (Parsable a, FromJSON a, Constructor f)
+        => Constructible (f (VersionedID a)) where
+    construct = VersionedID <$> parse "id" <*> parse "txnid"
 
 -- | A version of a thing, as was produced in a particular transaction.
 data Versioned a b = Versioned
     { version :: VersionedID a
     , thing :: b
     } deriving (Show, Eq)
+
+instance (Constructor f, Constructible (f (VersionedID a)), Constructible (f b))
+        => Constructible (f (Versioned a b)) where
+    construct = Versioned <$> construct <*> construct
 
 -- | Augment JSON representations of 'Versioned' objects
 -- with @"url"@ and @"thisVersion"@ fields.
