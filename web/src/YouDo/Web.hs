@@ -10,7 +10,7 @@ module YouDo.Web (
     -- * Resources as bundles of operations
     resource,
     -- * Base URIs
-    Based, at, BasedToJSON(..), BasedFromJSON(..),
+    Based, at, BasedToJSON(..), BasedFromJSON(..), BasedParsable(..),
     json, text, status, setHeader, relative,
     -- * Interpreting requests
     capture, FromParam(..),
@@ -131,6 +131,10 @@ instance BasedToJSON a => BasedToJSON [a] where
 -- | A value that can be deserialized from JSON, respecting a base URI.
 class BasedFromJSON a where
     basedParseJSON :: Value -> Based A.Parser a
+
+-- | A value that can be deserialized from a Scotty param, respecting a base URI.
+class BasedParsable a where
+    basedParseParam :: LT.Text -> Based (Either LT.Text) a
 
 type ActionStatusM = ActionT ErrorWithStatus IO
 

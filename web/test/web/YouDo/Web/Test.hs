@@ -34,7 +34,7 @@ import YouDo.Holes
 import YouDo.Test (plainTest)
 import YouDo.Types (DueDate, UserID(..))
 import YouDo.Web (ParamValue(..), parse, EvaluationError(..), Constructor,
-    at, BasedFromJSON(..))
+    at, BasedFromJSON(..), BasedParsable(..))
 import YouDo.WebApp (app)
 
 tests :: IO [Test]
@@ -292,29 +292,28 @@ tests = return $
         (val,val') ~= (Right (-2),
             Left [ParseError "b" (JSONField (String "q"))
                 "when expecting a Int, encountered String instead"])
-    , plainTest "parsing UserID from URL in JSON String" $ do
-        let Just baseuri = parseURI "http://example.com/0/"
-        parseEither (`at` baseuri)
-                    (basedParseJSON (String "http://example.com/0/users/3/"))
-        ~= Right (UserID 3)
-    , plainTest "parsing UserID from weird URL in JSON String" $ do
-        -- There's probably no reason to actually support this, but whatever.
-        let Just baseuri = parseURI "http://example.com/0/"
-        parseEither (`at` baseuri)
-                    (basedParseJSON (String "http://example.com/0/users/../users/3/"))
-        ~= Right (UserID 3)
-    , plainTest "parsing UserID with no trailing slash in JSON String" $ do
-        let Just baseuri = parseURI "http://example.com/0/"
-        parseEither (`at` baseuri)
-                    (basedParseJSON (String "http://example.com/0/users/3"))
-        ~= Right (UserID 3)
-    , plainTest "parsing UserID with no ID in JSON String" $ do
-        let Just baseuri = parseURI "http://example.com/0/"
-        (parseEither (`at` baseuri)
-                     (basedParseJSON (String "http://example.com/0/users/"))
-            :: Either String UserID)
-        ~= Left "invalid ID"
     ]
+    ++ do  -- List monad!
+        let Just baseuri = parseURI "http://example.com/0/"
+        (dataname, userurl, result)
+            <- [ ( "trailing slash", "http://example.com/0/users/3/", Right (UserID 3) )
+               , ( "no trailing slash", "http://example.com/0/users/3", Right (UserID 3) )
+               , ( "weird", "http://example.com/0/users/../users/3/", Right (UserID 3) )
+               , ( "no ID", "http://example.com/0/users/", Left "invalid ID" )
+               , ( "not number", "http://example.com/0/users/3q/", Left "invalid ID" )
+               , ( "not even an URL", "grar", Left "invalid URL" )
+               ]
+        (fname, f) <- [ ( "BasedFromJSON", \s ->
+                            parseEither (`at` baseuri)
+                                        (basedParseJSON (String s)) )
+                      , ( "BasedParsable", \s ->
+                            either (Left . LT.unpack)
+                                   Right
+                                   $ basedParseParam (LT.fromStrict s) `at` baseuri
+                            )
+                      ]
+        return $ plainTest ("UserID from URL, " ++ dataname ++ ", " ++ fname)
+                           $ f userurl ~= result
 
 unintersperse :: (Eq a) => a -> [a] -> [[a]]
 unintersperse _ [] = []

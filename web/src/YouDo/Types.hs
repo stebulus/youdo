@@ -3,13 +3,11 @@
 module YouDo.Types where
 
 import Control.Applicative ((<$>), (<*>), Applicative(..))
-import Control.Monad.Reader (ask, local)
+import Control.Monad.Reader (ask, local, mapReaderT)
 import Control.Monad.Trans.Class (lift)
-import Data.Aeson (ToJSON(..), FromJSON(..), (.=), object, Value(..),
-    withText)
+import Data.Aeson (ToJSON(..), FromJSON(..), (.=), object, Value(..))
 import Data.Aeson.Types (typeMismatch, Parser)
 import Data.Maybe (fromMaybe)
-import qualified Data.Text as ST
 import qualified Data.Text.Lazy as LT
 import Data.Time (UTCTime)
 import Database.PostgreSQL.Simple.FromField (FromField(..))
@@ -53,6 +51,10 @@ instance BasedFromJSON YoudoID where
     basedParseJSON val = do
         resourcebase <- resourceBaseURL (Nothing :: Maybe YoudoID)
         fmap YoudoID $ local (const resourcebase) $ basedIDFromJSON val
+instance BasedParsable YoudoID where
+    basedParseParam txt = do
+        resourcebase <- resourceBaseURL (Nothing :: Maybe YoudoID)
+        fmap YoudoID $ local (const resourcebase) $ basedIDFromText txt
 instance FromField YoudoID where
     fromField fld = (fmap.fmap) YoudoID $ fromField fld
 instance ToField YoudoID where
@@ -119,6 +121,10 @@ instance BasedFromJSON UserID where
     basedParseJSON val = do
         resourcebase <- resourceBaseURL (Nothing :: Maybe UserID)
         fmap UserID $ local (const resourcebase) $ basedIDFromJSON val
+instance BasedParsable UserID where
+    basedParseParam txt = do
+        resourcebase <- resourceBaseURL (Nothing :: Maybe UserID)
+        fmap UserID $ local (const resourcebase) $ basedIDFromText txt
 instance FromField UserID where
     fromField fld = (fmap.fmap) UserID $ fromField fld
 instance ToField UserID where
@@ -132,16 +138,23 @@ instance FromParam Int UserID where
 instance (Constructor f) => Constructible (f UserID) where
     construct = UserID <$> parse "id"
 
+
 basedIDFromJSON :: Value -> Based Parser Int
-basedIDFromJSON val = do
+basedIDFromJSON (String txt) =
+    mapReaderT eithToParser $ basedIDFromText $ LT.fromStrict txt
+    where eithToParser (Left msg) = fail $ LT.unpack msg
+          eithToParser (Right n) = return n
+basedIDFromJSON val = lift $ typeMismatch "ID URL" val
+
+basedIDFromText :: LT.Text -> Based (Either LT.Text) Int
+basedIDFromText txt = do
     resourcebase <- ask
-    let parseText s = do
-            uri <- fromJustM "invalid URL" $ parseURI (ST.unpack s)
-            case reads $ show $ uri `relativeFrom` resourcebase of
-                (n,""):_ -> return n
-                (n,"/"):_ -> return n
-                _ -> fail "invalid ID"
-    lift $ withText "ID URL" parseText val
+    lift $ do
+        uri <- maybe (Left "invalid URL") Right $ parseURI (LT.unpack txt)
+        case reads $ show $ uri `relativeFrom` resourcebase of
+            (n,""):_ -> Right n
+            (n,"/"):_ -> Right n
+            _ -> Left "invalid ID"
 
 data UserData = UserData { name :: String }
     deriving (Show, Eq)
@@ -178,7 +191,3 @@ instance FromField DueDate where
     fromField fld = (fmap.fmap) DueDate $ fromField fld
 instance ToField DueDate where
     toField (DueDate t) = toField t
-
-fromJustM :: (Monad m) => String -> Maybe a -> m a
-fromJustM msg Nothing = fail msg
-fromJustM _ (Just x) = return x
