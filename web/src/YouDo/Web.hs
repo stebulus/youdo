@@ -53,12 +53,30 @@ import Web.Scotty.Internal.Types (ActionT(..), ActionError(..),
 
 import YouDo.Holes
 
--- | A web interface to a function.
--- A value of type @a@ is obtained from the HTTP request using the
--- type's default 'RequestParser'; then the given function is used
--- to obtain a 'WebResult', which is sent to the client.  If an error
--- occurs parsing the request, a 400 (Bad Request) response is sent;
--- errors in later phases cause 500 (Internal Server Error).
+{- |
+    A web interface to a function.
+
+    A value of type @a@ is obtained from the HTTP request using the
+    'construct' method of the 'Constructible' instance; usually you
+    will have defined an instance like
+
+    @
+        instance ('Constructor' f) => 'Constructible' (f MyType) where
+            construct = MyType \<$\> parse \"id\" \<*\> parse \"name\"
+    @
+
+    because then your construction can be used with any suitable
+    functor @f@.  (For use with @webfunc@, we only need the instance
+    for 'RequestParser', but you might as well write it generically.)
+
+    Once the value of the request has been computed, the given
+    function is applied to it, and the resulting 'WebResult' is sent
+    to the client.
+
+    If an error occurs parsing the request, a 400 (Bad Request)
+    response is sent; errors in later phases cause 500 (Internal
+    Server Error).
+-}
 webfunc :: (WebResult r, Constructible (RequestParser a))
            => (a -> IO r)   -- ^The function to perform.
            -> Based ActionM ()
@@ -192,7 +210,11 @@ badRequest = raiseStatus badRequest400
 lift500 :: ActionM a -> ActionStatusM a
 lift500 = failWith internalServerError500
 
--- | Use the given 'Holex' to interpret the data in the HTTP request.
+{- |
+    Use the given 'RequestParser' to interpret the data in the HTTP
+    request.  See the discussion in 'webfunc' for the usual method
+    of defining a 'RequestParser'.
+-}
 fromRequest :: RequestParser a -> ActionStatusM a
 fromRequest expr = do
     kvs <- requestData
@@ -235,20 +257,33 @@ requestData = do
                         LT.concat ["Don't know how to handle Content-Type: ", hdr]
     return $ paramdata ++ bodydata
 
+{- |
+    An applicative functor that can construct objects from
+    HTTP request data.
+-}
 class ( Applicative f
       , Holes LT.Text ParamValue f
       , Errs [EvaluationError LT.Text ParamValue] f
       )
      => Constructor f
+
+-- | This is the instance for 'RequestParser', whose name doesn't appear
+-- literally here because that would be a partially applied type synonym.
 instance Constructor (Compose ((->) [(LT.Text,ParamValue)])
                               (Errors [EvaluationError LT.Text ParamValue]))
 
+-- | An object that can be constructed by a 'Constructor'.
+-- Typically the 'construct' method should be implemented as an
+-- applicative expression; see the example under 'webfunc'.
 class Constructible a where
     construct :: a
+
+-- | Unit can be constructed (as a 'pure' value).
 instance (Applicative f) => Constructible (f ()) where
     construct = pure ()
 
--- | An error encountered in 'construct'.
+-- | An error encountered when constructing an object by filling in
+-- values for its 'hole's and calling 'evaluateE'.
 data EvaluationError k v
     = MissingKey k             -- ^A hole named @k@ was not filled.
     | UnusedKey k              -- ^A value for a hole named @k@ was given,
@@ -259,6 +294,10 @@ data EvaluationError k v
     | CheckError LT.Text       -- ^An error was detected by 'check'.
     deriving (Show, Eq)
 
+-- | If the first argument fails to evaluate due to a single
+-- 'MissingKey' error, replace it with the second argument.
+-- Other error situations are left as is.
+-- (Combinator for use in 'construct' implementations.)
 defaultTo :: (Applicative f, Errs [EvaluationError k v] f)
           => f a -> a -> f a
 defaultTo fa d = fa `catch` \es ->
@@ -266,6 +305,9 @@ defaultTo fa d = fa `catch` \es ->
         [MissingKey _] -> pure d
         _ -> throw $ pure es
 
+-- | If the argument fails to evaluate due to a single 'MissingKey'
+-- error, replace it with 'Nothing'; otherwise, 'Just' the first
+-- argument.
 optional :: (Applicative f, Errs [EvaluationError k v] f)
          => f a -> f (Maybe a)
 optional fa = (Just <$> fa) `defaultTo` Nothing
@@ -293,11 +335,15 @@ showEvaluationErrors :: (Show k) => [EvaluationError k v] -> LT.Text
 showEvaluationErrors es = LT.concat [ LT.concat [ showEvaluationError e, "\r\n" ]
                                     | e<-es ]
 
+-- | Type synonym for our usual evaluation applicative.
 type RequestParser a = EvaluatorE LT.Text ParamValue [EvaluationError LT.Text ParamValue] a
 
+-- | How to report missing keys in a 'RequestParser'.
 instance MissingKeyError LT.Text [EvaluationError LT.Text ParamValue] where
     missingKeyError k = [MissingKey k]
 
+-- | A named hole which parses a 'ParamValue' into the appropriate type.
+-- (Combinator for use in 'construct' implementations.)
 parse :: ( Functor f
          , Parsable a, FromJSON a
          , Holes k ParamValue f
@@ -308,6 +354,7 @@ parse k = throwLeft $ enlist <$> (parseEither k <$> hole k)
     where enlist (Left e) = Left [e]
           enlist (Right a) = Right a
 
+-- | Parse a 'ParamValue' into the appropriate type.
 parseEither :: (Parsable a, FromJSON a)
             => k -> ParamValue -> Either (EvaluationError k ParamValue) a
 parseEither k x@(ScottyParam txt) =
@@ -319,6 +366,7 @@ parseEither k x@(JSONField jsonval) =
         Left err -> Left (ParseError k x (LT.pack err))
         Right val -> Right val
 
+-- | The values obtainable from an HTTP request.
 data ParamValue = ScottyParam LT.Text
                 | JSONField Value
     deriving (Eq, Show)
