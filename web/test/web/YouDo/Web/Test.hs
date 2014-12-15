@@ -297,6 +297,12 @@ tests = return $
         parseEither (`at` baseuri)
                     (basedParseJSON (String "http://example.com/0/users/3/"))
         ~= Right (UserID 3)
+    , plainTest "parsing UserID from weird URL in JSON String" $ do
+        -- There's probably no reason to actually support this, but whatever.
+        let Just baseuri = parseURI "http://example.com/0/"
+        parseEither (`at` baseuri)
+                    (basedParseJSON (String "http://example.com/0/users/../users/3/"))
+        ~= Right (UserID 3)
     ]
 
 unintersperse :: (Eq a) => a -> [a] -> [[a]]
