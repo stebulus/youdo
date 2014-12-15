@@ -26,6 +26,7 @@ library
   exposed-modules:     YouDo.DB
                        , YouDo.DB.Memory
                        , YouDo.DB.PostgreSQL
+                       , YouDo.Holes
                        , YouDo.Holex
                        , YouDo.Test
                        , YouDo.TimeParser
@@ -94,3 +95,12 @@ Test-Suite test-holex
                        , youdo ==0.1.*
                        , Cabal ==1.16.*
                        , mtl ==2.1.*
+
+Test-Suite test-holes
+  type:                detailed-0.9
+  test-module:         YouDo.Holes.Test
+  hs-source-dirs:      test/holes
+  ghc-options:         -Wall
+  build-depends:       base ==4.6.*
+                       , youdo ==0.1.*
+                       , Cabal ==1.16.*
