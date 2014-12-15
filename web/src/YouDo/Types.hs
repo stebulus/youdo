@@ -3,14 +3,10 @@
 module YouDo.Types where
 
 import Control.Applicative ((<$>), (<*>), Applicative(..), (<*))
-import qualified Control.Applicative as A
 import Control.Monad.Trans.Class (lift)
 import Data.Aeson (ToJSON(..), FromJSON(..), (.=), object, Value(..),
     withText)
-import Data.Aeson.Types (typeMismatch, Parser)
-import Data.Attoparsec.Text.Lazy (decimal, char, endOfInput)
-import qualified Data.Attoparsec.Text.Lazy as Atto
-import Data.List (intercalate)
+import Data.Aeson.Types (typeMismatch)
 import Data.Maybe (fromMaybe)
 import qualified Data.Text as ST
 import qualified Data.Text.Lazy as LT
@@ -117,25 +113,13 @@ instance BasedToJSON UserID where
 instance BasedFromJSON UserID where
     basedParseJSON val = do
         baseuri <- resourceBaseURL (Nothing :: Maybe UserID)
-        let fromJust :: String -> Maybe a -> Parser a
-            fromJust msg Nothing = fail msg
-            fromJust _ (Just x) = return x
-            nonempty :: String -> [x] -> Parser [x]
-            nonempty msg [] = fail msg
-            nonempty _ xs = return xs
-            f :: ST.Text -> Parser UserID
-            f s = do
-                uri <- fromJust "invalid URL" $ parseURI (ST.unpack s)
-                useridstr <- nonempty "invalid URL" $ show $ uri `relativeFrom` baseuri
-                case Atto.parse
-                         (UserID <$> decimal <* (A.optional $ char '/') <* endOfInput)
-                         (LT.pack useridstr)
-                        of
-                    Atto.Done "" result -> return result
-                    Atto.Fail unconsumed stack msg -> fail $ intercalate " / " $
-                        stack ++ [msg, "next characters: " ++ (take 10 $ LT.unpack unconsumed)]
-                    _ -> error "impossible; endOfInput consumes everything"
-        lift $ withText "UserID URL" f val
+        let parseText s = do
+                uri <- fromJustM "invalid URL" $ parseURI (ST.unpack s)
+                case reads $ show $ uri `relativeFrom` baseuri of
+                    (n,""):_ -> return $ UserID n
+                    (n,"/"):_ -> return $ UserID n
+                    _ -> fail "invalid ID"
+        lift $ withText "UserID URL" parseText val
 instance FromField UserID where
     fromField fld = (fmap.fmap) UserID $ fromField fld
 instance ToField UserID where
@@ -184,3 +168,7 @@ instance FromField DueDate where
     fromField fld = (fmap.fmap) DueDate $ fromField fld
 instance ToField DueDate where
     toField (DueDate t) = toField t
+
+fromJustM :: (Monad m) => String -> Maybe a -> m a
+fromJustM msg Nothing = fail msg
+fromJustM _ (Just x) = return x

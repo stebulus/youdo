@@ -313,7 +313,7 @@ tests = return $
         (parseEither (`at` baseuri)
                      (basedParseJSON (String "http://example.com/0/users/"))
             :: Either String UserID)
-        ~= Left "invalid URL"
+        ~= Left "invalid ID"
     ]
 
 unintersperse :: (Eq a) => a -> [a] -> [[a]]
