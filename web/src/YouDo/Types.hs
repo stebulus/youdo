@@ -2,15 +2,23 @@
     MultiParamTypeClasses #-}
 module YouDo.Types where
 
-import Control.Applicative ((<$>), (<*>), Applicative(..))
-import Data.Aeson (ToJSON(..), FromJSON(..), (.=), object, Value(..))
-import Data.Aeson.Types (typeMismatch)
+import Control.Applicative ((<$>), (<*>), Applicative(..), (<*))
+import qualified Control.Applicative as A
+import Control.Monad.Trans.Class (lift)
+import Data.Aeson (ToJSON(..), FromJSON(..), (.=), object, Value(..),
+    withText)
+import Data.Aeson.Types (typeMismatch, Parser)
+import Data.Attoparsec.Text.Lazy (decimal, char, endOfInput)
+import qualified Data.Attoparsec.Text.Lazy as Atto
+import Data.List (intercalate)
 import Data.Maybe (fromMaybe)
+import qualified Data.Text as ST
 import qualified Data.Text.Lazy as LT
 import Data.Time (UTCTime)
 import Database.PostgreSQL.Simple.FromField (FromField(..))
 import Database.PostgreSQL.Simple.FromRow (FromRow(..), field)
 import Database.PostgreSQL.Simple.ToField (ToField(..))
+import Network.URI (parseURI, relativeFrom)
 import Web.Scotty (Parsable(..))
 
 import YouDo.DB
@@ -106,6 +114,28 @@ instance Show UserID where
     show (UserID n) = show n
 instance BasedToJSON UserID where
     basedToJSON = idjson
+instance BasedFromJSON UserID where
+    basedParseJSON val = do
+        baseuri <- resourceBaseURL (Nothing :: Maybe UserID)
+        let fromJust :: String -> Maybe a -> Parser a
+            fromJust msg Nothing = fail msg
+            fromJust _ (Just x) = return x
+            nonempty :: String -> [x] -> Parser [x]
+            nonempty msg [] = fail msg
+            nonempty _ xs = return xs
+            f :: ST.Text -> Parser UserID
+            f s = do
+                uri <- fromJust "invalid URL" $ parseURI (ST.unpack s)
+                useridstr <- nonempty "invalid URL" $ show $ uri `relativeFrom` baseuri
+                case Atto.parse
+                         (UserID <$> decimal <* (A.optional $ char '/') <* endOfInput)
+                         (LT.pack useridstr)
+                        of
+                    Atto.Done "" result -> return result
+                    Atto.Fail unconsumed stack msg -> fail $ intercalate " / " $
+                        stack ++ [msg, "next characters: " ++ (take 10 $ LT.unpack unconsumed)]
+                    _ -> error "impossible; endOfInput consumes everything"
+        lift $ withText "UserID URL" f val
 instance FromField UserID where
     fromField fld = (fmap.fmap) UserID $ fromField fld
 instance ToField UserID where

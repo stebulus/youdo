@@ -10,7 +10,8 @@ module YouDo.Web (
     -- * Resources as bundles of operations
     resource,
     -- * Base URIs
-    Based, at, BasedToJSON(..), json, text, status, setHeader, relative,
+    Based, at, BasedToJSON(..), BasedFromJSON(..),
+    json, text, status, setHeader, relative,
     -- * Interpreting requests
     capture, FromParam(..),
     body, fromRequestBody, RequestParser, parse, ParamValue(..), requestData,
@@ -126,6 +127,10 @@ class BasedToJSON a where
     basedToJSON :: (Monad m) => a -> Based m Value
 instance BasedToJSON a => BasedToJSON [a] where
     basedToJSON xs = liftM toJSON $ sequence $ map basedToJSON xs
+
+-- | A value that can be deserialized from JSON, respecting a base URI.
+class BasedFromJSON a where
+    basedParseJSON :: Value -> Based A.Parser a
 
 type ActionStatusM = ActionT ErrorWithStatus IO
 

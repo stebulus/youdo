@@ -32,8 +32,9 @@ import Web.Scotty (scottyApp, parseParam)
 import YouDo.DB.Memory
 import YouDo.Holes
 import YouDo.Test (plainTest)
-import YouDo.Types (DueDate)
-import YouDo.Web (ParamValue(..), parse, EvaluationError(..), Constructor)
+import YouDo.Types (DueDate, UserID(..))
+import YouDo.Web (ParamValue(..), parse, EvaluationError(..), Constructor,
+    at, BasedFromJSON(..))
 import YouDo.WebApp (app)
 
 tests :: IO [Test]
@@ -291,6 +292,11 @@ tests = return $
         (val,val') ~= (Right (-2),
             Left [ParseError "b" (JSONField (String "q"))
                 "when expecting a Int, encountered String instead"])
+    , plainTest "parsing UserID from URL in JSON String" $ do
+        let Just baseuri = parseURI "http://example.com/0/"
+        parseEither (`at` baseuri)
+                    (basedParseJSON (String "http://example.com/0/users/3/"))
+        ~= Right (UserID 3)
     ]
 
 unintersperse :: (Eq a) => a -> [a] -> [[a]]
