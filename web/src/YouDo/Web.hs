@@ -14,9 +14,8 @@ module YouDo.Web (
     -- * Base URIs
     Based, at, BasedToJSON(..), json, text, status, setHeader, relative,
     -- * Interpreting requests
-    FromParam(..),
     FromParams, -- do not export constructor; user must use 'capture' instead
-    capture,
+    capture, FromParam(..),
     fromRequest, RequestParser, parse, ParamValue(..), requestData,
     EvaluationError(..), defaultTo, optional,
     Constructor, Constructible(..),
@@ -145,6 +144,10 @@ instance Functor FromParams where
 capture :: (FromParam a b) => LT.Text -> FromParams b
 capture k = FromParams $ \p -> fromParam <$> p k
 
+-- | How to convert a Scotty capture to type b.
+class (Parsable a) => FromParam a b | b->a where
+    fromParam :: a->b
+
 -- | Monad transformer for managing a base URI.
 type Based = ReaderT URI
 
@@ -248,10 +251,6 @@ badRequest = raiseStatus badRequest400
 -- (See <http://tools.ietf.org/html/rfc2616#section-10.5.1>.)
 lift500 :: ActionM a -> ActionStatusM a
 lift500 = failWith internalServerError500
-
--- | How to convert a Scotty capture to type b.
-class (Parsable a) => FromParam a b | b->a where
-    fromParam :: a->b
 
 {- |
     Use the given 'RequestParser' to interpret the data in the HTTP
