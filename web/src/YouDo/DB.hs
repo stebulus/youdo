@@ -22,7 +22,7 @@ module YouDo.DB (
     one, some
 ) where
 
-import Control.Applicative (Applicative, (<$>), (<*>))
+import Control.Applicative (Applicative(..), (<$>), (<*>))
 import Control.Concurrent.MVar
 import Control.Monad (liftM)
 import Control.Monad.Reader (ask)
@@ -134,19 +134,18 @@ webdb mv db = do
     -- RequestParser; information from the requested URL, such as
     -- captures, should be extracted here.
     resource rtype
-             (\_ -> return ())
+             (pure ())
              [ (GET, onweb $ \() () -> getAll)
              , (POST, onweb $ \() v -> create v)
              ]
     resource (rtype ++ "/:id/")
-             (\capture -> lift $ capture "id")
+             (lift $ capture "id")
              [ (GET, onweb $ \i () -> get i) ]
     resource (rtype ++ "/:id/versions")
-             (\capture -> lift $ capture "id")
+             (lift $ capture "id")
              [ (GET, onweb $ \i () -> getVersions i) ]
     resource (rtype ++ "/:id/:txnid")
-             (\capture -> lift $ VersionedID <$> (capture "id")
-                                             <*> (capture "txnid"))
+             (lift $ VersionedID <$> capture "id" <*> capture "txnid")
              [ (GET, onweb $ \vk () -> getVersion vk)
              , (POST, onweb $ \vk u -> update (Versioned vk u))
              ]

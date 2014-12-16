@@ -15,6 +15,8 @@ module YouDo.Web (
     Based, at, BasedToJSON(..), json, text, status, setHeader, relative,
     -- * Interpreting requests
     FromParam(..),
+    FromParams, -- do not export constructor; user must use 'capture' instead
+    capture,
     fromRequest, RequestParser, parse, ParamValue(..), requestData,
     EvaluationError(..), defaultTo, optional,
     Constructor, Constructible(..),
@@ -91,24 +93,57 @@ webfunc f =
 -- response when a request uses a method which is not in the
 -- given list.  (Scotty's default is 404 (Not Found), which is less
 -- appropriate.)
-resource :: String                    -- ^Route to this resource, relative to the base.
-            -> ((forall a b. (FromParam a b) => LT.Text -> ActionM b) -> Based ActionM c)
-                                      -- ^Function to interpret parameters,
-                                      -- especially captures; its argument is
-                                      -- @'fmap' 'fromParam' . 'param'@.
+resource :: String                  -- ^Route to this resource, relative to the base.
+            -> Based FromParams c   -- ^Interpretation of parameters, especially captures.
             -> [(StdMethod, c -> Based ActionM ())]    -- ^Allowed methods and their actions.
             -> Based ScottyM ()
 resource route captureInterp acts =
     let allowedMethods = intercalate "," $ map (show . fst) acts
+        provideParams :: FromParams a -> ActionM a
+        provideParams (FromParams f) = f param
     in do
         baseuri <- ask
         let path = fromString $ uriPath $ route `relative` baseuri
         sequence_ [ mapReaderT (addroute method path)
-                               (captureInterp (fmap fromParam . param) >>= act)
+                               (mapReaderT provideParams captureInterp >>= act)
                   | (method, act) <- acts ]
         mapReaderT (matchAny path) $ do
             status methodNotAllowed405  -- http://tools.ietf.org/html/rfc2616#section-10.4.6
             setHeader "Allow" $ LT.pack allowedMethods
+
+-- | The type of 'param'.
+type GetParam = forall a. Parsable a => LT.Text -> ActionM a
+
+-- | A limited version of 'ActionM' that can only read parameters.
+-- (See 'capture'.)
+newtype FromParams a = FromParams (GetParam -> ActionM a)
+instance Monad FromParams where
+    return x = FromParams $ return $ return x
+    (FromParams g) >>= f = FromParams $ \p -> do
+            a <- g p
+            let FromParams g' = f a
+            g' p
+instance Applicative FromParams where
+    pure = return
+    mf <*> mx = do
+        f <- mf
+        x <- mx
+        return $ f x
+instance Functor FromParams where
+    fmap f x = pure f <*> x
+
+{- |
+    Get the value of a Scotty capture.
+
+    Due to limitations of Scotty, this could in theory retrieve the
+    value of a field in the form data or a query parameter, but only
+    if there's no capture with the given name.  In practice this is
+    not a problem because @capture@ is normally used right next to
+    the route pattern that declares the relevant captures, so there's
+    little room for error.  (See 'YouDo.DB.webdb', for example.)
+-}
+capture :: (FromParam a b) => LT.Text -> FromParams b
+capture k = FromParams $ \p -> fromParam <$> p k
 
 -- | Monad transformer for managing a base URI.
 type Based = ReaderT URI
