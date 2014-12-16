@@ -7,8 +7,6 @@ Copyright   : (c) Steven Taschuk, 2014
 License     : GPL-3
 -}
 module YouDo.Web (
-    -- * IO actions as operations on resources
-    webfunc,
     -- * Resources as bundles of operations
     resource,
     -- * Base URIs
@@ -30,7 +28,6 @@ import Codec.MIME.Parse (parseMIMEType)
 import Control.Applicative ((<$>), Applicative(..))
 import Control.Monad (liftM)
 import Control.Monad.Error (mapErrorT, throwError)
-import Control.Monad.IO.Class (liftIO, MonadIO)
 import Control.Monad.Reader (ReaderT(..), mapReaderT)
 import Control.Monad.Reader.Class (MonadReader(..))
 import Control.Monad.Trans.Class (lift)
@@ -51,39 +48,6 @@ import Web.Scotty.Internal.Types (ActionT(..), ActionError(..),
     ScottyError(..))
 
 import YouDo.Holes
-
-{- |
-    A web interface to a function.
-
-    A value of type @a@ is obtained from the HTTP request using the
-    'construct' method of the 'Constructible' instance; usually you
-    will have defined an instance like
-
-    @
-        instance ('Constructor' f) => 'Constructible' (f MyType) where
-            construct = MyType \<$\> parse \"id\" \<*\> parse \"name\"
-    @
-
-    because then your construction can be used with any suitable
-    functor @f@.  (For use with @webfunc@, we only need the instance
-    for 'RequestParser', but you might as well write it generically.)
-
-    Once the value of the request has been computed, the given
-    function is applied to it, and the resulting 'WebResult' is sent
-    to the client.
-
-    If an error occurs parsing the request, a 400 (Bad Request)
-    response is sent; errors in later phases cause 500 (Internal
-    Server Error).
--}
-webfunc :: (WebResult r, Constructible (RequestParser a))
-           => (a -> IO r)   -- ^The function to perform.
-           -> Based ActionM ()
-webfunc f =
-    mapReaderT statusErrors $ do
-        a <- lift $ fromRequestBody $ construct
-        r <- liftIO $ f a
-        report r
 
 -- | A web resource, with a complete list of its supported methods.
 -- Defining a resource this way causes a 405 (Method Not Allowed)
@@ -226,17 +190,32 @@ lift500 :: ActionM a -> ActionStatusM a
 lift500 = failWith internalServerError500
 
 {- |
-    Using the 'RequestParser' frmo 'construct', interpret the data
-    in the HTTP request.  See the discussion in 'webfunc' for the
-    usual method of defining a 'RequestParser'.
+    A value of type @a@ is obtained from the HTTP request using the
+    'construct' method of the 'Constructible' instance; usually you
+    will have defined an instance like
+
+    @
+        instance ('Constructor' f) => 'Constructible' (f MyType) where
+            construct = MyType \<$\> parse \"id\" \<*\> parse \"name\"
+    @
+
+    because then your construction can be used with any suitable
+    functor @f@.  (For use with @body@, we only need the instance
+    for 'RequestParser', but you might as well write it generically.)
+
+    If an error occurs parsing the request, a 400 (Bad Request)
+    response is thrown.
 -}
 body :: (Constructible (RequestParser a)) => Based ActionStatusM a
 body = lift $ fromRequestBody construct
 
 {- |
     Use the given 'RequestParser' to interpret the data in the HTTP
-    request.  See the discussion in 'webfunc' for the usual method
+    request.  See the discussion in 'body' for the usual method
     of defining a 'RequestParser'.
+
+    If an error occurs parsing the request, a 400 (Bad Request)
+    response is thrown.
 -}
 fromRequestBody :: RequestParser a -> ActionStatusM a
 fromRequestBody expr = do
@@ -294,7 +273,7 @@ instance Constructor RequestParser
 
 -- | An object that can be constructed by a 'Constructor'.
 -- Typically the 'construct' method should be implemented as an
--- applicative expression; see the example under 'webfunc'.
+-- applicative expression; see the example under 'body'.
 class Constructible a where
     construct :: a
 
