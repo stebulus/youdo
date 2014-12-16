@@ -52,6 +52,8 @@ instance FromJSON YoudoID where
     parseJSON x = YoudoID <$> parseJSON x
 instance Parsable YoudoID where
     parseParam x = YoudoID <$> parseParam x
+instance FromParam Int YoudoID where
+    fromParam = YoudoID
 instance (Constructor f) => Constructible (f YoudoID) where
     construct = YoudoID <$> parse "id"
 
@@ -112,6 +114,8 @@ instance FromJSON UserID where
     parseJSON x = UserID <$> parseJSON x
 instance Parsable UserID where
     parseParam x = UserID <$> parseParam x
+instance FromParam Int UserID where
+    fromParam = UserID
 instance (Constructor f) => Constructible (f UserID) where
     construct = UserID <$> parse "id"
 
