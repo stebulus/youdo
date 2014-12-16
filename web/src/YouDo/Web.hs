@@ -14,7 +14,7 @@ module YouDo.Web (
     -- * Base URIs
     Based, at, BasedToJSON(..), json, text, status, setHeader, relative,
     -- * Interpreting requests
-    FromParam(..), capture,
+    FromParam(..),
     fromRequest, RequestParser, parse, ParamValue(..), requestData,
     EvaluationError(..), defaultTo, optional,
     Constructor, Constructible(..),
@@ -92,14 +92,19 @@ webfunc f =
 -- given list.  (Scotty's default is 404 (Not Found), which is less
 -- appropriate.)
 resource :: String                    -- ^Route to this resource, relative to the base.
-            -> [(StdMethod, Based ActionM ())]    -- ^Allowed methods and their actions.
+            -> ((forall a b. (FromParam a b) => LT.Text -> ActionM b) -> Based ActionM c)
+                                      -- ^Function to interpret parameters,
+                                      -- especially captures; its argument is
+                                      -- @'fmap' 'fromParam' . 'param'@.
+            -> [(StdMethod, c -> Based ActionM ())]    -- ^Allowed methods and their actions.
             -> Based ScottyM ()
-resource route acts =
+resource route captureInterp acts =
     let allowedMethods = intercalate "," $ map (show . fst) acts
     in do
         baseuri <- ask
         let path = fromString $ uriPath $ route `relative` baseuri
-        sequence_ [ mapReaderT (addroute method path) act
+        sequence_ [ mapReaderT (addroute method path)
+                               (captureInterp (fmap fromParam . param) >>= act)
                   | (method, act) <- acts ]
         mapReaderT (matchAny path) $ do
             status methodNotAllowed405  -- http://tools.ietf.org/html/rfc2616#section-10.4.6
@@ -212,19 +217,6 @@ lift500 = failWith internalServerError500
 -- | How to convert a Scotty capture to type b.
 class (Parsable a) => FromParam a b | b->a where
     fromParam :: a->b
-
-{- |
-    Get the value of a Scotty capture.
-
-    Due to limitations of Scotty, this could in theory retrieve the
-    value of a field in the form data or a query parameter, but only
-    if there's no capture with the given name.  In practice this is
-    not a problem because @capture@ is normally used right next to
-    the route pattern that declares the relevant captures, so there's
-    little room for error.  (See 'YouDo.DB.webdb', for example.)
--}
-capture :: (FromParam a b) => LT.Text -> ActionM b
-capture x = fromParam <$> param x
 
 {- |
     Use the given 'RequestParser' to interpret the data in the HTTP

@@ -127,31 +127,28 @@ webdb :: ( NamedResource k, DB k v u IO d
          -> Based ScottyM ()
 webdb mv db = do
     let rtype = dbResourceName db
-        onweb f = webfunc $ lock $ flip f db
+        onweb f urlval = webfunc $ lock $ \bodyval -> f urlval bodyval db
         lock f x = withMVar mv $ const (f x)
     -- Note that the function passed to 'webfunc' takes as its
     -- sole argument a value computed from the request body via a
     -- RequestParser; information from the requested URL, such as
     -- captures, should be extracted here.
     resource rtype
-             [ (GET, onweb (\() -> getAll))
-             , (POST, onweb create)
+             (\_ -> return ())
+             [ (GET, onweb $ \() () -> getAll)
+             , (POST, onweb $ \() v -> create v)
              ]
     resource (rtype ++ "/:id/")
-             [ (GET, do
-                    i <- lift $ capture "id"
-                    onweb $ \() -> get i) ]
+             (\capture -> lift $ capture "id")
+             [ (GET, onweb $ \i () -> get i) ]
     resource (rtype ++ "/:id/versions")
-             [ (GET, do
-                    i <- lift $ capture "id"
-                    onweb $ \() -> getVersions i) ]
+             (\capture -> lift $ capture "id")
+             [ (GET, onweb $ \i () -> getVersions i) ]
     resource (rtype ++ "/:id/:txnid")
-             [ (GET, do
-                    vk <- lift $ VersionedID <$> capture "id" <*> capture "txnid"
-                    onweb $ \() -> getVersion vk)
-             , (POST, do
-                    vk <- lift $ VersionedID <$> capture "id" <*> capture "txnid"
-                    onweb $ \u -> update (Versioned vk u))
+             (\capture -> lift $ VersionedID <$> (capture "id")
+                                             <*> (capture "txnid"))
+             [ (GET, onweb $ \vk () -> getVersion vk)
+             , (POST, onweb $ \vk u -> update (Versioned vk u))
              ]
 
 {- |
