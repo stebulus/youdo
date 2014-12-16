@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings, RankNTypes, FlexibleContexts,
-    FlexibleInstances, MultiParamTypeClasses #-}
+    FlexibleInstances, MultiParamTypeClasses, FunctionalDependencies #-}
 {-|
 Module      : YouDo.Web
 Description : A tiny web framework on top of Scotty.
@@ -14,6 +14,7 @@ module YouDo.Web (
     -- * Base URIs
     Based, at, BasedToJSON(..), json, text, status, setHeader, relative,
     -- * Interpreting requests
+    FromParam(..),
     fromRequest, RequestParser, parse, ParamValue(..), requestData,
     EvaluationError(..), defaultTo, optional,
     Constructor, Constructible(..),
@@ -207,6 +208,10 @@ badRequest = raiseStatus badRequest400
 -- (See <http://tools.ietf.org/html/rfc2616#section-10.5.1>.)
 lift500 :: ActionM a -> ActionStatusM a
 lift500 = failWith internalServerError500
+
+-- | How to convert a Scotty capture to type b.
+class (Parsable a) => FromParam a b | b->a where
+    fromParam :: a->b
 
 {- |
     Use the given 'RequestParser' to interpret the data in the HTTP

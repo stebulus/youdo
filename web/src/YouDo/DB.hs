@@ -239,6 +239,8 @@ instance Parsable TransactionID where
     parseParam x = TransactionID <$> parseParam x
 instance FromJSON TransactionID where
     parseJSON x = TransactionID <$> parseJSON x
+instance FromParam Int TransactionID where
+    fromParam = TransactionID
 
 {- |
     @r@ represents the result of a 'DB' operation which was supposed
