@@ -128,23 +128,20 @@ webdb :: ( NamedResource k, DB k v u IO d
          -> Based ScottyM ()
 webdb mv db = do
     let rtype = dbResourceName db
-        f :: (WebResult a)
-          => Based ActionStatusM (IO a) -> Based ActionStatusM ()
-        f m = report =<< liftIO =<< lock <$> m
-        lock :: IO a -> IO a
+        dodb m = report =<< liftIO =<< lock <$> (m <*> pure db)
         lock a = withMVar mv $ const a
     resource rtype
-             [ (GET, f $ getAll <$> pure db)
-             , (POST, f $ create <$> body <*> pure db)
+             [ (GET, dodb $ pure getAll)
+             , (POST, dodb $ create <$> body)
              ]
     resource (rtype ++ "/:id/")
-             [ (GET, f $ get <$> capture "id" <*> pure db) ]
+             [ (GET, dodb $ get <$> capture "id") ]
     resource (rtype ++ "/:id/versions")
-             [ (GET, f $ getVersions <$> capture "id" <*> pure db) ]
+             [ (GET, dodb $ getVersions <$> capture "id") ]
     resource (rtype ++ "/:id/:txnid") $
              let verid = VersionedID <$> capture "id" <*> capture "txnid"
-             in [ (GET, f $ getVersion <$> verid <*> pure db)
-                , (POST, f $ update <$> (Versioned <$> verid <*> body) <*> pure db)
+             in [ (GET, dodb $ getVersion <$> verid)
+                , (POST, dodb $ update <$> (Versioned <$> verid <*> body))
                 ]
 
 {- |
