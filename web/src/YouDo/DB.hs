@@ -26,6 +26,7 @@ import Control.Applicative (Applicative, (<$>), (<*>))
 import Control.Concurrent.MVar
 import Control.Monad (liftM)
 import Control.Monad.Reader (ask)
+import Control.Monad.Trans (lift)
 import Data.Aeson (FromJSON(..), (.=), Value(..))
 import qualified Data.HashMap.Strict as M
 import Data.List (foldl')
@@ -117,11 +118,10 @@ class Updater u a where
 -}
 webdb :: ( NamedResource k, DB k v u IO d
          , Parsable k, FromJSON k
+         , FromParam p k
          , Show k, BasedToJSON v
          , Constructible (RequestParser v)
-         , Constructible (RequestParser k)
-         , Constructible (RequestParser (VersionedID k))
-         , Constructible (RequestParser (Versioned k u))
+         , Constructible (RequestParser u)
          ) => MVar ()     -- ^All database access is under this MVar.
          -> d           -- ^The database.
          -> Based ScottyM ()
@@ -129,17 +129,29 @@ webdb mv db = do
     let rtype = dbResourceName db
         onweb f = webfunc $ lock $ flip f db
         lock f x = withMVar mv $ const (f x)
+    -- Note that the function passed to 'webfunc' takes as its
+    -- sole argument a value computed from the request body via a
+    -- RequestParser; information from the requested URL, such as
+    -- captures, should be extracted here.
     resource rtype
              [ (GET, onweb (\() -> getAll))
              , (POST, onweb create)
              ]
     resource (rtype ++ "/:id/")
-             [ (GET, onweb get) ]
+             [ (GET, do
+                    i <- lift $ capture "id"
+                    onweb $ \() -> get i) ]
     resource (rtype ++ "/:id/versions")
-             [ (GET, onweb getVersions) ]
+             [ (GET, do
+                    i <- lift $ capture "id"
+                    onweb $ \() -> getVersions i) ]
     resource (rtype ++ "/:id/:txnid")
-             [ (GET, onweb getVersion)
-             , (POST, onweb update)
+             [ (GET, do
+                    vk <- lift $ VersionedID <$> capture "id" <*> capture "txnid"
+                    onweb $ \() -> getVersion vk)
+             , (POST, do
+                    vk <- lift $ VersionedID <$> capture "id" <*> capture "txnid"
+                    onweb $ \u -> update (Versioned vk u))
              ]
 
 {- |

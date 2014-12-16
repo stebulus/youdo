@@ -14,7 +14,7 @@ module YouDo.Web (
     -- * Base URIs
     Based, at, BasedToJSON(..), json, text, status, setHeader, relative,
     -- * Interpreting requests
-    FromParam(..),
+    FromParam(..), capture,
     fromRequest, RequestParser, parse, ParamValue(..), requestData,
     EvaluationError(..), defaultTo, optional,
     Constructor, Constructible(..),
@@ -44,7 +44,7 @@ import qualified Data.Text.Lazy as LT
 import Network.HTTP.Types (badRequest400, methodNotAllowed405,
     unsupportedMediaType415, internalServerError500, Status, StdMethod(..))
 import Network.URI (URI(..), relativeTo, nullURI)
-import Web.Scotty (ScottyM, matchAny, header, addroute, params,
+import Web.Scotty (ScottyM, matchAny, header, addroute, param, params,
     ActionM, Parsable(..), body)
 import qualified Web.Scotty as Scotty
 import Web.Scotty.Internal.Types (ActionT(..), ActionError(..),
@@ -212,6 +212,19 @@ lift500 = failWith internalServerError500
 -- | How to convert a Scotty capture to type b.
 class (Parsable a) => FromParam a b | b->a where
     fromParam :: a->b
+
+{- |
+    Get the value of a Scotty capture.
+
+    Due to limitations of Scotty, this could in theory retrieve the
+    value of a field in the form data or a query parameter, but only
+    if there's no capture with the given name.  In practice this is
+    not a problem because @capture@ is normally used right next to
+    the route pattern that declares the relevant captures, so there's
+    little room for error.  (See 'YouDo.DB.webdb', for example.)
+-}
+capture :: (FromParam a b) => LT.Text -> ActionM b
+capture x = fromParam <$> param x
 
 {- |
     Use the given 'RequestParser' to interpret the data in the HTTP
