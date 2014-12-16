@@ -25,7 +25,8 @@ module YouDo.DB (
 import Control.Applicative (Applicative(..), (<$>), (<*>))
 import Control.Concurrent.MVar
 import Control.Monad (liftM)
-import Control.Monad.Reader (ask)
+import Control.Monad.IO.Class (liftIO)
+import Control.Monad.Reader (ask, mapReaderT)
 import Control.Monad.Trans (lift)
 import Data.Aeson (FromJSON(..), (.=), Value(..))
 import qualified Data.HashMap.Strict as M
@@ -33,7 +34,7 @@ import Data.List (foldl')
 import qualified Data.Text as ST
 import qualified Data.Text.Lazy as LT
 import Database.PostgreSQL.Simple.FromField (FromField(..))
-import Network.HTTP.Types (ok200, created201, badRequest400, notFound404,
+import Network.HTTP.Types (ok200, created201, notFound404,
     conflict409, internalServerError500, StdMethod(..))
 import Network.URI
 import Web.Scotty (Parsable(..), ScottyM)
@@ -127,28 +128,24 @@ webdb :: ( NamedResource k, DB k v u IO d
          -> Based ScottyM ()
 webdb mv db = do
     let rtype = dbResourceName db
-        onweb f urlval = webfunc $ lock $ \bodyval -> f urlval bodyval db
-        lock f x = withMVar mv $ const (f x)
-    -- Note that the function passed to 'webfunc' takes as its
-    -- sole argument a value computed from the request body via a
-    -- RequestParser; information from the requested URL, such as
-    -- captures, should be extracted here.
+        f :: (WebResult a)
+          => Based ActionStatusM (IO a) -> Based ActionStatusM ()
+        f m = report =<< liftIO =<< lock <$> m
+        lock :: IO a -> IO a
+        lock a = withMVar mv $ const a
     resource rtype
-             (pure ())
-             [ (GET, onweb $ \() () -> getAll)
-             , (POST, onweb $ \() v -> create v)
+             [ (GET, f $ getAll <$> pure db)
+             , (POST, f $ create <$> body <*> pure db)
              ]
     resource (rtype ++ "/:id/")
-             (lift $ capture "id")
-             [ (GET, onweb $ \i () -> get i) ]
+             [ (GET, f $ get <$> capture "id" <*> pure db) ]
     resource (rtype ++ "/:id/versions")
-             (lift $ capture "id")
-             [ (GET, onweb $ \i () -> getVersions i) ]
-    resource (rtype ++ "/:id/:txnid")
-             (lift $ VersionedID <$> capture "id" <*> capture "txnid")
-             [ (GET, onweb $ \vk () -> getVersion vk)
-             , (POST, onweb $ \vk u -> update (Versioned vk u))
-             ]
+             [ (GET, f $ getVersions <$> capture "id" <*> pure db) ]
+    resource (rtype ++ "/:id/:txnid") $
+             let verid = VersionedID <$> capture "id" <*> capture "txnid"
+             in [ (GET, f $ getVersion <$> verid <*> pure db)
+                , (POST, f $ update <$> (Versioned <$> verid <*> body) <*> pure db)
+                ]
 
 {- |
     Class for types that have a name.  Typically the implementation
@@ -288,13 +285,16 @@ instance Result (GetResult a) a where
 
 instance (BasedToJSON a) => WebResult (GetResult a) where
     report (Right (Right a)) =
-        do status ok200  -- http://tools.ietf.org/html/rfc2616#section-10.2.1
-           json a
+        mapReaderT lift500 $ do
+            status ok200  -- http://tools.ietf.org/html/rfc2616#section-10.2.1
+            json a
     report (Left NotFound) =
-        status notFound404  -- http://tools.ietf.org/html/rfc2616#section-10.4.5
+        mapReaderT lift500 $
+            status notFound404  -- http://tools.ietf.org/html/rfc2616#section-10.4.5
     report (Right (Left msg)) =
-        do status internalServerError500  -- http://tools.ietf.org/html/rfc2616#section-10.5.1
-           text msg
+        mapReaderT lift500 $ do
+            status internalServerError500  -- http://tools.ietf.org/html/rfc2616#section-10.5.1
+            text msg
 
 {- |
     Result of a 'DB' update operation.  The operation failed because
@@ -321,13 +321,15 @@ newerVersion x = Left $ NewerVersion x
 instance (BasedToJSON b, NamedResource k, Show k, BasedToJSON v)
          => WebResult (UpdateResult b (Versioned k v)) where
     report (Right (Right (Right a))) =
-        do status created201  -- http://tools.ietf.org/html/rfc2616#section-10.2.2
-           url <- resourceVersionURL $ version a
-           setHeader "Location" $ LT.pack $ show $ url
-           json a
+        mapReaderT lift500 $ do
+            status created201  -- http://tools.ietf.org/html/rfc2616#section-10.2.2
+            url <- resourceVersionURL $ version a
+            setHeader "Location" $ LT.pack $ show $ url
+            json a
     report (Left (NewerVersion b)) =
-        do status conflict409  -- http://tools.ietf.org/html/rfc2616#section-10.4.10
-           json b
+        mapReaderT lift500 $ do
+            status conflict409  -- http://tools.ietf.org/html/rfc2616#section-10.4.10
+            json b
     report (Right gr) = report gr
 
 {- |
@@ -347,13 +349,13 @@ invalidObject errs = Left $ InvalidObject errs
 instance (NamedResource k, Show k, BasedToJSON v)
          => WebResult (CreateResult (Versioned k v)) where
     report (Right (Right (Right a))) =
-        do status created201  -- http://tools.ietf.org/html/rfc2616#section-10.2.2
+        mapReaderT lift500 $ do
+           status created201  -- http://tools.ietf.org/html/rfc2616#section-10.2.2
            url <- resourceURL $ thingid $ version a
            setHeader "Location" $ LT.pack $ show $ url
            json a
     report (Left (InvalidObject msgs)) =
-        do status badRequest400
-           text $ LT.concat [ LT.concat [msg, "\r\n"] | msg<-msgs ]
+        lift $ badRequest $ LT.concat [ LT.concat [msg, "\r\n"] | msg<-msgs ]
     report (Right gr) = report gr
 
 {- |

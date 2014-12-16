@@ -14,9 +14,8 @@ module YouDo.Web (
     -- * Base URIs
     Based, at, BasedToJSON(..), json, text, status, setHeader, relative,
     -- * Interpreting requests
-    FromParams, -- do not export constructor; user must use 'capture' instead
     capture, FromParam(..),
-    fromRequest, RequestParser, parse, ParamValue(..), requestData,
+    body, fromRequestBody, RequestParser, parse, ParamValue(..), requestData,
     EvaluationError(..), defaultTo, optional,
     Constructor, Constructible(..),
     -- * Reporting results
@@ -46,7 +45,7 @@ import Network.HTTP.Types (badRequest400, methodNotAllowed405,
     unsupportedMediaType415, internalServerError500, Status, StdMethod(..))
 import Network.URI (URI(..), relativeTo, nullURI)
 import Web.Scotty (ScottyM, matchAny, header, addroute, param, params,
-    ActionM, Parsable(..), body)
+    ActionM, Parsable(..))
 import qualified Web.Scotty as Scotty
 import Web.Scotty.Internal.Types (ActionT(..), ActionError(..),
     ScottyError(..))
@@ -82,10 +81,9 @@ webfunc :: (WebResult r, Constructible (RequestParser a))
            -> Based ActionM ()
 webfunc f =
     mapReaderT statusErrors $ do
-        a <- lift $ fromRequest $ construct
-        mapReaderT lift500 $ do
-            r <- liftIO $ f a
-            report r
+        a <- lift $ fromRequestBody $ construct
+        r <- liftIO $ f a
+        report r
 
 -- | A web resource, with a complete list of its supported methods.
 -- Defining a resource this way causes a 405 (Method Not Allowed)
@@ -93,43 +91,18 @@ webfunc f =
 -- given list.  (Scotty's default is 404 (Not Found), which is less
 -- appropriate.)
 resource :: String                  -- ^Route to this resource, relative to the base.
-            -> Based FromParams c   -- ^Interpretation of parameters, especially captures.
-            -> [(StdMethod, c -> Based ActionM ())]    -- ^Allowed methods and their actions.
+            -> [(StdMethod, Based ActionStatusM ())]    -- ^Allowed methods and their actions.
             -> Based ScottyM ()
-resource route captureInterp acts =
+resource route acts =
     let allowedMethods = intercalate "," $ map (show . fst) acts
-        provideParams :: FromParams a -> ActionM a
-        provideParams (FromParams f) = f param
     in do
         baseuri <- ask
         let path = fromString $ uriPath $ route `relative` baseuri
-        sequence_ [ mapReaderT (addroute method path)
-                               (mapReaderT provideParams captureInterp >>= act)
+        sequence_ [ mapReaderT (addroute method path . statusErrors) act
                   | (method, act) <- acts ]
         mapReaderT (matchAny path) $ do
             status methodNotAllowed405  -- http://tools.ietf.org/html/rfc2616#section-10.4.6
             setHeader "Allow" $ LT.pack allowedMethods
-
--- | The type of 'param'.
-type GetParam = forall a. Parsable a => LT.Text -> ActionM a
-
--- | A limited version of 'ActionM' that can only read parameters.
--- (See 'capture'.)
-newtype FromParams a = FromParams (GetParam -> ActionM a)
-instance Monad FromParams where
-    return x = FromParams $ return $ return x
-    (FromParams g) >>= f = FromParams $ \p -> do
-            a <- g p
-            let FromParams g' = f a
-            g' p
-instance Applicative FromParams where
-    pure = return
-    mf <*> mx = do
-        f <- mf
-        x <- mx
-        return $ f x
-instance Functor FromParams where
-    fmap f x = pure f <*> x
 
 {- |
     Get the value of a Scotty capture.
@@ -141,8 +114,8 @@ instance Functor FromParams where
     the route pattern that declares the relevant captures, so there's
     little room for error.  (See 'YouDo.DB.webdb', for example.)
 -}
-capture :: (FromParam a b) => LT.Text -> FromParams b
-capture k = FromParams $ \p -> fromParam <$> p k
+capture :: (FromParam a b) => LT.Text -> Based ActionStatusM b
+capture k = lift $ lift500 $ fromParam <$> param k
 
 -- | How to convert a Scotty capture to type b.
 class (Parsable a) => FromParam a b | b->a where
@@ -181,8 +154,8 @@ relative s u = nullURI { uriPath = s } `relativeTo` u
 
 -- | A value that can be reported to a web client.
 class WebResult r where
-    report :: r                     -- ^The value to report.
-              -> Based ActionM ()   -- ^An action that reports that value.
+    report :: r                           -- ^The value to report.
+              -> Based ActionStatusM ()   -- ^An action that reports that value.
 
 -- | A value that can be serialized as JSON, respecting a base URI.
 class BasedToJSON a where
@@ -190,7 +163,7 @@ class BasedToJSON a where
 instance BasedToJSON a => BasedToJSON [a] where
     basedToJSON xs = liftM toJSON $ sequence $ map basedToJSON xs
 
-type ActionStatusM a = ActionT ErrorWithStatus IO a
+type ActionStatusM = ActionT ErrorWithStatus IO
 
 data ErrorWithStatus = ErrorWithStatus Status LT.Text
 instance ScottyError ErrorWithStatus where
@@ -253,12 +226,20 @@ lift500 :: ActionM a -> ActionStatusM a
 lift500 = failWith internalServerError500
 
 {- |
+    Using the 'RequestParser' frmo 'construct', interpret the data
+    in the HTTP request.  See the discussion in 'webfunc' for the
+    usual method of defining a 'RequestParser'.
+-}
+body :: (Constructible (RequestParser a)) => Based ActionStatusM a
+body = lift $ fromRequestBody construct
+
+{- |
     Use the given 'RequestParser' to interpret the data in the HTTP
     request.  See the discussion in 'webfunc' for the usual method
     of defining a 'RequestParser'.
 -}
-fromRequest :: RequestParser a -> ActionStatusM a
-fromRequest expr = do
+fromRequestBody :: RequestParser a -> ActionStatusM a
+fromRequestBody expr = do
     kvs <- requestData
     case evaluateE expr kvs of
         Left errs -> badRequest $ showEvaluationErrors errs
@@ -285,7 +266,7 @@ requestData = do
                         -- form data is already in params
                         return []
                     Just (Application "json") -> do
-                        bod <- lift500 body
+                        bod <- lift500 Scotty.body
                         case A.eitherDecode' bod of
                             Left err ->
                                 badRequest $ LT.pack err
