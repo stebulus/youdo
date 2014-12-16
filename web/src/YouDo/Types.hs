@@ -138,7 +138,6 @@ instance FromParam Int UserID where
 instance (Constructor f) => Constructible (f UserID) where
     construct = UserID <$> parse "id"
 
-
 basedIDFromJSON :: Value -> Based Parser Int
 basedIDFromJSON (String txt) =
     mapReaderT eithToParser $ basedIDFromText $ LT.fromStrict txt
