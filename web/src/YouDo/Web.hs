@@ -10,8 +10,7 @@ module YouDo.Web (
     -- * Resources as bundles of operations
     resource,
     -- * Base URIs
-    BasedToJSON(..), BasedFromJSON(..), BasedParsable(..),
-    basedjson, relative,
+    BasedToJSON(..), BasedFromJSON(..), BasedParsable(..), basedjson,
     -- * Interpreting requests
     capture, FromParam(..),
     body, fromRequestBody, RequestParser, parse, ParamValue(..), requestData,
@@ -38,7 +37,7 @@ import Data.List (intercalate)
 import qualified Data.Text.Lazy as LT
 import Network.HTTP.Types (badRequest400, methodNotAllowed405,
     unsupportedMediaType415, internalServerError500, Status, StdMethod(..))
-import Network.URI (URI(..), relativeTo, nullURI)
+import Network.URI (URI(..))
 import Web.Scotty (ScottyM, matchAny, header, addroute, param, params,
     ActionM, Parsable(..), status, setHeader, RoutePattern)
 import qualified Web.Scotty as Scotty
@@ -107,12 +106,6 @@ class (Parsable a) => FromParam a b | b->a where
 -- | Like 'Scotty.json', but for based representations.
 basedjson :: BasedToJSON a => a -> URI -> ActionM ()
 basedjson x uri = Scotty.json $ basedToJSON x uri
-
--- | Dereference a relative URI path.  Usually used infix.
-relative :: String      -- ^The path.
-            -> URI      -- ^The base URI.
-            -> URI
-relative s u = nullURI { uriPath = s } `relativeTo` u
 
 -- | A value that can be reported to a web client.
 class WebResult r where

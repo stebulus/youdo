@@ -29,6 +29,7 @@ import Control.Monad.Reader (ReaderT(..))
 import Data.Aeson (FromJSON(..), (.=), Value(..))
 import qualified Data.HashMap.Strict as M
 import Data.List (foldl', intercalate)
+import Data.Maybe (fromJust)
 import Data.String (fromString)
 import qualified Data.Text as ST
 import qualified Data.Text.Lazy as LT
@@ -131,7 +132,8 @@ webdb mv db base = do
         dodb m = flip report base =<< liftIO =<< lock <$>
                         (runReaderT m base <*> pure db)
         lock a = withMVar mv $ const a
-        route s = fromString $ uriPath $ (rtype ++ s) `relative` base
+        route s = fromString $ uriPath $
+            (fromJust $ parseURIReference $ rtype ++ s) `relativeTo` base
     resource (route "")
              [ (GET, dodb $ pure getAll)
              , (POST, dodb $ create <$> body)
@@ -178,7 +180,8 @@ class (Show a) => NamedResource a where
                                                  ] base
 
 namedResourceURL :: [String] -> URI -> URI
-namedResourceURL xs base = intercalate "/" (".":xs) `relative` base
+namedResourceURL xs base = reluri `relativeTo` base
+    where reluri = fromJust $ parseURIReference $ intercalate "/" (".":xs)
 
 jsonurl :: URI -> Value
 jsonurl = String . ST.pack . show

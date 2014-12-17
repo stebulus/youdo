@@ -17,9 +17,11 @@ import Control.Concurrent.MVar
 import Control.Exception (bracket)
 import Data.ByteString.Char8 (pack)
 import Data.Default
+import Data.Maybe (fromJust)
 import Data.Monoid ((<>))
 import Database.PostgreSQL.Simple (close, connectPostgreSQL)
-import Network.URI (URI(..), URIAuth(..), nullURI)
+import Network.URI (URI(..), URIAuth(..), nullURI, parseURIReference,
+    relativeTo)
 import Network.Wai.Handler.Warp (setPort, setHost, defaultSettings)
 import Options.Applicative (option, strOption, flag', auto, long, short,
     metavar, help, execParser, Parser, fullDesc, helper, info, header)
@@ -29,7 +31,6 @@ import YouDo.DB
 import YouDo.DB.Memory
 import YouDo.DB.PostgreSQL
 import YouDo.Types
-import YouDo.Web
 
 -- | The Scotty application.
 -- Consists of 'webdb' interfaces for the given Youdo and User DB instances.
@@ -40,7 +41,7 @@ app :: ( DB YoudoID YoudoData YoudoUpdate IO ydb
        -> URI           -- ^The base URI.
        -> ScottyM ()
 app db mv base =
-    let api0base = "./0/" `relative` base
+    let api0base = (fromJust $ parseURIReference $ "./0/") `relativeTo` base
     in do
         webdb mv (youdos db) api0base
         webdb mv (users db) api0base
