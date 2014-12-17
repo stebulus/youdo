@@ -25,6 +25,7 @@ module YouDo.DB (
 import Control.Applicative (Applicative(..), (<$>), (<*>))
 import Control.Concurrent.MVar
 import Control.Monad.IO.Class (liftIO)
+import Control.Monad.Reader (ReaderT(..))
 import Data.Aeson (FromJSON(..), (.=), Value(..))
 import qualified Data.HashMap.Strict as M
 import Data.List (foldl', intercalate)
@@ -126,23 +127,24 @@ webdb :: ( NamedResource k, DB k v u IO d
          -> ScottyM ()
 webdb mv db base = do
     let rtype = dbResourceName db
-        dodb m base' = flip report base' =<< liftIO =<< lock <$> (m <*> pure db)
+        dodb m = flip report base =<< liftIO =<< lock <$>
+                        (runReaderT m base <*> pure db)
         lock a = withMVar mv $ const a
     resource rtype
              [ (GET, dodb $ pure getAll)
-             , (POST, dodb $ create <$> body base)
+             , (POST, dodb $ create <$> body)
              ]
              base
     resource (rtype ++ "/:id/")
-             [ (GET, dodb $ get <$> capture "id" base) ]
+             [ (GET, dodb $ get <$> capture "id") ]
              base
     resource (rtype ++ "/:id/versions")
-             [ (GET, dodb $ getVersions <$> capture "id" base) ]
+             [ (GET, dodb $ getVersions <$> capture "id") ]
              base
     resource (rtype ++ "/:id/:txnid")
-             (let verid = VersionedID <$> capture "id" base <*> capture "txnid" base
+             (let verid = VersionedID <$> capture "id" <*> capture "txnid"
              in [ (GET, dodb $ getVersion <$> verid)
-                , (POST, dodb $ update <$> (Versioned <$> verid <*> body base))
+                , (POST, dodb $ update <$> (Versioned <$> verid <*> body))
                 ])
              base
 

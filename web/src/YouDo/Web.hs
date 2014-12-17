@@ -28,6 +28,8 @@ import Codec.MIME.Type (mimeType, MIMEType(Application))
 import Codec.MIME.Parse (parseMIMEType)
 import Control.Applicative ((<$>), Applicative(..))
 import Control.Monad.Error (mapErrorT, throwError)
+import Control.Monad.Reader (ReaderT, ask)
+import Control.Monad.Trans.Class (lift)
 import Data.Aeson (ToJSON(..), FromJSON(..), Value(..))
 import qualified Data.Aeson as A
 import qualified Data.Aeson.Types as A
@@ -52,7 +54,7 @@ import YouDo.Holes
 -- given list.  (Scotty's default is 404 (Not Found), which is less
 -- appropriate.)
 resource :: String                  -- ^Route to this resource, relative to the base.
-            -> [(StdMethod, URI -> ActionStatusM ())]
+            -> [(StdMethod, ActionStatusM ())]
                                     -- ^Allowed methods and their actions.
             -> URI
             -> ScottyM ()
@@ -60,7 +62,7 @@ resource route acts base =
     let allowedMethods = intercalate "," $ map (show . fst) acts
     in do
         let path = fromString $ uriPath $ route `relative` base
-        sequence_ [ addroute method path $ statusErrors $ act base
+        sequence_ [ addroute method path $ statusErrors act
                   | (method, act) <- acts ]
         matchAny path $ do
             status methodNotAllowed405  -- http://tools.ietf.org/html/rfc2616#section-10.4.6
@@ -76,8 +78,8 @@ resource route acts base =
     the route pattern that declares the relevant captures, so there's
     little room for error.  (See 'YouDo.DB.webdb', for example.)
 -}
-capture :: (FromParam a b) => LT.Text -> URI -> ActionStatusM b
-capture k _ = lift500 $ fromParam <$> param k
+capture :: (FromParam a b) => LT.Text -> ReaderT URI ActionStatusM b
+capture k = lift $ lift500 $ fromParam <$> param k
 
 -- | How to convert a Scotty capture to type b.
 class (Parsable a) => FromParam a b | b->a where
@@ -192,8 +194,10 @@ lift500 = failWith internalServerError500
     If an error occurs parsing the request, a 400 (Bad Request)
     response is thrown.
 -}
-body :: (Constructible (RequestParser a)) => URI -> ActionStatusM a
-body base = fromRequestBody construct base
+body :: (Constructible (RequestParser a)) => ReaderT URI ActionStatusM a
+body = do
+    base <- ask
+    lift $ fromRequestBody construct base
 
 {- |
     Use the given 'RequestParser' to interpret the data in the HTTP
