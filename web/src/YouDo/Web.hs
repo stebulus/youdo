@@ -96,6 +96,11 @@ capture :: (FromParam a b, MonadTrans t)
 capture k = lift $ lift500 $ fromParam <$> param k
 
 -- | How to convert a Scotty capture to type b.
+-- There is no provision for failure; report failures in the
+-- methods of the underlying 'Parsable' instance.
+-- (This typeclass exists for parsing captures, as distinct
+-- from parsing form data payload; it will disappear when
+-- BasedParsable is used by 'body'.)
 class (Parsable a) => FromParam a b | b->a where
     fromParam :: a->b
 
