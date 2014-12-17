@@ -299,7 +299,7 @@ data EvaluationError k v
 -- | If the first argument fails to evaluate due to a single
 -- 'MissingKey' error, replace it with the second argument.
 -- Other error situations are left as is.
--- (Combinator for use in 'construct' implementations.)
+-- (Combinator for use in 'template' implementations.)
 defaultTo :: (Applicative f, Errs [EvaluationError k v] f)
           => f a -> a -> f a
 defaultTo fa d = fa `catch` \es ->
@@ -352,7 +352,7 @@ instance MissingKeyError LT.Text [EvaluationError LT.Text ParamValue] where
     missingKeyError k = [MissingKey k]
 
 -- | A named hole which parses a 'ParamValue' into the appropriate type.
--- (Combinator for use in 'construct' implementations.)
+-- (Combinator for use in 'template' implementations.)
 parse :: ( Functor f
          , BasedParsable a, BasedFromJSON a
          , Holes k ParamValue (ReaderT URI f)
