@@ -111,11 +111,11 @@ class Updater u a where
     These correspond directly to the methods of 'DB'.  The name @objs@
     is obtained from the instance 'NamedResource' @k@.  Requests that
     return objects return them in JSON format, using the instance
-    'BasedToJSON' @v@.  The @/id/@ parameter is interpreted
-    via the instance 'Parsable' @k@.  (The 'FromJSON' @k@ instance
-    would only be used if the id were passed in the JSON request
-    body, which it shouldn't be.)  The request body, when needed,
-    is interpreted via 'body'.
+    'BasedToJSON' @v@.  The @/id/@ parameter is interpreted via the
+    instance 'Parsable' @k@.  (The 'FromJSON' @k@ instance would only
+    be used if the id were passed in the JSON request body, which it
+    shouldn't be.)  The request body, when needed, is interpreted via
+    'body'.
 -}
 webdb :: ( NamedResource k, DB k v u IO d
          , Parsable k, FromJSON k
