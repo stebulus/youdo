@@ -61,8 +61,6 @@ instance FromJSON YoudoID where
     parseJSON x = YoudoID <$> parseJSON x
 instance Parsable YoudoID where
     parseParam x = YoudoID <$> parseParam x
-instance FromParam Int YoudoID where
-    fromParam = YoudoID
 
 data YoudoData = YoudoData { assignerid :: UserID
                            , assigneeid :: UserID
@@ -129,8 +127,6 @@ instance FromJSON UserID where
     parseJSON x = UserID <$> parseJSON x
 instance Parsable UserID where
     parseParam x = UserID <$> parseParam x
-instance FromParam Int UserID where
-    fromParam = UserID
 
 basedIDFromJSON :: Value -> URI -> Parser Int
 basedIDFromJSON (String txt) base =

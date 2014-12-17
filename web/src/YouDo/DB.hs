@@ -119,7 +119,6 @@ class Updater u a where
 -}
 webdb :: ( NamedResource k, DB k v u IO d
          , Parsable k, FromJSON k
-         , FromParam p k
          , Show k, BasedToJSON v
          , RequestParsable v
          , RequestParsable u
@@ -240,8 +239,6 @@ instance Parsable TransactionID where
     parseParam x = TransactionID <$> parseParam x
 instance FromJSON TransactionID where
     parseJSON x = TransactionID <$> parseJSON x
-instance FromParam Int TransactionID where
-    fromParam = TransactionID
 
 {- |
     @r@ represents the result of a 'DB' operation which was supposed

@@ -12,7 +12,7 @@ module YouDo.Web (
     -- * Base URIs
     BasedToJSON(..), BasedFromJSON(..), BasedParsable(..), basedjson,
     -- * Interpreting requests
-    capture, FromParam(..),
+    capture,
     body, fromRequestBody, RequestParser, parse, ParamValue(..), requestData,
     EvaluationError(..), defaultTo, optional,
     RequestParsable(..),
@@ -89,19 +89,10 @@ resource route acts =
     sense because presumably an URL that doesn't parse according to
     the server's expectations doesn't denote any existing resource.
 -}
-capture :: (FromParam a b, MonadTrans t)
+capture :: (Parsable a, MonadTrans t)
         => LT.Text                -- ^The name of the capture.
-        -> t ActionStatusM b      -- ^The action to get its value.
-capture k = lift $ lift500 $ fromParam <$> param k
-
--- | How to convert a Scotty capture to type b.
--- There is no provision for failure; report failures in the
--- methods of the underlying 'Parsable' instance.
--- (This typeclass exists for parsing captures, as distinct
--- from parsing form data payload; it will disappear when
--- BasedParsable is used by 'body'.)
-class (Parsable a) => FromParam a b | b->a where
-    fromParam :: a->b
+        -> t ActionStatusM a      -- ^The action to get its value.
+capture k = lift $ lift500 $ param k
 
 -- | Like 'Scotty.json', but for based representations.
 basedjson :: BasedToJSON a => a -> URI -> ActionM ()
