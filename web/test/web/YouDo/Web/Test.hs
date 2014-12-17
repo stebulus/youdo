@@ -5,7 +5,6 @@ import Control.Applicative ((<$>), (<*>))
 import Control.Concurrent.MVar (newEmptyMVar, newMVar, takeMVar, putMVar,
     modifyMVar_, modifyMVar)
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad.Reader (ReaderT(..))
 import Control.Monad.Trans.Either (EitherT(..), left, right, hoistEither)
 import Data.Aeson (eitherDecode, Object, Value(..), parseJSON)
 import Data.Aeson.Types (parseEither)
@@ -34,7 +33,7 @@ import YouDo.Holes
 import YouDo.Test (plainTest)
 import YouDo.Types (DueDate, UserID(..))
 import YouDo.Web (ParamValue(..), parse, EvaluationError(..), Constructor,
-    at, BasedFromJSON(..), BasedParsable(..))
+    BasedFromJSON(..), BasedParsable(..))
 import YouDo.WebApp (app)
 
 tests :: IO [Test]
@@ -304,12 +303,11 @@ tests = return $
                , ( "not even an URL", "grar", Left "invalid URL" )
                ]
         (fname, f) <- [ ( "BasedFromJSON", \s ->
-                            parseEither (`at` baseuri)
-                                        (basedParseJSON (String s)) )
+                            parseEither (flip basedParseJSON baseuri) (String s) )
                       , ( "BasedParsable", \s ->
                             either (Left . LT.unpack)
                                    Right
-                                   $ basedParseParam (LT.fromStrict s) `at` baseuri
+                                   $ basedParseParam (LT.fromStrict s) baseuri
                             )
                       ]
         return $ plainTest ("UserID from URL, " ++ dataname ++ ", " ++ fname)
@@ -353,8 +351,7 @@ serverTest testName f = Test $ TestInstance
         db <- empty
         mv <- newMVar ()
         waiApp <- scottyApp
-                  $ runReaderT (app db mv)
-                  $ (fromJust $ parseURI "http://example.com")
+                  $ app db mv $ fromJust $ parseURI "http://example.com"
         result <- runEitherT $ f $ request waiApp
         return $ Finished $ case result of
             Left msg -> Fail msg

@@ -24,10 +24,7 @@ module YouDo.DB (
 
 import Control.Applicative (Applicative(..), (<$>), (<*>))
 import Control.Concurrent.MVar
-import Control.Monad (liftM)
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad.Reader (ask, mapReaderT)
-import Control.Monad.Trans (lift)
 import Data.Aeson (FromJSON(..), (.=), Value(..))
 import qualified Data.HashMap.Strict as M
 import Data.List (foldl', intercalate)
@@ -37,7 +34,7 @@ import Database.PostgreSQL.Simple.FromField (FromField(..))
 import Network.HTTP.Types (ok200, created201, notFound404,
     conflict409, internalServerError500, StdMethod(..))
 import Network.URI
-import Web.Scotty (Parsable(..), ScottyM)
+import Web.Scotty (Parsable(..), ScottyM, status, setHeader, text)
 
 import YouDo.Web
 
@@ -125,24 +122,29 @@ webdb :: ( NamedResource k, DB k v u IO d
          , Constructible (RequestParser u)
          ) => MVar ()     -- ^All database access is under this MVar.
          -> d           -- ^The database.
-         -> Based ScottyM ()
-webdb mv db = do
+         -> URI           -- ^The base URI.
+         -> ScottyM ()
+webdb mv db base = do
     let rtype = dbResourceName db
-        dodb m = report =<< liftIO =<< lock <$> (m <*> pure db)
+        dodb m base' = flip report base' =<< liftIO =<< lock <$> (m <*> pure db)
         lock a = withMVar mv $ const a
     resource rtype
              [ (GET, dodb $ pure getAll)
-             , (POST, dodb $ create <$> body)
+             , (POST, dodb $ create <$> body base)
              ]
+             base
     resource (rtype ++ "/:id/")
-             [ (GET, dodb $ get <$> capture "id") ]
+             [ (GET, dodb $ get <$> capture "id" base) ]
+             base
     resource (rtype ++ "/:id/versions")
-             [ (GET, dodb $ getVersions <$> capture "id") ]
-    resource (rtype ++ "/:id/:txnid") $
-             let verid = VersionedID <$> capture "id" <*> capture "txnid"
+             [ (GET, dodb $ getVersions <$> capture "id" base) ]
+             base
+    resource (rtype ++ "/:id/:txnid")
+             (let verid = VersionedID <$> capture "id" base <*> capture "txnid" base
              in [ (GET, dodb $ getVersion <$> verid)
-                , (POST, dodb $ update <$> (Versioned <$> verid <*> body))
-                ]
+                , (POST, dodb $ update <$> (Versioned <$> verid <*> body base))
+                ])
+             base
 
 {- |
     Class for types that have a name.  Minimum implementation:
@@ -160,39 +162,34 @@ webdb mv db = do
 -}
 class (Show a) => NamedResource a where
     resourceName :: Maybe a -> String
-    resourceBaseURL :: (Monad m) => Maybe a -> Based m URI
-    resourceBaseURL x = namedResourceURL [ resourceName x
-                                         ,""
-                                         ]
-    resourceURL :: (Monad m) => a -> Based m URI
-    resourceURL x = namedResourceURL [ resourceName (Just x)
-                                     , show x
-                                     , ""
-                                     ]
-    resourceVersionURL :: (Monad m) => VersionedID a -> Based m URI
-    resourceVersionURL x = namedResourceURL [ resourceName (Just (thingid x))
-                                            , show (thingid x)
-                                            , show (txnid x)
-                                            ]
+    resourceBaseURL :: Maybe a -> URI -> URI
+    resourceBaseURL x base = namedResourceURL [ resourceName x
+                                              , ""
+                                              ] base
+    resourceURL :: a -> URI -> URI
+    resourceURL x base = namedResourceURL [ resourceName (Just x)
+                                          , show x
+                                          , ""
+                                          ] base
+    resourceVersionURL :: VersionedID a -> URI -> URI
+    resourceVersionURL x base = namedResourceURL [ resourceName (Just (thingid x))
+                                                 , show (thingid x)
+                                                 , show (txnid x)
+                                                 ] base
 
-namedResourceURL :: (Monad m) => [String] -> Based m URI
-namedResourceURL xs = relativeToBase $ intercalate "/" (".":xs)
-
-relativeToBase :: (Monad m) => String -> Based m URI
-relativeToBase uri = do
-    baseuri <- ask
-    return $ uri `relative` baseuri
+namedResourceURL :: [String] -> URI -> URI
+namedResourceURL xs base = intercalate "/" (".":xs) `relative` base
 
 jsonurl :: URI -> Value
 jsonurl = String . ST.pack . show
 
 -- | The URL for a 'NamedResource' object, as a JSON 'Value'.
-idjson :: (Show k, NamedResource k, Monad m) => k -> Based m Value
-idjson k = liftM jsonurl $ resourceURL k
+idjson :: (Show k, NamedResource k) => k -> URI -> Value
+idjson k base = jsonurl $ resourceURL k base
 
 -- | The URL for a specific version of a 'NamedResource' object, as a JSON 'Value'.
-veridjson :: (Show k, NamedResource k, Monad m) => VersionedID k -> Based m Value
-veridjson k = liftM jsonurl $ resourceVersionURL k
+veridjson :: (Show k, NamedResource k) => VersionedID k -> URI -> Value
+veridjson k base = jsonurl $ resourceVersionURL k base
 
 {- |
     An identifier of a version of a thing, as was produced in a
@@ -284,15 +281,15 @@ instance Result (GetResult a) a where
     success x = Right $ Right x
 
 instance (BasedToJSON a) => WebResult (GetResult a) where
-    report (Right (Right a)) =
-        mapReaderT lift500 $ do
+    report (Right (Right a)) base =
+        lift500 $ do
             status ok200  -- http://tools.ietf.org/html/rfc2616#section-10.2.1
-            json a
-    report (Left NotFound) =
-        mapReaderT lift500 $
+            basedjson a base
+    report (Left NotFound) _ =
+        lift500 $
             status notFound404  -- http://tools.ietf.org/html/rfc2616#section-10.4.5
-    report (Right (Left msg)) =
-        mapReaderT lift500 $ do
+    report (Right (Left msg)) _ =
+        lift500 $ do
             status internalServerError500  -- http://tools.ietf.org/html/rfc2616#section-10.5.1
             text msg
 
@@ -320,17 +317,16 @@ newerVersion x = Left $ NewerVersion x
 
 instance (BasedToJSON b, NamedResource k, Show k, BasedToJSON v)
          => WebResult (UpdateResult b (Versioned k v)) where
-    report (Right (Right (Right a))) =
-        mapReaderT lift500 $ do
+    report (Right (Right (Right a))) base =
+        lift500 $ do
             status created201  -- http://tools.ietf.org/html/rfc2616#section-10.2.2
-            url <- resourceVersionURL $ version a
-            setHeader "Location" $ LT.pack $ show $ url
-            json a
-    report (Left (NewerVersion b)) =
-        mapReaderT lift500 $ do
+            setHeader "Location" $ LT.pack $ show $ resourceVersionURL (version a) base
+            basedjson a base
+    report (Left (NewerVersion b)) base =
+        lift500 $ do
             status conflict409  -- http://tools.ietf.org/html/rfc2616#section-10.4.10
-            json b
-    report (Right gr) = report gr
+            basedjson b base
+    report (Right gr) base = report gr base
 
 {- |
     Result of a 'DB' create operation.  The data supplied describes
@@ -348,15 +344,14 @@ invalidObject errs = Left $ InvalidObject errs
 
 instance (NamedResource k, Show k, BasedToJSON v)
          => WebResult (CreateResult (Versioned k v)) where
-    report (Right (Right (Right a))) =
-        mapReaderT lift500 $ do
+    report (Right (Right (Right a))) base =
+        lift500 $ do
            status created201  -- http://tools.ietf.org/html/rfc2616#section-10.2.2
-           url <- resourceURL $ thingid $ version a
-           setHeader "Location" $ LT.pack $ show $ url
-           json a
-    report (Left (InvalidObject msgs)) =
-        lift $ badRequest $ LT.concat [ LT.concat [msg, "\r\n"] | msg<-msgs ]
-    report (Right gr) = report gr
+           setHeader "Location" $ LT.pack $ show $ resourceURL (thingid (version a)) base
+           basedjson a base
+    report (Left (InvalidObject msgs)) _ =
+        badRequest $ LT.concat [ LT.concat [msg, "\r\n"] | msg<-msgs ]
+    report (Right gr) base = report gr base
 
 {- |
     Make a result of the contents of a singleton list.

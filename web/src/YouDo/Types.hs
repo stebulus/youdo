@@ -3,8 +3,6 @@
 module YouDo.Types where
 
 import Control.Applicative ((<$>), (<*>), Applicative(..))
-import Control.Monad.Reader (ask, local, mapReaderT)
-import Control.Monad.Trans.Class (lift)
 import Data.Aeson (ToJSON(..), FromJSON(..), (.=), object, Value(..))
 import Data.Aeson.Types (typeMismatch, Parser)
 import Data.Maybe (fromMaybe)
@@ -13,7 +11,7 @@ import Data.Time (UTCTime)
 import Database.PostgreSQL.Simple.FromField (FromField(..))
 import Database.PostgreSQL.Simple.FromRow (FromRow(..), field)
 import Database.PostgreSQL.Simple.ToField (ToField(..))
-import Network.URI (parseURI, relativeFrom)
+import Network.URI (parseURI, relativeFrom, URI)
 import Web.Scotty (Parsable(..))
 
 import YouDo.DB
@@ -48,13 +46,13 @@ instance Show YoudoID where
 instance BasedToJSON YoudoID where
     basedToJSON = idjson
 instance BasedFromJSON YoudoID where
-    basedParseJSON val = do
-        resourcebase <- resourceBaseURL (Nothing :: Maybe YoudoID)
-        fmap YoudoID $ local (const resourcebase) $ basedIDFromJSON val
+    basedParseJSON val base =
+        fmap YoudoID $ basedIDFromJSON val resourcebase
+        where resourcebase = resourceBaseURL (Nothing :: Maybe YoudoID) base
 instance BasedParsable YoudoID where
-    basedParseParam txt = do
-        resourcebase <- resourceBaseURL (Nothing :: Maybe YoudoID)
-        fmap YoudoID $ local (const resourcebase) $ basedIDFromText txt
+    basedParseParam txt base =
+        fmap YoudoID $ basedIDFromText txt resourcebase
+        where resourcebase = resourceBaseURL (Nothing :: Maybe YoudoID) base
 instance FromField YoudoID where
     fromField fld = (fmap.fmap) YoudoID $ fromField fld
 instance ToField YoudoID where
@@ -118,13 +116,13 @@ instance Show UserID where
 instance BasedToJSON UserID where
     basedToJSON = idjson
 instance BasedFromJSON UserID where
-    basedParseJSON val = do
-        resourcebase <- resourceBaseURL (Nothing :: Maybe UserID)
-        fmap UserID $ local (const resourcebase) $ basedIDFromJSON val
+    basedParseJSON val base = do
+        fmap UserID $ basedIDFromJSON val resourcebase
+        where resourcebase = resourceBaseURL (Nothing :: Maybe UserID) base
 instance BasedParsable UserID where
-    basedParseParam txt = do
-        resourcebase <- resourceBaseURL (Nothing :: Maybe UserID)
-        fmap UserID $ local (const resourcebase) $ basedIDFromText txt
+    basedParseParam txt base =
+        fmap UserID $ basedIDFromText txt resourcebase
+        where resourcebase = resourceBaseURL (Nothing :: Maybe UserID) base
 instance FromField UserID where
     fromField fld = (fmap.fmap) UserID $ fromField fld
 instance ToField UserID where
@@ -138,22 +136,20 @@ instance FromParam Int UserID where
 instance (Constructor f) => Constructible (f UserID) where
     construct = UserID <$> parse "id"
 
-basedIDFromJSON :: Value -> Based Parser Int
-basedIDFromJSON (String txt) =
-    mapReaderT eithToParser $ basedIDFromText $ LT.fromStrict txt
-    where eithToParser (Left msg) = fail $ LT.unpack msg
-          eithToParser (Right n) = return n
-basedIDFromJSON val = lift $ typeMismatch "ID URL" val
+basedIDFromJSON :: Value -> URI -> Parser Int
+basedIDFromJSON (String txt) base =
+    case basedIDFromText (LT.fromStrict txt) base of
+        Left msg -> fail $ LT.unpack msg
+        Right n -> return n
+basedIDFromJSON val _ = typeMismatch "ID URL" val
 
-basedIDFromText :: LT.Text -> Based (Either LT.Text) Int
-basedIDFromText txt = do
-    resourcebase <- ask
-    lift $ do
-        uri <- maybe (Left "invalid URL") Right $ parseURI (LT.unpack txt)
-        case reads $ show $ uri `relativeFrom` resourcebase of
-            (n,""):_ -> Right n
-            (n,"/"):_ -> Right n
-            _ -> Left "invalid ID"
+basedIDFromText :: LT.Text -> URI -> Either LT.Text Int
+basedIDFromText txt base = do
+    uri <- maybe (Left "invalid URL") Right $ parseURI (LT.unpack txt)
+    case reads $ show $ uri `relativeFrom` base of
+        (n,""):_ -> Right n
+        (n,"/"):_ -> Right n
+        _ -> Left "invalid ID"
 
 data UserData = UserData { name :: String }
     deriving (Show, Eq)

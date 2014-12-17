@@ -15,7 +15,6 @@ module YouDo.WebApp (
 import Control.Applicative
 import Control.Concurrent.MVar
 import Control.Exception (bracket)
-import Control.Monad.Reader.Class (local)
 import Data.ByteString.Char8 (pack)
 import Data.Default
 import Data.Monoid ((<>))
@@ -38,11 +37,13 @@ app :: ( DB YoudoID YoudoData YoudoUpdate IO ydb
        , DB UserID UserData UserUpdate IO udb
        ) => YoudoDatabase ydb udb     -- ^The database.
        -> MVar ()       -- ^All database access is under this MVar.
-       -> Based ScottyM ()
-app db mv =
-    local ("./0/" `relative`) $ do
-        webdb mv (youdos db)
-        webdb mv (users db)
+       -> URI           -- ^The base URI.
+       -> ScottyM ()
+app db mv base =
+    let api0base = "./0/" `relative` base
+    in do
+        webdb mv (youdos db) api0base
+        webdb mv (users db) api0base
 
 -- | The kind of database to connect to.
 data DBOption = InMemory            -- ^A transient in-memory database; see "YouDo.DB.Memory"
@@ -90,7 +91,7 @@ mainOpts opts = do
                                           $ setHost "127.0.0.1"  -- for now
                                           $ defaultSettings
                                }
-        runApp db mv = scotty $ app db mv `at` baseuri
+        runApp db mv = scotty $ app db mv baseuri
         p = port opts
     mv <- newMVar ()
     case dbopt opts of

@@ -10,8 +10,8 @@ module YouDo.Web (
     -- * Resources as bundles of operations
     resource,
     -- * Base URIs
-    Based, at, BasedToJSON(..), BasedFromJSON(..), BasedParsable(..),
-    json, text, status, setHeader, relative,
+    BasedToJSON(..), BasedFromJSON(..), BasedParsable(..),
+    basedjson, relative,
     -- * Interpreting requests
     capture, FromParam(..),
     body, fromRequestBody, RequestParser, parse, ParamValue(..), requestData,
@@ -27,11 +27,7 @@ module YouDo.Web (
 import Codec.MIME.Type (mimeType, MIMEType(Application))
 import Codec.MIME.Parse (parseMIMEType)
 import Control.Applicative ((<$>), Applicative(..))
-import Control.Monad (liftM)
 import Control.Monad.Error (mapErrorT, throwError)
-import Control.Monad.Reader (ReaderT(..), mapReaderT)
-import Control.Monad.Reader.Class (MonadReader(..))
-import Control.Monad.Trans.Class (lift)
 import Data.Aeson (ToJSON(..), FromJSON(..), Value(..))
 import qualified Data.Aeson as A
 import qualified Data.Aeson.Types as A
@@ -43,7 +39,7 @@ import Network.HTTP.Types (badRequest400, methodNotAllowed405,
     unsupportedMediaType415, internalServerError500, Status, StdMethod(..))
 import Network.URI (URI(..), relativeTo, nullURI)
 import Web.Scotty (ScottyM, matchAny, header, addroute, param, params,
-    ActionM, Parsable(..))
+    ActionM, Parsable(..), status, setHeader)
 import qualified Web.Scotty as Scotty
 import Web.Scotty.Internal.Types (ActionT(..), ActionError(..),
     ScottyError(..))
@@ -56,16 +52,17 @@ import YouDo.Holes
 -- given list.  (Scotty's default is 404 (Not Found), which is less
 -- appropriate.)
 resource :: String                  -- ^Route to this resource, relative to the base.
-            -> [(StdMethod, Based ActionStatusM ())]    -- ^Allowed methods and their actions.
-            -> Based ScottyM ()
-resource route acts =
+            -> [(StdMethod, URI -> ActionStatusM ())]
+                                    -- ^Allowed methods and their actions.
+            -> URI
+            -> ScottyM ()
+resource route acts base =
     let allowedMethods = intercalate "," $ map (show . fst) acts
     in do
-        baseuri <- ask
-        let path = fromString $ uriPath $ route `relative` baseuri
-        sequence_ [ mapReaderT (addroute method path . statusErrors) act
+        let path = fromString $ uriPath $ route `relative` base
+        sequence_ [ addroute method path $ statusErrors $ act base
                   | (method, act) <- acts ]
-        mapReaderT (matchAny path) $ do
+        matchAny path $ do
             status methodNotAllowed405  -- http://tools.ietf.org/html/rfc2616#section-10.4.6
             setHeader "Allow" $ LT.pack allowedMethods
 
@@ -79,37 +76,16 @@ resource route acts =
     the route pattern that declares the relevant captures, so there's
     little room for error.  (See 'YouDo.DB.webdb', for example.)
 -}
-capture :: (FromParam a b) => LT.Text -> Based ActionStatusM b
-capture k = lift $ lift500 $ fromParam <$> param k
+capture :: (FromParam a b) => LT.Text -> URI -> ActionStatusM b
+capture k _ = lift500 $ fromParam <$> param k
 
 -- | How to convert a Scotty capture to type b.
 class (Parsable a) => FromParam a b | b->a where
     fromParam :: a->b
 
--- | Monad transformer for managing a base URI.
-type Based = ReaderT URI
-
--- | Run a @Based@ with the given base URI.
-at :: Based m a -> URI -> m a
-at bma u = runReaderT bma u
-
 -- | Like 'Scotty.json', but for based representations.
-json :: BasedToJSON a => a -> Based ActionM ()
-json x = do
-    val <- basedToJSON x
-    lift $ Scotty.json val
-
--- | Lifted version of 'Scotty.text'.
-text :: LT.Text -> Based ActionM ()
-text = lift . Scotty.text
-
--- | Lifted version of 'Scotty.status'.
-status :: Status -> Based ActionM ()
-status = lift . Scotty.status
-
--- | Lifted version of 'Scotty.setHeader'.
-setHeader :: LT.Text -> LT.Text -> Based ActionM ()
-setHeader h v = lift $ Scotty.setHeader h v
+basedjson :: BasedToJSON a => a -> URI -> ActionM ()
+basedjson x uri = Scotty.json $ basedToJSON x uri
 
 -- | Dereference a relative URI path.  Usually used infix.
 relative :: String      -- ^The path.
@@ -120,21 +96,22 @@ relative s u = nullURI { uriPath = s } `relativeTo` u
 -- | A value that can be reported to a web client.
 class WebResult r where
     report :: r                           -- ^The value to report.
-              -> Based ActionStatusM ()   -- ^An action that reports that value.
+              -> URI                      -- ^The base URI.
+              -> ActionStatusM ()         -- ^An action that reports that value.
 
 -- | A value that can be serialized as JSON, respecting a base URI.
 class BasedToJSON a where
-    basedToJSON :: (Monad m) => a -> Based m Value
+    basedToJSON :: a -> URI -> Value
 instance BasedToJSON a => BasedToJSON [a] where
-    basedToJSON xs = liftM toJSON $ sequence $ map basedToJSON xs
+    basedToJSON xs base = toJSON $ map (flip basedToJSON base) xs
 
 -- | A value that can be deserialized from JSON, respecting a base URI.
 class BasedFromJSON a where
-    basedParseJSON :: Value -> Based A.Parser a
+    basedParseJSON :: Value -> URI -> A.Parser a
 
 -- | A value that can be deserialized from a Scotty param, respecting a base URI.
 class BasedParsable a where
-    basedParseParam :: LT.Text -> Based (Either LT.Text) a
+    basedParseParam :: LT.Text -> URI -> Either LT.Text a
 
 type ActionStatusM = ActionT ErrorWithStatus IO
 
@@ -215,8 +192,8 @@ lift500 = failWith internalServerError500
     If an error occurs parsing the request, a 400 (Bad Request)
     response is thrown.
 -}
-body :: (Constructible (RequestParser a)) => Based ActionStatusM a
-body = lift $ fromRequestBody construct
+body :: (Constructible (RequestParser a)) => URI -> ActionStatusM a
+body base = fromRequestBody construct base
 
 {- |
     Use the given 'RequestParser' to interpret the data in the HTTP
@@ -226,8 +203,8 @@ body = lift $ fromRequestBody construct
     If an error occurs parsing the request, a 400 (Bad Request)
     response is thrown.
 -}
-fromRequestBody :: RequestParser a -> ActionStatusM a
-fromRequestBody expr = do
+fromRequestBody :: RequestParser a -> URI -> ActionStatusM a
+fromRequestBody expr _ = do
     kvs <- requestData
     case evaluateE expr kvs of
         Left errs -> badRequest $ showEvaluationErrors errs
