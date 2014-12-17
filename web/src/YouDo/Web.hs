@@ -114,21 +114,29 @@ instance BasedToJSON a => BasedToJSON [a] where
 class BasedFromJSON a where
     basedParseJSON :: Value -> URI -> A.Parser a
 instance BasedFromJSON String where
-    basedParseJSON = flip $ const A.parseJSON
+    basedParseJSON = ignoreBaseInJSON
 instance BasedFromJSON Int where
-    basedParseJSON = flip $ const A.parseJSON
+    basedParseJSON = ignoreBaseInJSON
 instance BasedFromJSON Bool where
-    basedParseJSON = flip $ const A.parseJSON
+    basedParseJSON = ignoreBaseInJSON
+
+-- | Implementation of 'basedParseJSON' for types that don't care about the URI.
+ignoreBaseInJSON :: (A.FromJSON a) => Value -> URI -> A.Parser a
+ignoreBaseInJSON v _ = A.parseJSON v
 
 -- | A value that can be deserialized from a Scotty param, respecting a base URI.
 class BasedParsable a where
     basedParseParam :: LT.Text -> URI -> Either LT.Text a
 instance BasedParsable String where
-    basedParseParam = flip $ const parseParam
+    basedParseParam = ignoreBaseInParam
 instance BasedParsable Int where
-    basedParseParam = flip $ const parseParam
+    basedParseParam = ignoreBaseInParam
 instance BasedParsable Bool where
-    basedParseParam = flip $ const parseParam
+    basedParseParam = ignoreBaseInParam
+
+-- | Implementation of 'basedParseParam' for types that don't care about the URI.
+ignoreBaseInParam :: (Parsable a) => LT.Text -> URI -> Either LT.Text a
+ignoreBaseInParam t _ = parseParam t
 
 type ActionStatusM = ActionT ErrorWithStatus IO
 
