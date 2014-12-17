@@ -66,16 +66,16 @@ instance RequestParsable YoudoData where
                          <*> parse "duedate" `defaultTo` DueDate Nothing
                          <*> parse "completed" `defaultTo` False
 instance BasedToJSON YoudoData where
-    basedToJSON yd = do
-        assigner <- basedToJSON $ assignerid yd
-        assignee <- basedToJSON $ assigneeid yd
-        return $ object
+    basedToJSON yd base =
+        object
             [ "assigner" .= assigner
             , "assignee" .= assignee
             , "description" .= description yd
             , "duedate" .= duedate yd
             , "completed" .= completed yd
             ]
+        where assigner = basedToJSON (assignerid yd) base
+              assignee = basedToJSON (assigneeid yd) base
 
 data YoudoUpdate = YoudoUpdate { newAssignerid :: Maybe UserID
                                , newAssigneeid :: Maybe UserID
@@ -134,7 +134,7 @@ data UserData = UserData { name :: String }
 instance RequestParsable UserData where
     template = UserData <$> parse "name"
 instance BasedToJSON UserData where
-    basedToJSON yduser = return $ object [ "name" .= name yduser ]
+    basedToJSON yduser _ = object [ "name" .= name yduser ]
 
 data UserUpdate = UserUpdate { newName :: Maybe String } deriving (Show, Eq)
 instance RequestParsable UserUpdate where

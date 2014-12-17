@@ -216,18 +216,17 @@ instance (RequestParsable (VersionedID a), RequestParsable b)
 -- with @"url"@ and @"thisVersion"@ fields.
 instance (Show k, NamedResource k, BasedToJSON v)
          => BasedToJSON (Versioned k v) where
-    basedToJSON v = do
-        objurl <- resourceURL $ thingid $ version v
-        verurl <- resourceVersionURL $ version v
-        origval <- basedToJSON $ thing v
-        let origmap = case origval of
-                Object m -> m
-                _ -> error "data did not encode as JSON object"
-            augmentedmap = foldl' (flip (uncurry M.insert)) origmap
-                [ "url" .= show objurl
-                , "thisVersion" .= show verurl
-                ]
-        return $ Object augmentedmap
+    basedToJSON v base = Object augmentedmap
+        where augmentedmap = foldl' (flip (uncurry M.insert)) origmap
+                    [ "url" .= show objurl
+                    , "thisVersion" .= show verurl
+                    ]
+              origmap = case origval of
+                    Object m -> m
+                    _ -> error "data did not encode as JSON object"
+              origval = basedToJSON (thing v) base
+              objurl = resourceURL (thingid (version v)) base
+              verurl = resourceVersionURL (version v) base
 
 -- | Transaction identifier.
 newtype TransactionID = TransactionID Int deriving (Eq)
