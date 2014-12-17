@@ -29,6 +29,7 @@ import Control.Monad.Reader (ReaderT(..))
 import Data.Aeson (FromJSON(..), (.=), Value(..))
 import qualified Data.HashMap.Strict as M
 import Data.List (foldl', intercalate)
+import Data.String (fromString)
 import qualified Data.Text as ST
 import qualified Data.Text.Lazy as LT
 import Database.PostgreSQL.Simple.FromField (FromField(..))
@@ -130,23 +131,20 @@ webdb mv db base = do
         dodb m = flip report base =<< liftIO =<< lock <$>
                         (runReaderT m base <*> pure db)
         lock a = withMVar mv $ const a
-    resource rtype
+        route s = fromString $ uriPath $ (rtype ++ s) `relative` base
+    resource (route "")
              [ (GET, dodb $ pure getAll)
              , (POST, dodb $ create <$> body)
              ]
-             base
-    resource (rtype ++ "/:id/")
+    resource (route "/:id/")
              [ (GET, dodb $ get <$> capture "id") ]
-             base
-    resource (rtype ++ "/:id/versions")
+    resource (route "/:id/versions")
              [ (GET, dodb $ getVersions <$> capture "id") ]
-             base
-    resource (rtype ++ "/:id/:txnid")
-             (let verid = VersionedID <$> capture "id" <*> capture "txnid"
+    resource (route "/:id/:txnid") $
+             let verid = VersionedID <$> capture "id" <*> capture "txnid"
              in [ (GET, dodb $ getVersion <$> verid)
                 , (POST, dodb $ update <$> (Versioned <$> verid <*> body))
-                ])
-             base
+                ]
 
 {- |
     Class for types that have a name.  Minimum implementation:

@@ -35,13 +35,12 @@ import qualified Data.Aeson as A
 import qualified Data.Aeson.Types as A
 import qualified Data.HashMap.Strict as M
 import Data.List (intercalate)
-import Data.String (IsString(..))
 import qualified Data.Text.Lazy as LT
 import Network.HTTP.Types (badRequest400, methodNotAllowed405,
     unsupportedMediaType415, internalServerError500, Status, StdMethod(..))
 import Network.URI (URI(..), relativeTo, nullURI)
 import Web.Scotty (ScottyM, matchAny, header, addroute, param, params,
-    ActionM, Parsable(..), status, setHeader)
+    ActionM, Parsable(..), status, setHeader, RoutePattern)
 import qualified Web.Scotty as Scotty
 import Web.Scotty.Internal.Types (ActionT(..), ActionError(..),
     ScottyError(..))
@@ -53,18 +52,16 @@ import YouDo.Holes
 -- response when a request uses a method which is not in the
 -- given list.  (Scotty's default is 404 (Not Found), which is less
 -- appropriate.)
-resource :: String                  -- ^Route to this resource, relative to the base.
+resource :: RoutePattern            -- ^Route to this resource.
             -> [(StdMethod, ActionStatusM ())]
                                     -- ^Allowed methods and their actions.
-            -> URI
             -> ScottyM ()
-resource route acts base =
+resource route acts =
     let allowedMethods = intercalate "," $ map (show . fst) acts
     in do
-        let path = fromString $ uriPath $ route `relative` base
-        sequence_ [ addroute method path $ statusErrors act
+        sequence_ [ addroute method route $ statusErrors act
                   | (method, act) <- acts ]
-        matchAny path $ do
+        matchAny route $ do
             status methodNotAllowed405  -- http://tools.ietf.org/html/rfc2616#section-10.4.6
             setHeader "Allow" $ LT.pack allowedMethods
 
