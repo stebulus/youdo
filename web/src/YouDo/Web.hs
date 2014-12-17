@@ -366,6 +366,22 @@ parse k = throwLeft $ enlist <$> (parseEither k <$> hole k)
     where enlist (Left e) = Left [e]
           enlist (Right a) = Right a
 
+-- | A named hole which parses a 'ParamValue' into the appropriate type.
+-- (Combinator for use in 'construct' implementations.)
+basedParse :: ( Functor f, Monad f
+              , BasedParsable a, BasedFromJSON a
+              , Holes k ParamValue f
+              , Errs [EvaluationError k ParamValue] f
+              )
+           => k -> Based f a
+basedParse k =
+    let enlist (Left e) = Left [e]
+        enlist (Right a) = Right a
+    in do
+        baseuri <- ask
+        lift $ throwLeft $ enlist <$>
+            (`at` baseuri) . basedParseEither k <$> hole k
+
 -- | Parse a 'ParamValue' into the appropriate type.
 parseEither :: (Parsable a, FromJSON a)
             => k -> ParamValue -> Either (EvaluationError k ParamValue) a
@@ -377,6 +393,19 @@ parseEither k x@(JSONField jsonval) =
     case A.parseEither parseJSON jsonval of
         Left err -> Left (ParseError k x (LT.pack err))
         Right val -> Right val
+
+-- | Parse a 'ParamValue' into the appropriate type.
+basedParseEither :: (BasedParsable a, BasedFromJSON a)
+            => k -> ParamValue -> Based (Either (EvaluationError k ParamValue)) a
+basedParseEither k x@(ScottyParam txt) =
+    mapReaderT (either (Left . (ParseError k x)) Right)
+               (basedParseParam txt)
+basedParseEither k x@(JSONField jsonval) =
+    mapReaderT ( (either (Left . (ParseError k x) . LT.pack) Right)
+                 . runJSONParser )
+               $ basedParseJSON jsonval
+    where runJSONParser :: A.Parser a -> Either String a
+          runJSONParser p = A.parseEither (const p) ()
 
 -- | The values obtainable from an HTTP request.
 data ParamValue = ScottyParam LT.Text
