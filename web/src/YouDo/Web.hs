@@ -194,17 +194,13 @@ lift500 = failWith internalServerError500
 
 {- |
     A value of type @a@ is obtained from the HTTP request using the
-    'construct' method of the 'Constructible' instance; usually you
+    'template' method of its 'RequestParsable' instance; usually you
     will have defined an instance like
 
     @
-        instance ('Constructor' f) => 'Constructible' (f MyType) where
-            construct = MyType \<$\> parse \"id\" \<*\> parse \"name\"
+        instance 'RequestParsable' MyType where
+            template = MyType \<$\> parse \"id\" \<*\> parse \"name\"
     @
-
-    because then your construction can be used with any suitable
-    functor @f@.  (For use with @body@, we only need the instance
-    for 'RequestParser', but you might as well write it generically.)
 
     The 'URI' to be supplied to the 'ReaderT' wrapper is the base URI
     of the app (which might affect the interpretation of URLs in the
