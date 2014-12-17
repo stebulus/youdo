@@ -10,12 +10,12 @@ module YouDo.Web (
     -- * Resources as bundles of operations
     resource,
     -- * Base URIs
-    Based, at, BasedToJSON(..), json, text, status, setHeader, relative,
+    BasedToJSON(..), BasedFromJSON(..), BasedParsable(..), basedjson,
     -- * Interpreting requests
-    capture, FromParam(..),
+    capture,
     body, fromRequestBody, RequestParser, parse, ParamValue(..), requestData,
     EvaluationError(..), defaultTo, optional,
-    Constructor, Constructible(..),
+    RequestParsable(..),
     -- * Reporting results
     WebResult(..),
     -- * Error handling and HTTP status
@@ -26,23 +26,20 @@ module YouDo.Web (
 import Codec.MIME.Type (mimeType, MIMEType(Application))
 import Codec.MIME.Parse (parseMIMEType)
 import Control.Applicative ((<$>), Applicative(..))
-import Control.Monad (liftM)
 import Control.Monad.Error (mapErrorT, throwError)
-import Control.Monad.Reader (ReaderT(..), mapReaderT)
-import Control.Monad.Reader.Class (MonadReader(..))
-import Control.Monad.Trans.Class (lift)
-import Data.Aeson (ToJSON(..), FromJSON(..), Value(..))
+import Control.Monad.Reader (ReaderT(..), ask, mapReaderT)
+import Control.Monad.Trans (MonadTrans(..))
+import Data.Aeson (ToJSON(..), Value(..))
 import qualified Data.Aeson as A
 import qualified Data.Aeson.Types as A
 import qualified Data.HashMap.Strict as M
 import Data.List (intercalate)
-import Data.String (IsString(..))
 import qualified Data.Text.Lazy as LT
 import Network.HTTP.Types (badRequest400, methodNotAllowed405,
     unsupportedMediaType415, internalServerError500, Status, StdMethod(..))
-import Network.URI (URI(..), relativeTo, nullURI)
+import Network.URI (URI(..))
 import Web.Scotty (ScottyM, matchAny, header, addroute, param, params,
-    ActionM, Parsable(..))
+    ActionM, Parsable(..), status, setHeader, RoutePattern)
 import qualified Web.Scotty as Scotty
 import Web.Scotty.Internal.Types (ActionT(..), ActionError(..),
     ScottyError(..))
@@ -54,17 +51,16 @@ import YouDo.Holes
 -- response when a request uses a method which is not in the
 -- given list.  (Scotty's default is 404 (Not Found), which is less
 -- appropriate.)
-resource :: String                  -- ^Route to this resource, relative to the base.
-            -> [(StdMethod, Based ActionStatusM ())]    -- ^Allowed methods and their actions.
-            -> Based ScottyM ()
+resource :: RoutePattern            -- ^Route to this resource.
+            -> [(StdMethod, ActionStatusM ())]
+                                    -- ^Allowed methods and their actions.
+            -> ScottyM ()
 resource route acts =
     let allowedMethods = intercalate "," $ map (show . fst) acts
     in do
-        baseuri <- ask
-        let path = fromString $ uriPath $ route `relative` baseuri
-        sequence_ [ mapReaderT (addroute method path . statusErrors) act
+        sequence_ [ addroute method route $ statusErrors act
                   | (method, act) <- acts ]
-        mapReaderT (matchAny path) $ do
+        matchAny route $ do
             status methodNotAllowed405  -- http://tools.ietf.org/html/rfc2616#section-10.4.6
             setHeader "Allow" $ LT.pack allowedMethods
 
@@ -77,55 +73,62 @@ resource route acts =
     not a problem because @capture@ is normally used right next to
     the route pattern that declares the relevant captures, so there's
     little room for error.  (See 'YouDo.DB.webdb', for example.)
+
+    The returned action is wrapped in a 'MonadTrans' for compatibility
+    with other combinators used in request-parsing applicative
+    expressions, such as 'body', which produce values of type 'ReaderT
+    URI ActionStatusM b' to depend on the base URI.  (This one does
+    not actually depend on the base URI.)
+
+    If the capture is not found, @capture@ raises the status HTTP 500
+    (Internal Server Error), because you shouldn't ask for captures
+    that you don't know are there.  If the capture cannot be parsed
+    as type @a@ then 'Scotty.next' is called (as with 'param'); if
+    no other route pattern matches the request (the usual situation)
+    then this will result in an HTTP 404 (Not Found), which makes
+    sense because presumably an URL that doesn't parse according to
+    the server's expectations doesn't denote any existing resource.
 -}
-capture :: (FromParam a b) => LT.Text -> Based ActionStatusM b
-capture k = lift $ lift500 $ fromParam <$> param k
-
--- | How to convert a Scotty capture to type b.
-class (Parsable a) => FromParam a b | b->a where
-    fromParam :: a->b
-
--- | Monad transformer for managing a base URI.
-type Based = ReaderT URI
-
--- | Run a @Based@ with the given base URI.
-at :: Based m a -> URI -> m a
-at bma u = runReaderT bma u
+capture :: (Parsable a, MonadTrans t)
+        => LT.Text                -- ^The name of the capture.
+        -> t ActionStatusM a      -- ^The action to get its value.
+capture k = lift $ lift500 $ param k
 
 -- | Like 'Scotty.json', but for based representations.
-json :: BasedToJSON a => a -> Based ActionM ()
-json x = do
-    val <- basedToJSON x
-    lift $ Scotty.json val
-
--- | Lifted version of 'Scotty.text'.
-text :: LT.Text -> Based ActionM ()
-text = lift . Scotty.text
-
--- | Lifted version of 'Scotty.status'.
-status :: Status -> Based ActionM ()
-status = lift . Scotty.status
-
--- | Lifted version of 'Scotty.setHeader'.
-setHeader :: LT.Text -> LT.Text -> Based ActionM ()
-setHeader h v = lift $ Scotty.setHeader h v
-
--- | Dereference a relative URI path.  Usually used infix.
-relative :: String      -- ^The path.
-            -> URI      -- ^The base URI.
-            -> URI
-relative s u = nullURI { uriPath = s } `relativeTo` u
+basedjson :: BasedToJSON a => a -> URI -> ActionM ()
+basedjson x uri = Scotty.json $ basedToJSON x uri
 
 -- | A value that can be reported to a web client.
 class WebResult r where
-    report :: r                           -- ^The value to report.
-              -> Based ActionStatusM ()   -- ^An action that reports that value.
+    report :: r                     -- ^The value to report.
+           -> URI                   -- ^The base URI.
+           -> ActionStatusM ()      -- ^An action that reports that value.
 
 -- | A value that can be serialized as JSON, respecting a base URI.
 class BasedToJSON a where
-    basedToJSON :: (Monad m) => a -> Based m Value
+    basedToJSON :: a -> URI -> Value
 instance BasedToJSON a => BasedToJSON [a] where
-    basedToJSON xs = liftM toJSON $ sequence $ map basedToJSON xs
+    basedToJSON xs base = toJSON $ map (flip basedToJSON base) xs
+
+-- | A value that can be deserialized from JSON, respecting a base URI.
+class BasedFromJSON a where
+    basedParseJSON :: Value -> URI -> A.Parser a
+instance BasedFromJSON String where
+    basedParseJSON = flip $ const A.parseJSON
+instance BasedFromJSON Int where
+    basedParseJSON = flip $ const A.parseJSON
+instance BasedFromJSON Bool where
+    basedParseJSON = flip $ const A.parseJSON
+
+-- | A value that can be deserialized from a Scotty param, respecting a base URI.
+class BasedParsable a where
+    basedParseParam :: LT.Text -> URI -> Either LT.Text a
+instance BasedParsable String where
+    basedParseParam = flip $ const parseParam
+instance BasedParsable Int where
+    basedParseParam = flip $ const parseParam
+instance BasedParsable Bool where
+    basedParseParam = flip $ const parseParam
 
 type ActionStatusM = ActionT ErrorWithStatus IO
 
@@ -191,23 +194,25 @@ lift500 = failWith internalServerError500
 
 {- |
     A value of type @a@ is obtained from the HTTP request using the
-    'construct' method of the 'Constructible' instance; usually you
+    'template' method of its 'RequestParsable' instance; usually you
     will have defined an instance like
 
     @
-        instance ('Constructor' f) => 'Constructible' (f MyType) where
-            construct = MyType \<$\> parse \"id\" \<*\> parse \"name\"
+        instance 'RequestParsable' MyType where
+            template = MyType \<$\> parse \"id\" \<*\> parse \"name\"
     @
 
-    because then your construction can be used with any suitable
-    functor @f@.  (For use with @body@, we only need the instance
-    for 'RequestParser', but you might as well write it generically.)
+    The 'URI' to be supplied to the 'ReaderT' wrapper is the base URI
+    of the app (which might affect the interpretation of URLs in the
+    body of the request, for example).
 
     If an error occurs parsing the request, a 400 (Bad Request)
     response is thrown.
 -}
-body :: (Constructible (RequestParser a)) => Based ActionStatusM a
-body = lift $ fromRequestBody construct
+body :: (RequestParsable a) => ReaderT URI ActionStatusM a
+body = do
+    base <- ask
+    lift $ fromRequestBody template base
 
 {- |
     Use the given 'RequestParser' to interpret the data in the HTTP
@@ -217,10 +222,10 @@ body = lift $ fromRequestBody construct
     If an error occurs parsing the request, a 400 (Bad Request)
     response is thrown.
 -}
-fromRequestBody :: RequestParser a -> ActionStatusM a
-fromRequestBody expr = do
+fromRequestBody :: RequestParser a -> URI -> ActionStatusM a
+fromRequestBody expr base = do
     kvs <- requestData
-    case evaluateE expr kvs of
+    case evaluateE (runReaderT expr base) kvs of
         Left errs -> badRequest $ showEvaluationErrors errs
         Right a -> return a
 
@@ -260,29 +265,27 @@ requestData = do
     return $ paramdata ++ bodydata
 
 {- |
-    An applicative functor that can construct objects from
-    HTTP request data.
+    An object that can be constructed by a 'RequestParser'.
+    Typically the 'template' method should be implemented as an
+    applicative expression; see the example under 'body'.
+
+    The type signatures here are more general than 'RequestParser',
+    to faciliate future use with other functors, e.g., to generate
+    HTML forms and documentation from the same applicative expression.
 -}
-class ( Applicative f
-      , Holes LT.Text ParamValue f
-      , Errs [EvaluationError LT.Text ParamValue] f
-      )
-     => Constructor f
+class RequestParsable a where
+    template :: ( Applicative f
+                , Holes LT.Text ParamValue (ReaderT URI f)
+                , Errs [EvaluationError LT.Text ParamValue] (ReaderT URI f)
+                )
+             => ReaderT URI f a
 
-instance Constructor RequestParser
-
--- | An object that can be constructed by a 'Constructor'.
--- Typically the 'construct' method should be implemented as an
--- applicative expression; see the example under 'body'.
-class Constructible a where
-    construct :: a
-
--- | Unit can be constructed (as a 'pure' value).
-instance (Applicative f) => Constructible (f ()) where
-    construct = pure ()
-
--- | An error encountered when constructing an object by filling in
--- values for its 'hole's and calling 'evaluateE'.
+{- |
+    An error encountered when evaluating a 'RequestParsable' object
+    by filling in values for its 'hole's and calling 'evaluateE'.
+    (This occurs in 'body', for example, where the values come from
+    the HTTP request body.)
+-}
 data EvaluationError k v
     = MissingKey k             -- ^A hole named @k@ was not filled.
     | UnusedKey k              -- ^A value for a hole named @k@ was given,
@@ -296,7 +299,7 @@ data EvaluationError k v
 -- | If the first argument fails to evaluate due to a single
 -- 'MissingKey' error, replace it with the second argument.
 -- Other error situations are left as is.
--- (Combinator for use in 'construct' implementations.)
+-- (Combinator for use in 'template' implementations.)
 defaultTo :: (Applicative f, Errs [EvaluationError k v] f)
           => f a -> a -> f a
 defaultTo fa d = fa `catch` \es ->
@@ -335,35 +338,47 @@ showEvaluationErrors es = LT.concat [ LT.concat [ showEvaluationError e, "\r\n" 
                                     | e<-es ]
 
 -- | Type synonym for our usual evaluation applicative.
-type RequestParser = EvaluatorE LT.Text ParamValue [EvaluationError LT.Text ParamValue]
+type RequestParser = ReaderT URI
+    (EvaluatorE LT.Text ParamValue [EvaluationError LT.Text ParamValue])
+instance Holes LT.Text ParamValue RequestParser where
+    hole = ReaderT . const . hole
+instance Errs [EvaluationError LT.Text ParamValue] RequestParser where
+    throwLeft = mapReaderT throwLeft
+    catch fa handle = ReaderT $ \uri ->
+        (runReaderT fa uri) `catch` (\e -> runReaderT (handle e) uri)
 
 -- | How to report missing keys in a 'RequestParser'.
 instance MissingKeyError LT.Text [EvaluationError LT.Text ParamValue] where
     missingKeyError k = [MissingKey k]
 
 -- | A named hole which parses a 'ParamValue' into the appropriate type.
--- (Combinator for use in 'construct' implementations.)
+-- (Combinator for use in 'template' implementations.)
 parse :: ( Functor f
-         , Parsable a, FromJSON a
-         , Holes k ParamValue f
-         , Errs [EvaluationError k ParamValue] f
+         , BasedParsable a, BasedFromJSON a
+         , Holes k ParamValue (ReaderT URI f)
+         , Errs [EvaluationError k ParamValue] (ReaderT URI f)
          )
-      => k -> f a
-parse k = throwLeft $ enlist <$> (parseEither k <$> hole k)
-    where enlist (Left e) = Left [e]
-          enlist (Right a) = Right a
+      => k -> ReaderT URI f a
+parse k =
+    let basedParse = flip $ basedParseEither k
+        enlist (Left e) = Left [e]
+        enlist (Right a) = Right a
+    in throwLeft $ enlist <$>
+        (ReaderT $ fmap . basedParse <*> runReaderT (hole k))
 
 -- | Parse a 'ParamValue' into the appropriate type.
-parseEither :: (Parsable a, FromJSON a)
-            => k -> ParamValue -> Either (EvaluationError k ParamValue) a
-parseEither k x@(ScottyParam txt) =
-    case parseParam txt of
-        Left err -> Left (ParseError k x err)
-        Right val -> Right val
-parseEither k x@(JSONField jsonval) =
-    case A.parseEither parseJSON jsonval of
-        Left err -> Left (ParseError k x (LT.pack err))
-        Right val -> Right val
+basedParseEither :: (BasedParsable a, BasedFromJSON a)
+            => k -> ParamValue -> URI -> Either (EvaluationError k ParamValue) a
+basedParseEither k x@(ScottyParam txt) base =
+    case basedParseParam txt base of
+        Left e -> Left $ ParseError k x e
+        Right a -> Right a
+basedParseEither k x@(JSONField jsonval) base =
+    case runJSONParser (basedParseJSON jsonval base) of
+        Left e -> Left $ ParseError k x $ LT.pack e
+        Right a -> Right a
+    where runJSONParser :: A.Parser a -> Either String a
+          runJSONParser p = A.parseEither (const p) ()
 
 -- | The values obtainable from an HTTP request.
 data ParamValue = ScottyParam LT.Text

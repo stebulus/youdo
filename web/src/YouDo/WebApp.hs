@@ -15,12 +15,13 @@ module YouDo.WebApp (
 import Control.Applicative
 import Control.Concurrent.MVar
 import Control.Exception (bracket)
-import Control.Monad.Reader.Class (local)
 import Data.ByteString.Char8 (pack)
 import Data.Default
+import Data.Maybe (fromJust)
 import Data.Monoid ((<>))
 import Database.PostgreSQL.Simple (close, connectPostgreSQL)
-import Network.URI (URI(..), URIAuth(..), nullURI)
+import Network.URI (URI(..), URIAuth(..), nullURI, parseURIReference,
+    relativeTo)
 import Network.Wai.Handler.Warp (setPort, setHost, defaultSettings)
 import Options.Applicative (option, strOption, flag', auto, long, short,
     metavar, help, execParser, Parser, fullDesc, helper, info, header)
@@ -30,7 +31,6 @@ import YouDo.DB
 import YouDo.DB.Memory
 import YouDo.DB.PostgreSQL
 import YouDo.Types
-import YouDo.Web
 
 -- | The Scotty application.
 -- Consists of 'webdb' interfaces for the given Youdo and User DB instances.
@@ -38,11 +38,13 @@ app :: ( DB YoudoID YoudoData YoudoUpdate IO ydb
        , DB UserID UserData UserUpdate IO udb
        ) => YoudoDatabase ydb udb     -- ^The database.
        -> MVar ()       -- ^All database access is under this MVar.
-       -> Based ScottyM ()
-app db mv =
-    local ("./0/" `relative`) $ do
-        webdb mv (youdos db)
-        webdb mv (users db)
+       -> URI           -- ^The base URI.
+       -> ScottyM ()
+app db mv base =
+    let api0base = (fromJust $ parseURIReference $ "./0/") `relativeTo` base
+    in do
+        webdb mv (youdos db) api0base
+        webdb mv (users db) api0base
 
 -- | The kind of database to connect to.
 data DBOption = InMemory            -- ^A transient in-memory database; see "YouDo.DB.Memory"
@@ -90,7 +92,7 @@ mainOpts opts = do
                                           $ setHost "127.0.0.1"  -- for now
                                           $ defaultSettings
                                }
-        runApp db mv = scotty $ app db mv `at` baseuri
+        runApp db mv = scotty $ app db mv baseuri
         p = port opts
     mv <- newMVar ()
     case dbopt opts of

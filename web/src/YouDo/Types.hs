@@ -4,13 +4,14 @@ module YouDo.Types where
 
 import Control.Applicative ((<$>), (<*>), Applicative(..))
 import Data.Aeson (ToJSON(..), FromJSON(..), (.=), object, Value(..))
-import Data.Aeson.Types (typeMismatch)
+import Data.Aeson.Types (typeMismatch, Parser)
 import Data.Maybe (fromMaybe)
 import qualified Data.Text.Lazy as LT
 import Data.Time (UTCTime)
 import Database.PostgreSQL.Simple.FromField (FromField(..))
 import Database.PostgreSQL.Simple.FromRow (FromRow(..), field)
 import Database.PostgreSQL.Simple.ToField (ToField(..))
+import Network.URI (parseURI, relativeFrom, URI)
 import Web.Scotty (Parsable(..))
 
 import YouDo.DB
@@ -44,6 +45,14 @@ instance Show YoudoID where
     show (YoudoID n) = show n
 instance BasedToJSON YoudoID where
     basedToJSON = idjson
+instance BasedFromJSON YoudoID where
+    basedParseJSON val base =
+        fmap YoudoID $ basedIDFromJSON val resourcebase
+        where resourcebase = resourceBaseURL (Nothing :: Maybe YoudoID) base
+instance BasedParsable YoudoID where
+    basedParseParam txt base =
+        fmap YoudoID $ basedIDFromText txt resourcebase
+        where resourcebase = resourceBaseURL (Nothing :: Maybe YoudoID) base
 instance FromField YoudoID where
     fromField fld = (fmap.fmap) YoudoID $ fromField fld
 instance ToField YoudoID where
@@ -52,10 +61,6 @@ instance FromJSON YoudoID where
     parseJSON x = YoudoID <$> parseJSON x
 instance Parsable YoudoID where
     parseParam x = YoudoID <$> parseParam x
-instance FromParam Int YoudoID where
-    fromParam = YoudoID
-instance (Constructor f) => Constructible (f YoudoID) where
-    construct = YoudoID <$> parse "id"
 
 data YoudoData = YoudoData { assignerid :: UserID
                            , assigneeid :: UserID
@@ -63,12 +68,12 @@ data YoudoData = YoudoData { assignerid :: UserID
                            , duedate :: DueDate
                            , completed :: Bool
                            } deriving (Show)
-instance (Constructor f) => Constructible (f YoudoData) where
-    construct = YoudoData <$> parse "assignerid"
-                          <*> parse "assigneeid"
-                          <*> parse "description" `defaultTo` ""
-                          <*> parse "duedate" `defaultTo` DueDate Nothing
-                          <*> parse "completed" `defaultTo` False
+instance RequestParsable YoudoData where
+    template = YoudoData <$> parse "assigner"
+                         <*> parse "assignee"
+                         <*> parse "description" `defaultTo` ""
+                         <*> parse "duedate" `defaultTo` DueDate Nothing
+                         <*> parse "completed" `defaultTo` False
 
 data YoudoUpdate = YoudoUpdate { newAssignerid :: Maybe UserID
                                , newAssigneeid :: Maybe UserID
@@ -76,12 +81,12 @@ data YoudoUpdate = YoudoUpdate { newAssignerid :: Maybe UserID
                                , newDuedate :: Maybe DueDate
                                , newCompleted :: Maybe Bool
                                } deriving (Show)
-instance (Constructor f) => Constructible (f YoudoUpdate) where
-    construct = YoudoUpdate <$> optional (parse "assignerid")
-                            <*> optional (parse "assigneeid")
-                            <*> optional (parse "description")
-                            <*> optional (parse "duedate")
-                            <*> optional (parse "completed")
+instance RequestParsable YoudoUpdate where
+    template = YoudoUpdate <$> optional (parse "assigner")
+                           <*> optional (parse "assignee")
+                           <*> optional (parse "description")
+                           <*> optional (parse "duedate")
+                           <*> optional (parse "completed")
 
 instance Updater YoudoUpdate YoudoData where
     doUpdate upd yd =
@@ -106,6 +111,14 @@ instance Show UserID where
     show (UserID n) = show n
 instance BasedToJSON UserID where
     basedToJSON = idjson
+instance BasedFromJSON UserID where
+    basedParseJSON val base = do
+        fmap UserID $ basedIDFromJSON val resourcebase
+        where resourcebase = resourceBaseURL (Nothing :: Maybe UserID) base
+instance BasedParsable UserID where
+    basedParseParam txt base =
+        fmap UserID $ basedIDFromText txt resourcebase
+        where resourcebase = resourceBaseURL (Nothing :: Maybe UserID) base
 instance FromField UserID where
     fromField fld = (fmap.fmap) UserID $ fromField fld
 instance ToField UserID where
@@ -114,20 +127,31 @@ instance FromJSON UserID where
     parseJSON x = UserID <$> parseJSON x
 instance Parsable UserID where
     parseParam x = UserID <$> parseParam x
-instance FromParam Int UserID where
-    fromParam = UserID
-instance (Constructor f) => Constructible (f UserID) where
-    construct = UserID <$> parse "id"
+
+basedIDFromJSON :: Value -> URI -> Parser Int
+basedIDFromJSON (String txt) base =
+    case basedIDFromText (LT.fromStrict txt) base of
+        Left msg -> fail $ LT.unpack msg
+        Right n -> return n
+basedIDFromJSON val _ = typeMismatch "ID URL" val
+
+basedIDFromText :: LT.Text -> URI -> Either LT.Text Int
+basedIDFromText txt base = do
+    uri <- maybe (Left "invalid URL") Right $ parseURI (LT.unpack txt)
+    case reads $ show $ uri `relativeFrom` base of
+        (n,""):_ -> Right n
+        (n,"/"):_ -> Right n
+        _ -> Left "invalid ID"
 
 data UserData = UserData { name :: String }
     deriving (Show, Eq)
-instance (Constructor f) => Constructible (f UserData) where
-    construct = UserData <$> parse "name"
+instance RequestParsable UserData where
+    template = UserData <$> parse "name"
 
 data UserUpdate = UserUpdate { newName :: Maybe String } deriving (Show, Eq)
 
-instance (Constructor f) => Constructible (f UserUpdate) where
-    construct = UserUpdate <$> optional (parse "name")
+instance RequestParsable UserUpdate where
+    template = UserUpdate <$> optional (parse "name")
 
 instance Updater UserUpdate UserData where
     doUpdate upd u = case newName upd of
@@ -141,6 +165,8 @@ instance Parsable DueDate where
     parseParam t = either (Left . LT.pack)
                           (Right . DueDate . Just)
                           $ parseUTCTime t
+instance BasedParsable DueDate where
+    basedParseParam = flip $ const parseParam
 instance ToJSON DueDate where
     toJSON (DueDate Nothing) = Null
     toJSON (DueDate (Just t)) = toJSON t
@@ -149,6 +175,8 @@ instance FromJSON DueDate where
     parseJSON (String t) = either fail return $
         DueDate . Just <$> parseUTCTime (LT.fromStrict t)
     parseJSON x = typeMismatch "String or Null" x
+instance BasedFromJSON DueDate where
+    basedParseJSON = flip $ const parseJSON
 
 instance FromField DueDate where
     fromField fld = (fmap.fmap) DueDate $ fromField fld

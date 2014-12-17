@@ -5,7 +5,7 @@ import Control.Applicative ((<$>), (<*>))
 import Control.Concurrent.MVar (newEmptyMVar, newMVar, takeMVar, putMVar,
     modifyMVar_, modifyMVar)
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad.Reader (ReaderT(..))
+import Control.Monad.Reader (runReaderT)
 import Control.Monad.Trans.Either (EitherT(..), left, right, hoistEither)
 import Data.Aeson (eitherDecode, Object, Value(..), parseJSON)
 import Data.Aeson.Types (parseEither)
@@ -24,7 +24,7 @@ import Distribution.TestSuite (Test(..), TestInstance(..), Progress(..),
 import Network.HTTP.Types (Status, ResponseHeaders, ok200, created201,
     badRequest400, methodNotAllowed405, http11, methodGet, methodPost,
     methodPut, decodePathSegments, parseQuery, Method)
-import Network.URI (parseURI, URI(..), URIAuth(..))
+import Network.URI (parseURI, URI(..), URIAuth(..), nullURI)
 import Network.Wai (Application, responseToStream, RequestBodyLength(..), requestBody,
     defaultRequest)
 import Network.Wai.Internal (Request(..), ResponseReceived(..))
@@ -32,8 +32,9 @@ import Web.Scotty (scottyApp, parseParam)
 import YouDo.DB.Memory
 import YouDo.Holes
 import YouDo.Test (plainTest)
-import YouDo.Types (DueDate)
-import YouDo.Web (ParamValue(..), parse, EvaluationError(..), Constructor)
+import YouDo.Types (DueDate, UserID(..))
+import YouDo.Web (ParamValue(..), parse, EvaluationError(..),
+    BasedFromJSON(..), BasedParsable(..), RequestParser)
 import YouDo.WebApp (app)
 
 tests :: IO [Test]
@@ -41,7 +42,9 @@ tests = return $
     [ serverTest "new youdo, form data" $ \req -> do
         (stat, headers, _) <- liftIO $ req
             $ post "http://example.com/0/youdos"
-            <> body "assignerid=0&assigneeid=0&description=blah&duedate=&completed=false"
+            <> body "assigner=http://example.com/0/users/0\
+                    \&assignee=http://example.com/0/users/0\
+                    \&description=blah&duedate=&completed=false"
             <> header "Content-Type" "application/x-www-form-urlencoded"
         stat ~= created201
         let ydurl = SB.unpack $ fromJust $ lookup (mk "Location") headers
@@ -62,8 +65,8 @@ tests = return $
     , serverTest "new youdo, json body" $ \req -> do
         (stat, headers, _) <- liftIO $ req
             $ post "http://example.com/0/youdos"
-            <> body "{\"assignerid\":0,\
-                    \\"assigneeid\":0,\
+            <> body "{\"assigner\":\"http://example.com/0/users/0\",\
+                    \\"assignee\":\"http://example.com/0/users/0\",\
                     \\"description\":\"blah\",\
                     \\"duedate\":null,\
                     \\"completed\":false}"
@@ -90,8 +93,10 @@ tests = return $
         -- which is ISO 8601.
         (stat, headers, _) <- liftIO $ req
             $ post "http://example.com/0/youdos"
-            <> body "assignerid=0&assigneeid=0&description=blah&\
-                    \duedate=2014-11-30T14:10:05.038Z&completed=false"
+            <> body "assigner=http://example.com/0/users/0\
+                    \&assignee=http://example.com/0/users/0\
+                    \&description=blah&duedate=2014-11-30T14:10:05.038Z\
+                    \&completed=false"
             <> header "Content-Type" "application/x-www-form-urlencoded"
         stat ~= created201
         let ydurl = SB.unpack $ fromJust $ lookup (mk "Location") headers
@@ -111,8 +116,8 @@ tests = return $
     , serverTest "new youdo with duedate, json body" $ \req -> do
         (stat, headers, _) <- liftIO $ req
             $ post "http://example.com/0/youdos"
-            <> body "{\"assignerid\":0,\
-                    \\"assigneeid\":0,\
+            <> body "{\"assigner\":\"http://example.com/0/users/0\",\
+                    \\"assignee\":\"http://example.com/0/users/0\",\
                     \\"description\":\"blah\",\
                     \\"duedate\":\"2014-11-30T14:10:05.038Z\",\
                     \\"completed\":false}"
@@ -136,36 +141,43 @@ tests = return $
     , serverTest "new youdo with bad content-type" $ \req -> do
         (stat, _, _) <- liftIO $ req
             $ post "http://example.com/0/youdos"
-            <> body "assignerid=0&assigneeid=0&description=blah&\
-                    \duedate=2014-11-30T14:10:05.038Z&completed=false"
+            <> body "assigner=http://example.com/0/users/0\
+                    \&assignee=http://example.com/0/users/0\
+                    \&description=blah\
+                    \&duedate=2014-11-30T14:10:05.038Z&completed=false"
             <> header "Content-Type" "snee"
         stat ~= badRequest400
     , serverTest "new youdo with unparsable assignerid" $ \req -> do
         (stat, _, _) <- liftIO $ req
             $ post "http://example.com/0/youdos"
-            <> body "assignerid=f&assigneeid=0&description=blah&\
-                    \duedate=2014-11-30T14:10:05.038Z&completed=false"
+            <> body "assigner=http://example.com/0/users/f\
+                    \&assignee=http://example.com/0/users/0\
+                    \&description=blah\
+                    \&duedate=2014-11-30T14:10:05.038Z&completed=false"
             <> header "Content-Type" "application/x-www-form-urlencoded"
         stat ~= badRequest400
     , serverTest "new youdo with missing assignerid" $ \req -> do
         (stat, _, _) <- liftIO $ req
             $ post "http://example.com/0/youdos"
-            <> body "assigneeid=0&description=blah&\
+            <> body "assignee=http://example.com/0/users/0&description=blah&\
                     \duedate=2014-11-30T14:10:05.038Z&completed=false"
             <> header "Content-Type" "application/x-www-form-urlencoded"
         stat ~= badRequest400
     , serverTest "new youdo with misformatted assignerid" $ \req -> do
         (stat, _, _) <- liftIO $ req
             $ post "http://example.com/0/youdos"
-            <> body "assignerid=q&assigneeid=0&description=blah&\
+            <> body "assigner=http://example.com/0/users/q\
+                    \&assignee=http://example.com/0/users/0&description=blah&\
                     \duedate=2014-11-30T14:10:05.038Z&completed=false"
             <> header "Content-Type" "application/x-www-form-urlencoded"
         stat ~= badRequest400
     , serverTest "new youdo with misformatted completed" $ \req -> do
         (stat, _, _) <- liftIO $ req
             $ post "http://example.com/0/youdos"
-            <> body "assignerid=0&assigneeid=0&description=blah&\
-                    \duedate=2014-11-30T14:10:05.038Z&completed=snee"
+            <> body "assigner=http://example.com/0/users/0\
+                    \&assignee=http://example.com/0/users/0\
+                    \&description=blah\
+                    \&duedate=2014-11-30T14:10:05.038Z&completed=snee"
             <> header "Content-Type" "application/x-www-form-urlencoded"
         stat ~= badRequest400
     , serverTest "bad method to /0/youdos" $ \req -> do
@@ -182,7 +194,9 @@ tests = return $
         -- create a new youdo
         (stat1, headers, _) <- liftIO $ req
             $ post "http://example.com/0/youdos"
-            <> body "assignerid=0&assigneeid=0&description=blah&duedate=&completed=false"
+            <> body "assigner=http://example.com/0/users/0\
+                    \&assignee=http://example.com/0/users/0\
+                    \&description=blah&duedate=&completed=false"
             <> header "Content-Type" "application/x-www-form-urlencoded"
         stat1 ~= created201
         let ydurl = SB.unpack $ fromJust $ lookup (mk "Location") headers
@@ -236,8 +250,10 @@ tests = return $
                     (stat, _, bod) <- liftIO $ req
                         $ post "http://example.com/0/youdos"
                         <> body (SB.pack
-                                 ("assignerid=0&assigneeid=0&description=blah&\
-                                  \duedate=" ++ datestr ++ "&completed=false"))
+                                 ("assigner=http://example.com/0/users/0\
+                                  \&assignee=http://example.com/0/users/0\
+                                  \&description=blah\
+                                  \&duedate=" ++ datestr ++ "&completed=false"))
                         <> header "Content-Type" "application/x-www-form-urlencoded"
                     stat ~= badRequest400
                     bod ~= LB.pack ("cannot parse parameter \"duedate\": "
@@ -246,8 +262,8 @@ tests = return $
                     (stat, _, bod) <- liftIO $ req
                         $ post "http://example.com/0/youdos"
                         <> body (SB.pack
-                                    ("{\"assignerid\":0,\
-                                     \\"assigneeid\":0,\
+                                    ("{\"assigner\":\"http://example.com/0/users/0\",\
+                                     \\"assignee\":\"http://example.com/0/users/0\",\
                                      \\"description\":\"blah\",\
                                      \\"duedate\":\"" ++ datestr ++ "\",\
                                      \\"completed\":false}"))
@@ -256,9 +272,7 @@ tests = return $
                     bod ~= LB.pack ("cannot parse parameter \"duedate\": "
                                     ++ errmsg ++ "\r\n")
              , plainTest ("holex parsing, " ++ descr) $ do
-                    let expr :: (Constructor f) => f DueDate
-                        expr = parse "duedate"
-                    evaluateE expr
+                    evaluateNoURI (parse "duedate" :: RequestParser DueDate)
                               [("duedate", JSONField (String $ T.pack datestr))]
                         ~= Left [ParseError "duedate"
                                  (JSONField (String $ T.pack datestr))
@@ -275,23 +289,46 @@ tests = return $
 
     ++
     [ plainTest "Holex parsing from Scotty parameters" $ do
-        let expr :: (Constructor f) => f Int
-            expr = (+) <$> (parse "a") <*> (parse "b")
-            val = evaluateE expr [("a", ScottyParam "1"), ("b", ScottyParam "-3")]
-            val' = evaluateE expr [("a", ScottyParam "1"), ("b", ScottyParam "q")]
+        let expr = (+) <$> (parse "a") <*> (parse "b") :: RequestParser Int
+            val = evaluateNoURI expr [("a", ScottyParam "1"), ("b", ScottyParam "-3")]
+            val' = evaluateNoURI expr [("a", ScottyParam "1"), ("b", ScottyParam "q")]
         (val,val') ~= (Right (-2),
             Left [ParseError "b" (ScottyParam "q") "readEither: no parse"])
     , plainTest "Holex parsing from JSON fields" $ do
-        let expr :: (Constructor f) => f Int
-            expr = (+) <$> (parse "a") <*> (parse "b")
-            val = evaluateE expr [("a", JSONField (Number 1)),
-                                  ("b", JSONField (Number (-3)))]
-            val' = evaluateE expr [("a", JSONField (Number 1)),
-                                   ("b", JSONField (String "q"))]
+        let expr = (+) <$> (parse "a") <*> (parse "b") :: RequestParser Int
+            val = evaluateNoURI expr [("a", JSONField (Number 1)),
+                                      ("b", JSONField (Number (-3)))]
+            val' = evaluateNoURI expr [("a", JSONField (Number 1)),
+                                       ("b", JSONField (String "q"))]
         (val,val') ~= (Right (-2),
             Left [ParseError "b" (JSONField (String "q"))
                 "when expecting a Int, encountered String instead"])
     ]
+    ++ do  -- List monad!
+        let Just baseuri = parseURI "http://example.com/0/"
+        (dataname, userurl, result)
+            <- [ ( "trailing slash", "http://example.com/0/users/3/", Right (UserID 3) )
+               , ( "no trailing slash", "http://example.com/0/users/3", Right (UserID 3) )
+               , ( "weird", "http://example.com/0/users/../users/3/", Right (UserID 3) )
+               , ( "no ID", "http://example.com/0/users/", Left "invalid ID" )
+               , ( "not number", "http://example.com/0/users/3q/", Left "invalid ID" )
+               , ( "not even an URL", "grar", Left "invalid URL" )
+               ]
+        (fname, f) <- [ ( "BasedFromJSON", \s ->
+                            parseEither (flip basedParseJSON baseuri) (String s) )
+                      , ( "BasedParsable", \s ->
+                            either (Left . LT.unpack)
+                                   Right
+                                   $ basedParseParam (LT.fromStrict s) baseuri
+                            )
+                      ]
+        return $ plainTest ("UserID from URL, " ++ dataname ++ ", " ++ fname)
+                           $ f userurl ~= result
+
+evaluateNoURI :: RequestParser a
+              -> [(LT.Text,ParamValue)]
+              -> Either [EvaluationError LT.Text ParamValue] a
+evaluateNoURI expr kvs = evaluateE (runReaderT expr nullURI) kvs
 
 unintersperse :: (Eq a) => a -> [a] -> [[a]]
 unintersperse _ [] = []
@@ -331,8 +368,7 @@ serverTest testName f = Test $ TestInstance
         db <- empty
         mv <- newMVar ()
         waiApp <- scottyApp
-                  $ runReaderT (app db mv)
-                  $ (fromJust $ parseURI "http://example.com")
+                  $ app db mv $ fromJust $ parseURI "http://example.com"
         result <- runEitherT $ f $ request waiApp
         return $ Finished $ case result of
             Left msg -> Fail msg

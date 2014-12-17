@@ -10,7 +10,7 @@ License     : GPL-3
 module YouDo.DB (
     -- *Database and web interface
     DB(..), Updater(..), webdb, NamedResource(..),
-    resourceURL, resourceVersionURL, idjson, veridjson,
+    idjson, veridjson,
     -- *Versioning of database objects
     Versioned(..), VersionedID(..), TransactionID(..),
     -- *Results of database operations
@@ -24,20 +24,20 @@ module YouDo.DB (
 
 import Control.Applicative (Applicative(..), (<$>), (<*>))
 import Control.Concurrent.MVar
-import Control.Monad (liftM)
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad.Reader (ask, mapReaderT)
-import Control.Monad.Trans (lift)
+import Control.Monad.Reader (ReaderT(..))
 import Data.Aeson (FromJSON(..), (.=), Value(..))
 import qualified Data.HashMap.Strict as M
-import Data.List (foldl')
+import Data.List (foldl', intercalate)
+import Data.Maybe (fromJust)
+import Data.String (fromString)
 import qualified Data.Text as ST
 import qualified Data.Text.Lazy as LT
 import Database.PostgreSQL.Simple.FromField (FromField(..))
 import Network.HTTP.Types (ok200, created201, notFound404,
     conflict409, internalServerError500, StdMethod(..))
 import Network.URI
-import Web.Scotty (Parsable(..), ScottyM)
+import Web.Scotty (Parsable(..), ScottyM, status, setHeader, text)
 
 import YouDo.Web
 
@@ -110,44 +110,48 @@ class Updater u a where
 
     These correspond directly to the methods of 'DB'.  The name @objs@
     is obtained from the instance 'NamedResource' @k@.  Requests that
-    return objects return them in JSON format, using the instances
-    'Show' @k@ and 'BasedToJSON' @v@.  The @/id/@ parameter is interpreted
-    via the instance 'Parsable' @k@.  (The 'FromJSON' @k@ instance
-    would only be used if the id were passed in the JSON request
-    body, which it shouldn't be.)  The request body, when needed,
-    is interpreted via default 'RequestParser' for the appropriate type.
+    return objects return them in JSON format, using the instance
+    'BasedToJSON' @v@.  The @/id/@ parameter is interpreted via the
+    instance 'Parsable' @k@.  (The 'FromJSON' @k@ instance would only
+    be used if the id were passed in the JSON request body, which it
+    shouldn't be.)  The request body, when needed, is interpreted via
+    'body'.
 -}
 webdb :: ( NamedResource k, DB k v u IO d
          , Parsable k, FromJSON k
-         , FromParam p k
-         , Show k, BasedToJSON v
-         , Constructible (RequestParser v)
-         , Constructible (RequestParser u)
+         , BasedToJSON v
+         , RequestParsable v
+         , RequestParsable u
          ) => MVar ()     -- ^All database access is under this MVar.
          -> d           -- ^The database.
-         -> Based ScottyM ()
-webdb mv db = do
+         -> URI           -- ^The base URI.
+         -> ScottyM ()
+webdb mv db base = do
     let rtype = dbResourceName db
-        dodb m = report =<< liftIO =<< lock <$> (m <*> pure db)
+        dodb m = flip report base =<< liftIO =<< lock <$>
+                        (runReaderT m base <*> pure db)
         lock a = withMVar mv $ const a
-    resource rtype
+        route s = fromString $ uriPath $
+            (fromJust $ parseURIReference $ rtype ++ s) `relativeTo` base
+    resource (route "")
              [ (GET, dodb $ pure getAll)
              , (POST, dodb $ create <$> body)
              ]
-    resource (rtype ++ "/:id/")
+    resource (route "/:id/")
              [ (GET, dodb $ get <$> capture "id") ]
-    resource (rtype ++ "/:id/versions")
+    resource (route "/:id/versions")
              [ (GET, dodb $ getVersions <$> capture "id") ]
-    resource (rtype ++ "/:id/:txnid") $
+    resource (route "/:id/:txnid") $
              let verid = VersionedID <$> capture "id" <*> capture "txnid"
              in [ (GET, dodb $ getVersion <$> verid)
                 , (POST, dodb $ update <$> (Versioned <$> verid <*> body))
                 ]
 
 {- |
-    Class for types that have a name.  Typically the implementation
-    will ignore the argument, which is included only for type-checking.
-    (So, it may be @Nothing@.)
+    Class for types that have a name.  Minimum implementation:
+    'resourceName'.  Typically the implementation will ignore the
+    argument, which is included only for type-checking.  (So, it may
+    be @Nothing@.)
 
     This name is used in the web interface to construct URLs for the
     resources that represent operations on objects of type @a@.  It's
@@ -157,39 +161,37 @@ webdb mv db = do
     (For example, 'Youdo' contains some 'UserID's which should be
     sent to the client as URLs containing the name for user objects.)
 -}
-class NamedResource a where
+class (Show a) => NamedResource a where
     resourceName :: Maybe a -> String
+    resourceBaseURL :: Maybe a -> URI -> URI
+    resourceBaseURL x base = namedResourceURL [ resourceName x
+                                              , ""
+                                              ] base
+    resourceURL :: a -> URI -> URI
+    resourceURL x base = namedResourceURL [ resourceName (Just x)
+                                          , show x
+                                          , ""
+                                          ] base
+    resourceVersionURL :: VersionedID a -> URI -> URI
+    resourceVersionURL x base = namedResourceURL [ resourceName (Just (thingid x))
+                                                 , show (thingid x)
+                                                 , show (txnid x)
+                                                 ] base
 
--- | The relative URL for a 'NamedResource' object.
-resourceRelativeURLString :: (Show k, NamedResource k) => k -> String
-resourceRelativeURLString k = "./" ++ resourceName (Just k) ++ "/"
-                              ++ show k ++ "/"
-
--- | The URL for a 'NamedResource' object.
-resourceURL :: (Show k, NamedResource k, Monad m) => k -> Based m URI
-resourceURL k = do
-    baseuri <- ask
-    return $ resourceRelativeURLString k `relative` baseuri
-
--- | The URL for a specific version of a 'NamedResource' object.
-resourceVersionURL :: (Show k, NamedResource k, Monad m)
-                      => VersionedID k -> Based m URI
-resourceVersionURL verk = do
-    baseuri <- ask
-    return $ (resourceRelativeURLString (thingid verk)
-                ++ (show $ txnid $ verk))
-             `relative` baseuri
+namedResourceURL :: [String] -> URI -> URI
+namedResourceURL xs base = reluri `relativeTo` base
+    where reluri = fromJust $ parseURIReference $ intercalate "/" (".":xs)
 
 jsonurl :: URI -> Value
 jsonurl = String . ST.pack . show
 
 -- | The URL for a 'NamedResource' object, as a JSON 'Value'.
-idjson :: (Show k, NamedResource k, Monad m) => k -> Based m Value
-idjson k = liftM jsonurl $ resourceURL k
+idjson :: (Show k, NamedResource k) => k -> URI -> Value
+idjson k base = jsonurl $ resourceURL k base
 
 -- | The URL for a specific version of a 'NamedResource' object, as a JSON 'Value'.
-veridjson :: (Show k, NamedResource k, Monad m) => VersionedID k -> Based m Value
-veridjson k = liftM jsonurl $ resourceVersionURL k
+veridjson :: (Show k, NamedResource k) => VersionedID k -> URI -> Value
+veridjson k base = jsonurl $ resourceVersionURL k base
 
 {- |
     An identifier of a version of a thing, as was produced in a
@@ -200,19 +202,15 @@ data VersionedID a = VersionedID
     , txnid :: TransactionID
     } deriving (Show, Eq)
 
-instance (Parsable a, FromJSON a, Constructor f)
-        => Constructible (f (VersionedID a)) where
-    construct = VersionedID <$> parse "id" <*> parse "txnid"
-
 -- | A version of a thing, as was produced in a particular transaction.
 data Versioned a b = Versioned
     { version :: VersionedID a
     , thing :: b
     } deriving (Show, Eq)
 
-instance (Constructor f, Constructible (f (VersionedID a)), Constructible (f b))
-        => Constructible (f (Versioned a b)) where
-    construct = Versioned <$> construct <*> construct
+instance (RequestParsable (VersionedID a), RequestParsable b)
+         => RequestParsable (Versioned a b) where
+    template = Versioned <$> template <*> template
 
 -- | Augment JSON representations of 'Versioned' objects
 -- with @"url"@ and @"thisVersion"@ fields.
@@ -241,8 +239,6 @@ instance Parsable TransactionID where
     parseParam x = TransactionID <$> parseParam x
 instance FromJSON TransactionID where
     parseJSON x = TransactionID <$> parseJSON x
-instance FromParam Int TransactionID where
-    fromParam = TransactionID
 
 {- |
     @r@ represents the result of a 'DB' operation which was supposed
@@ -281,15 +277,15 @@ instance Result (GetResult a) a where
     success x = Right $ Right x
 
 instance (BasedToJSON a) => WebResult (GetResult a) where
-    report (Right (Right a)) =
-        mapReaderT lift500 $ do
+    report (Right (Right a)) base =
+        lift500 $ do
             status ok200  -- http://tools.ietf.org/html/rfc2616#section-10.2.1
-            json a
-    report (Left NotFound) =
-        mapReaderT lift500 $
+            basedjson a base
+    report (Left NotFound) _ =
+        lift500 $
             status notFound404  -- http://tools.ietf.org/html/rfc2616#section-10.4.5
-    report (Right (Left msg)) =
-        mapReaderT lift500 $ do
+    report (Right (Left msg)) _ =
+        lift500 $ do
             status internalServerError500  -- http://tools.ietf.org/html/rfc2616#section-10.5.1
             text msg
 
@@ -317,17 +313,16 @@ newerVersion x = Left $ NewerVersion x
 
 instance (BasedToJSON b, NamedResource k, Show k, BasedToJSON v)
          => WebResult (UpdateResult b (Versioned k v)) where
-    report (Right (Right (Right a))) =
-        mapReaderT lift500 $ do
+    report (Right (Right (Right a))) base =
+        lift500 $ do
             status created201  -- http://tools.ietf.org/html/rfc2616#section-10.2.2
-            url <- resourceVersionURL $ version a
-            setHeader "Location" $ LT.pack $ show $ url
-            json a
-    report (Left (NewerVersion b)) =
-        mapReaderT lift500 $ do
+            setHeader "Location" $ LT.pack $ show $ resourceVersionURL (version a) base
+            basedjson a base
+    report (Left (NewerVersion b)) base =
+        lift500 $ do
             status conflict409  -- http://tools.ietf.org/html/rfc2616#section-10.4.10
-            json b
-    report (Right gr) = report gr
+            basedjson b base
+    report (Right gr) base = report gr base
 
 {- |
     Result of a 'DB' create operation.  The data supplied describes
@@ -345,15 +340,14 @@ invalidObject errs = Left $ InvalidObject errs
 
 instance (NamedResource k, Show k, BasedToJSON v)
          => WebResult (CreateResult (Versioned k v)) where
-    report (Right (Right (Right a))) =
-        mapReaderT lift500 $ do
+    report (Right (Right (Right a))) base =
+        lift500 $ do
            status created201  -- http://tools.ietf.org/html/rfc2616#section-10.2.2
-           url <- resourceURL $ thingid $ version a
-           setHeader "Location" $ LT.pack $ show $ url
-           json a
-    report (Left (InvalidObject msgs)) =
-        lift $ badRequest $ LT.concat [ LT.concat [msg, "\r\n"] | msg<-msgs ]
-    report (Right gr) = report gr
+           setHeader "Location" $ LT.pack $ show $ resourceURL (thingid (version a)) base
+           basedjson a base
+    report (Left (InvalidObject msgs)) _ =
+        badRequest $ LT.concat [ LT.concat [msg, "\r\n"] | msg<-msgs ]
+    report (Right gr) base = report gr base
 
 {- |
     Make a result of the contents of a singleton list.
