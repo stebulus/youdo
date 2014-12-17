@@ -33,7 +33,7 @@ import YouDo.DB.Memory
 import YouDo.Holes
 import YouDo.Test (plainTest)
 import YouDo.Types (DueDate, UserID(..))
-import YouDo.Web (ParamValue(..), parse, EvaluationError(..), Constructor,
+import YouDo.Web (ParamValue(..), parse, EvaluationError(..),
     BasedFromJSON(..), BasedParsable(..), RequestParser)
 import YouDo.WebApp (app)
 
@@ -42,7 +42,9 @@ tests = return $
     [ serverTest "new youdo, form data" $ \req -> do
         (stat, headers, _) <- liftIO $ req
             $ post "http://example.com/0/youdos"
-            <> body "assignerid=0&assigneeid=0&description=blah&duedate=&completed=false"
+            <> body "assigner=http://example.com/0/users/0\
+                    \&assignee=http://example.com/0/users/0\
+                    \&description=blah&duedate=&completed=false"
             <> header "Content-Type" "application/x-www-form-urlencoded"
         stat ~= created201
         let ydurl = SB.unpack $ fromJust $ lookup (mk "Location") headers
@@ -63,8 +65,8 @@ tests = return $
     , serverTest "new youdo, json body" $ \req -> do
         (stat, headers, _) <- liftIO $ req
             $ post "http://example.com/0/youdos"
-            <> body "{\"assignerid\":0,\
-                    \\"assigneeid\":0,\
+            <> body "{\"assigner\":\"http://example.com/0/users/0\",\
+                    \\"assignee\":\"http://example.com/0/users/0\",\
                     \\"description\":\"blah\",\
                     \\"duedate\":null,\
                     \\"completed\":false}"
@@ -91,8 +93,10 @@ tests = return $
         -- which is ISO 8601.
         (stat, headers, _) <- liftIO $ req
             $ post "http://example.com/0/youdos"
-            <> body "assignerid=0&assigneeid=0&description=blah&\
-                    \duedate=2014-11-30T14:10:05.038Z&completed=false"
+            <> body "assigner=http://example.com/0/users/0\
+                    \&assignee=http://example.com/0/users/0\
+                    \&description=blah&duedate=2014-11-30T14:10:05.038Z\
+                    \&completed=false"
             <> header "Content-Type" "application/x-www-form-urlencoded"
         stat ~= created201
         let ydurl = SB.unpack $ fromJust $ lookup (mk "Location") headers
@@ -112,8 +116,8 @@ tests = return $
     , serverTest "new youdo with duedate, json body" $ \req -> do
         (stat, headers, _) <- liftIO $ req
             $ post "http://example.com/0/youdos"
-            <> body "{\"assignerid\":0,\
-                    \\"assigneeid\":0,\
+            <> body "{\"assigner\":\"http://example.com/0/users/0\",\
+                    \\"assignee\":\"http://example.com/0/users/0\",\
                     \\"description\":\"blah\",\
                     \\"duedate\":\"2014-11-30T14:10:05.038Z\",\
                     \\"completed\":false}"
@@ -137,36 +141,43 @@ tests = return $
     , serverTest "new youdo with bad content-type" $ \req -> do
         (stat, _, _) <- liftIO $ req
             $ post "http://example.com/0/youdos"
-            <> body "assignerid=0&assigneeid=0&description=blah&\
-                    \duedate=2014-11-30T14:10:05.038Z&completed=false"
+            <> body "assigner=http://example.com/0/users/0\
+                    \&assignee=http://example.com/0/users/0\
+                    \&description=blah\
+                    \&duedate=2014-11-30T14:10:05.038Z&completed=false"
             <> header "Content-Type" "snee"
         stat ~= badRequest400
     , serverTest "new youdo with unparsable assignerid" $ \req -> do
         (stat, _, _) <- liftIO $ req
             $ post "http://example.com/0/youdos"
-            <> body "assignerid=f&assigneeid=0&description=blah&\
-                    \duedate=2014-11-30T14:10:05.038Z&completed=false"
+            <> body "assigner=http://example.com/0/users/f\
+                    \&assignee=http://example.com/0/users/0\
+                    \&description=blah\
+                    \&duedate=2014-11-30T14:10:05.038Z&completed=false"
             <> header "Content-Type" "application/x-www-form-urlencoded"
         stat ~= badRequest400
     , serverTest "new youdo with missing assignerid" $ \req -> do
         (stat, _, _) <- liftIO $ req
             $ post "http://example.com/0/youdos"
-            <> body "assigneeid=0&description=blah&\
+            <> body "assignee=http://example.com/0/users/0&description=blah&\
                     \duedate=2014-11-30T14:10:05.038Z&completed=false"
             <> header "Content-Type" "application/x-www-form-urlencoded"
         stat ~= badRequest400
     , serverTest "new youdo with misformatted assignerid" $ \req -> do
         (stat, _, _) <- liftIO $ req
             $ post "http://example.com/0/youdos"
-            <> body "assignerid=q&assigneeid=0&description=blah&\
+            <> body "assigner=http://example.com/0/users/q\
+                    \&assignee=http://example.com/0/users/0&description=blah&\
                     \duedate=2014-11-30T14:10:05.038Z&completed=false"
             <> header "Content-Type" "application/x-www-form-urlencoded"
         stat ~= badRequest400
     , serverTest "new youdo with misformatted completed" $ \req -> do
         (stat, _, _) <- liftIO $ req
             $ post "http://example.com/0/youdos"
-            <> body "assignerid=0&assigneeid=0&description=blah&\
-                    \duedate=2014-11-30T14:10:05.038Z&completed=snee"
+            <> body "assigner=http://example.com/0/users/0\
+                    \&assignee=http://example.com/0/users/0\
+                    \&description=blah\
+                    \&duedate=2014-11-30T14:10:05.038Z&completed=snee"
             <> header "Content-Type" "application/x-www-form-urlencoded"
         stat ~= badRequest400
     , serverTest "bad method to /0/youdos" $ \req -> do
@@ -183,7 +194,9 @@ tests = return $
         -- create a new youdo
         (stat1, headers, _) <- liftIO $ req
             $ post "http://example.com/0/youdos"
-            <> body "assignerid=0&assigneeid=0&description=blah&duedate=&completed=false"
+            <> body "assigner=http://example.com/0/users/0\
+                    \&assignee=http://example.com/0/users/0\
+                    \&description=blah&duedate=&completed=false"
             <> header "Content-Type" "application/x-www-form-urlencoded"
         stat1 ~= created201
         let ydurl = SB.unpack $ fromJust $ lookup (mk "Location") headers
@@ -237,8 +250,10 @@ tests = return $
                     (stat, _, bod) <- liftIO $ req
                         $ post "http://example.com/0/youdos"
                         <> body (SB.pack
-                                 ("assignerid=0&assigneeid=0&description=blah&\
-                                  \duedate=" ++ datestr ++ "&completed=false"))
+                                 ("assigner=http://example.com/0/users/0\
+                                  \&assignee=http://example.com/0/users/0\
+                                  \&description=blah\
+                                  \&duedate=" ++ datestr ++ "&completed=false"))
                         <> header "Content-Type" "application/x-www-form-urlencoded"
                     stat ~= badRequest400
                     bod ~= LB.pack ("cannot parse parameter \"duedate\": "
@@ -247,8 +262,8 @@ tests = return $
                     (stat, _, bod) <- liftIO $ req
                         $ post "http://example.com/0/youdos"
                         <> body (SB.pack
-                                    ("{\"assignerid\":0,\
-                                     \\"assigneeid\":0,\
+                                    ("{\"assigner\":\"http://example.com/0/users/0\",\
+                                     \\"assignee\":\"http://example.com/0/users/0\",\
                                      \\"description\":\"blah\",\
                                      \\"duedate\":\"" ++ datestr ++ "\",\
                                      \\"completed\":false}"))
@@ -257,9 +272,7 @@ tests = return $
                     bod ~= LB.pack ("cannot parse parameter \"duedate\": "
                                     ++ errmsg ++ "\r\n")
              , plainTest ("holex parsing, " ++ descr) $ do
-                    let expr :: (Constructor f) => f DueDate
-                        expr = parse "duedate"
-                    evaluateNoURI expr
+                    evaluateNoURI (parse "duedate" :: RequestParser DueDate)
                               [("duedate", JSONField (String $ T.pack datestr))]
                         ~= Left [ParseError "duedate"
                                  (JSONField (String $ T.pack datestr))
@@ -276,15 +289,13 @@ tests = return $
 
     ++
     [ plainTest "Holex parsing from Scotty parameters" $ do
-        let expr :: (Constructor f) => f Int
-            expr = (+) <$> (parse "a") <*> (parse "b")
+        let expr = (+) <$> (parse "a") <*> (parse "b") :: RequestParser Int
             val = evaluateNoURI expr [("a", ScottyParam "1"), ("b", ScottyParam "-3")]
             val' = evaluateNoURI expr [("a", ScottyParam "1"), ("b", ScottyParam "q")]
         (val,val') ~= (Right (-2),
             Left [ParseError "b" (ScottyParam "q") "readEither: no parse"])
     , plainTest "Holex parsing from JSON fields" $ do
-        let expr :: (Constructor f) => f Int
-            expr = (+) <$> (parse "a") <*> (parse "b")
+        let expr = (+) <$> (parse "a") <*> (parse "b") :: RequestParser Int
             val = evaluateNoURI expr [("a", JSONField (Number 1)),
                                       ("b", JSONField (Number (-3)))]
             val' = evaluateNoURI expr [("a", JSONField (Number 1)),

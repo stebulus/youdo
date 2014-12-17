@@ -15,7 +15,7 @@ module YouDo.Web (
     capture, FromParam(..),
     body, fromRequestBody, RequestParser, parse, ParamValue(..), requestData,
     EvaluationError(..), defaultTo, optional,
-    Constructor, Constructible(..),
+    RequestParsable(..),
     -- * Reporting results
     WebResult(..),
     -- * Error handling and HTTP status
@@ -29,7 +29,7 @@ import Control.Applicative ((<$>), Applicative(..))
 import Control.Monad.Error (mapErrorT, throwError)
 import Control.Monad.Reader (ReaderT(..), ask, mapReaderT)
 import Control.Monad.Trans (MonadTrans(..))
-import Data.Aeson (ToJSON(..), FromJSON(..), Value(..))
+import Data.Aeson (ToJSON(..), Value(..))
 import qualified Data.Aeson as A
 import qualified Data.Aeson.Types as A
 import qualified Data.HashMap.Strict as M
@@ -122,10 +122,22 @@ instance BasedToJSON a => BasedToJSON [a] where
 -- | A value that can be deserialized from JSON, respecting a base URI.
 class BasedFromJSON a where
     basedParseJSON :: Value -> URI -> A.Parser a
+instance BasedFromJSON String where
+    basedParseJSON = flip $ const A.parseJSON
+instance BasedFromJSON Int where
+    basedParseJSON = flip $ const A.parseJSON
+instance BasedFromJSON Bool where
+    basedParseJSON = flip $ const A.parseJSON
 
 -- | A value that can be deserialized from a Scotty param, respecting a base URI.
 class BasedParsable a where
     basedParseParam :: LT.Text -> URI -> Either LT.Text a
+instance BasedParsable String where
+    basedParseParam = flip $ const parseParam
+instance BasedParsable Int where
+    basedParseParam = flip $ const parseParam
+instance BasedParsable Bool where
+    basedParseParam = flip $ const parseParam
 
 type ActionStatusM = ActionT ErrorWithStatus IO
 
@@ -210,10 +222,10 @@ lift500 = failWith internalServerError500
     If an error occurs parsing the request, a 400 (Bad Request)
     response is thrown.
 -}
-body :: (Constructible (RequestParser a)) => ReaderT URI ActionStatusM a
+body :: (RequestParsable a) => ReaderT URI ActionStatusM a
 body = do
     base <- ask
-    lift $ fromRequestBody construct base
+    lift $ fromRequestBody template base
 
 {- |
     Use the given 'RequestParser' to interpret the data in the HTTP
@@ -265,27 +277,15 @@ requestData = do
                         LT.concat ["Don't know how to handle Content-Type: ", hdr]
     return $ paramdata ++ bodydata
 
-{- |
-    An applicative functor that can construct objects from
-    HTTP request data.
--}
-class ( Applicative f
-      , Holes LT.Text ParamValue f
-      , Errs [EvaluationError LT.Text ParamValue] f
-      )
-     => Constructor f
-
-instance Constructor RequestParser
-
--- | An object that can be constructed by a 'Constructor'.
--- Typically the 'construct' method should be implemented as an
+-- | An object that can be constructed by a 'RequestParser'.
+-- Typically the 'template' method should be implemented as an
 -- applicative expression; see the example under 'body'.
-class Constructible a where
-    construct :: a
-
--- | Unit can be constructed (as a 'pure' value).
-instance (Applicative f) => Constructible (f ()) where
-    construct = pure ()
+class RequestParsable a where
+    template :: ( Applicative f
+                , Holes LT.Text ParamValue (ReaderT URI f)
+                , Errs [EvaluationError LT.Text ParamValue] (ReaderT URI f)
+                )
+             => ReaderT URI f a
 
 -- | An error encountered when constructing an object by filling in
 -- values for its 'hole's and calling 'evaluateE'.
@@ -357,53 +357,29 @@ instance MissingKeyError LT.Text [EvaluationError LT.Text ParamValue] where
 -- | A named hole which parses a 'ParamValue' into the appropriate type.
 -- (Combinator for use in 'construct' implementations.)
 parse :: ( Functor f
-         , Parsable a, FromJSON a
-         , Holes k ParamValue f
-         , Errs [EvaluationError k ParamValue] f
+         , BasedParsable a, BasedFromJSON a
+         , Holes k ParamValue (ReaderT URI f)
+         , Errs [EvaluationError k ParamValue] (ReaderT URI f)
          )
-      => k -> f a
-parse k = throwLeft $ enlist <$> (parseEither k <$> hole k)
-    where enlist (Left e) = Left [e]
-          enlist (Right a) = Right a
-
--- | A named hole which parses a 'ParamValue' into the appropriate type.
--- (Combinator for use in 'construct' implementations.)
-basedParse :: ( Functor f, Monad f
-              , BasedParsable a, BasedFromJSON a
-              , Holes k ParamValue f
-              , Errs [EvaluationError k ParamValue] f
-              )
-           => k -> Based f a
-basedParse k =
-    let enlist (Left e) = Left [e]
+      => k -> ReaderT URI f a
+parse k =
+    let basedParse = flip $ basedParseEither k
+        enlist (Left e) = Left [e]
         enlist (Right a) = Right a
-    in do
-        baseuri <- ask
-        lift $ throwLeft $ enlist <$>
-            (`at` baseuri) . basedParseEither k <$> hole k
-
--- | Parse a 'ParamValue' into the appropriate type.
-parseEither :: (Parsable a, FromJSON a)
-            => k -> ParamValue -> Either (EvaluationError k ParamValue) a
-parseEither k x@(ScottyParam txt) =
-    case parseParam txt of
-        Left err -> Left (ParseError k x err)
-        Right val -> Right val
-parseEither k x@(JSONField jsonval) =
-    case A.parseEither parseJSON jsonval of
-        Left err -> Left (ParseError k x (LT.pack err))
-        Right val -> Right val
+    in throwLeft $ enlist <$>
+        (ReaderT $ fmap . basedParse <*> runReaderT (hole k))
 
 -- | Parse a 'ParamValue' into the appropriate type.
 basedParseEither :: (BasedParsable a, BasedFromJSON a)
-            => k -> ParamValue -> Based (Either (EvaluationError k ParamValue)) a
-basedParseEither k x@(ScottyParam txt) =
-    mapReaderT (either (Left . (ParseError k x)) Right)
-               (basedParseParam txt)
-basedParseEither k x@(JSONField jsonval) =
-    mapReaderT ( (either (Left . (ParseError k x) . LT.pack) Right)
-                 . runJSONParser )
-               $ basedParseJSON jsonval
+            => k -> ParamValue -> URI -> Either (EvaluationError k ParamValue) a
+basedParseEither k x@(ScottyParam txt) base =
+    case basedParseParam txt base of
+        Left e -> Left $ ParseError k x e
+        Right a -> Right a
+basedParseEither k x@(JSONField jsonval) base =
+    case runJSONParser (basedParseJSON jsonval base) of
+        Left e -> Left $ ParseError k x $ LT.pack e
+        Right a -> Right a
     where runJSONParser :: A.Parser a -> Either String a
           runJSONParser p = A.parseEither (const p) ()
 

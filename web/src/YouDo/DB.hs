@@ -121,8 +121,8 @@ webdb :: ( NamedResource k, DB k v u IO d
          , Parsable k, FromJSON k
          , FromParam p k
          , Show k, BasedToJSON v
-         , Constructible (RequestParser v)
-         , Constructible (RequestParser u)
+         , RequestParsable v
+         , RequestParsable u
          ) => MVar ()     -- ^All database access is under this MVar.
          -> d           -- ^The database.
          -> URI           -- ^The base URI.
@@ -203,19 +203,15 @@ data VersionedID a = VersionedID
     , txnid :: TransactionID
     } deriving (Show, Eq)
 
-instance (Parsable a, FromJSON a, Constructor f)
-        => Constructible (f (VersionedID a)) where
-    construct = VersionedID <$> parse "id" <*> parse "txnid"
-
 -- | A version of a thing, as was produced in a particular transaction.
 data Versioned a b = Versioned
     { version :: VersionedID a
     , thing :: b
     } deriving (Show, Eq)
 
-instance (Constructor f, Constructible (f (VersionedID a)), Constructible (f b))
-        => Constructible (f (Versioned a b)) where
-    construct = Versioned <$> construct <*> construct
+instance (RequestParsable (VersionedID a), RequestParsable b)
+         => RequestParsable (Versioned a b) where
+    template = Versioned <$> template <*> template
 
 -- | Augment JSON representations of 'Versioned' objects
 -- with @"url"@ and @"thisVersion"@ fields.

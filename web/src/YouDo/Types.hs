@@ -63,8 +63,8 @@ instance Parsable YoudoID where
     parseParam x = YoudoID <$> parseParam x
 instance FromParam Int YoudoID where
     fromParam = YoudoID
-instance (Constructor f) => Constructible (f YoudoID) where
-    construct = YoudoID <$> parse "id"
+instance RequestParsable YoudoID where
+    template = YoudoID <$> parse "id"
 
 data YoudoData = YoudoData { assignerid :: UserID
                            , assigneeid :: UserID
@@ -72,12 +72,12 @@ data YoudoData = YoudoData { assignerid :: UserID
                            , duedate :: DueDate
                            , completed :: Bool
                            } deriving (Show)
-instance (Constructor f) => Constructible (f YoudoData) where
-    construct = YoudoData <$> parse "assignerid"
-                          <*> parse "assigneeid"
-                          <*> parse "description" `defaultTo` ""
-                          <*> parse "duedate" `defaultTo` DueDate Nothing
-                          <*> parse "completed" `defaultTo` False
+instance RequestParsable YoudoData where
+    template = YoudoData <$> parse "assigner"
+                         <*> parse "assignee"
+                         <*> parse "description" `defaultTo` ""
+                         <*> parse "duedate" `defaultTo` DueDate Nothing
+                         <*> parse "completed" `defaultTo` False
 
 data YoudoUpdate = YoudoUpdate { newAssignerid :: Maybe UserID
                                , newAssigneeid :: Maybe UserID
@@ -85,12 +85,12 @@ data YoudoUpdate = YoudoUpdate { newAssignerid :: Maybe UserID
                                , newDuedate :: Maybe DueDate
                                , newCompleted :: Maybe Bool
                                } deriving (Show)
-instance (Constructor f) => Constructible (f YoudoUpdate) where
-    construct = YoudoUpdate <$> optional (parse "assignerid")
-                            <*> optional (parse "assigneeid")
-                            <*> optional (parse "description")
-                            <*> optional (parse "duedate")
-                            <*> optional (parse "completed")
+instance RequestParsable YoudoUpdate where
+    template = YoudoUpdate <$> optional (parse "assigner")
+                           <*> optional (parse "assignee")
+                           <*> optional (parse "description")
+                           <*> optional (parse "duedate")
+                           <*> optional (parse "completed")
 
 instance Updater YoudoUpdate YoudoData where
     doUpdate upd yd =
@@ -133,8 +133,8 @@ instance Parsable UserID where
     parseParam x = UserID <$> parseParam x
 instance FromParam Int UserID where
     fromParam = UserID
-instance (Constructor f) => Constructible (f UserID) where
-    construct = UserID <$> parse "id"
+instance RequestParsable UserID where
+    template = UserID <$> parse "id"
 
 basedIDFromJSON :: Value -> URI -> Parser Int
 basedIDFromJSON (String txt) base =
@@ -153,13 +153,13 @@ basedIDFromText txt base = do
 
 data UserData = UserData { name :: String }
     deriving (Show, Eq)
-instance (Constructor f) => Constructible (f UserData) where
-    construct = UserData <$> parse "name"
+instance RequestParsable UserData where
+    template = UserData <$> parse "name"
 
 data UserUpdate = UserUpdate { newName :: Maybe String } deriving (Show, Eq)
 
-instance (Constructor f) => Constructible (f UserUpdate) where
-    construct = UserUpdate <$> optional (parse "name")
+instance RequestParsable UserUpdate where
+    template = UserUpdate <$> optional (parse "name")
 
 instance Updater UserUpdate UserData where
     doUpdate upd u = case newName upd of
@@ -173,6 +173,8 @@ instance Parsable DueDate where
     parseParam t = either (Left . LT.pack)
                           (Right . DueDate . Just)
                           $ parseUTCTime t
+instance BasedParsable DueDate where
+    basedParseParam = flip $ const parseParam
 instance ToJSON DueDate where
     toJSON (DueDate Nothing) = Null
     toJSON (DueDate (Just t)) = toJSON t
@@ -181,6 +183,8 @@ instance FromJSON DueDate where
     parseJSON (String t) = either fail return $
         DueDate . Just <$> parseUTCTime (LT.fromStrict t)
     parseJSON x = typeMismatch "String or Null" x
+instance BasedFromJSON DueDate where
+    basedParseJSON = flip $ const parseJSON
 
 instance FromField DueDate where
     fromField fld = (fmap.fmap) DueDate $ fromField fld
