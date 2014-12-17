@@ -280,8 +280,12 @@ class RequestParsable a where
                 )
              => ReaderT URI f a
 
--- | An error encountered when constructing an object by filling in
--- values for its 'hole's and calling 'evaluateE'.
+{- |
+    An error encountered when evaluating a 'RequestParsable' object
+    by filling in values for its 'hole's and calling 'evaluateE'.
+    (This occurs in 'body', for example, where the values come from
+    the HTTP request body.)
+-}
 data EvaluationError k v
     = MissingKey k             -- ^A hole named @k@ was not filled.
     | UnusedKey k              -- ^A value for a hole named @k@ was given,
