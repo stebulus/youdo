@@ -90,7 +90,7 @@ resource route acts =
     the server's expectations doesn't denote any existing resource.
 -}
 capture :: (FromParam a b, MonadTrans t)
-        => LT.Text                          -- ^The name of the capture.
+        => LT.Text                -- ^The name of the capture.
         -> t ActionStatusM b      -- ^The action to get its value.
 capture k = lift $ lift500 $ fromParam <$> param k
 
