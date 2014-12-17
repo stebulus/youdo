@@ -264,9 +264,15 @@ requestData = do
                         LT.concat ["Don't know how to handle Content-Type: ", hdr]
     return $ paramdata ++ bodydata
 
--- | An object that can be constructed by a 'RequestParser'.
--- Typically the 'template' method should be implemented as an
--- applicative expression; see the example under 'body'.
+{- |
+    An object that can be constructed by a 'RequestParser'.
+    Typically the 'template' method should be implemented as an
+    applicative expression; see the example under 'body'.
+
+    The type signatures here are more general than 'RequestParser',
+    to faciliate future use with other functors, e.g., to generate
+    HTML forms and documentation from the same applicative expression.
+-}
 class RequestParsable a where
     template :: ( Applicative f
                 , Holes LT.Text ParamValue (ReaderT URI f)
