@@ -5,6 +5,7 @@ import Control.Applicative ((<$>), (<*>))
 import Control.Concurrent.MVar (newEmptyMVar, newMVar, takeMVar, putMVar,
     modifyMVar_, modifyMVar)
 import Control.Monad.IO.Class (liftIO)
+import Control.Monad.Reader (runReaderT)
 import Control.Monad.Trans.Either (EitherT(..), left, right, hoistEither)
 import Data.Aeson (eitherDecode, Object, Value(..), parseJSON)
 import Data.Aeson.Types (parseEither)
@@ -23,7 +24,7 @@ import Distribution.TestSuite (Test(..), TestInstance(..), Progress(..),
 import Network.HTTP.Types (Status, ResponseHeaders, ok200, created201,
     badRequest400, methodNotAllowed405, http11, methodGet, methodPost,
     methodPut, decodePathSegments, parseQuery, Method)
-import Network.URI (parseURI, URI(..), URIAuth(..))
+import Network.URI (parseURI, URI(..), URIAuth(..), nullURI)
 import Network.Wai (Application, responseToStream, RequestBodyLength(..), requestBody,
     defaultRequest)
 import Network.Wai.Internal (Request(..), ResponseReceived(..))
@@ -33,7 +34,7 @@ import YouDo.Holes
 import YouDo.Test (plainTest)
 import YouDo.Types (DueDate, UserID(..))
 import YouDo.Web (ParamValue(..), parse, EvaluationError(..), Constructor,
-    BasedFromJSON(..), BasedParsable(..))
+    BasedFromJSON(..), BasedParsable(..), RequestParser)
 import YouDo.WebApp (app)
 
 tests :: IO [Test]
@@ -258,7 +259,7 @@ tests = return $
              , plainTest ("holex parsing, " ++ descr) $ do
                     let expr :: (Constructor f) => f DueDate
                         expr = parse "duedate"
-                    evaluateE expr
+                    evaluateNoURI expr
                               [("duedate", JSONField (String $ T.pack datestr))]
                         ~= Left [ParseError "duedate"
                                  (JSONField (String $ T.pack datestr))
@@ -277,17 +278,17 @@ tests = return $
     [ plainTest "Holex parsing from Scotty parameters" $ do
         let expr :: (Constructor f) => f Int
             expr = (+) <$> (parse "a") <*> (parse "b")
-            val = evaluateE expr [("a", ScottyParam "1"), ("b", ScottyParam "-3")]
-            val' = evaluateE expr [("a", ScottyParam "1"), ("b", ScottyParam "q")]
+            val = evaluateNoURI expr [("a", ScottyParam "1"), ("b", ScottyParam "-3")]
+            val' = evaluateNoURI expr [("a", ScottyParam "1"), ("b", ScottyParam "q")]
         (val,val') ~= (Right (-2),
             Left [ParseError "b" (ScottyParam "q") "readEither: no parse"])
     , plainTest "Holex parsing from JSON fields" $ do
         let expr :: (Constructor f) => f Int
             expr = (+) <$> (parse "a") <*> (parse "b")
-            val = evaluateE expr [("a", JSONField (Number 1)),
-                                  ("b", JSONField (Number (-3)))]
-            val' = evaluateE expr [("a", JSONField (Number 1)),
-                                   ("b", JSONField (String "q"))]
+            val = evaluateNoURI expr [("a", JSONField (Number 1)),
+                                      ("b", JSONField (Number (-3)))]
+            val' = evaluateNoURI expr [("a", JSONField (Number 1)),
+                                       ("b", JSONField (String "q"))]
         (val,val') ~= (Right (-2),
             Left [ParseError "b" (JSONField (String "q"))
                 "when expecting a Int, encountered String instead"])
@@ -312,6 +313,11 @@ tests = return $
                       ]
         return $ plainTest ("UserID from URL, " ++ dataname ++ ", " ++ fname)
                            $ f userurl ~= result
+
+evaluateNoURI :: RequestParser a
+              -> [(LT.Text,ParamValue)]
+              -> Either [EvaluationError LT.Text ParamValue] a
+evaluateNoURI expr kvs = evaluateE (runReaderT expr nullURI) kvs
 
 unintersperse :: (Eq a) => a -> [a] -> [[a]]
 unintersperse _ [] = []

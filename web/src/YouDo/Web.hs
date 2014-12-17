@@ -27,7 +27,7 @@ import Codec.MIME.Type (mimeType, MIMEType(Application))
 import Codec.MIME.Parse (parseMIMEType)
 import Control.Applicative ((<$>), Applicative(..))
 import Control.Monad.Error (mapErrorT, throwError)
-import Control.Monad.Reader (ReaderT, ask)
+import Control.Monad.Reader (ReaderT(..), ask, mapReaderT)
 import Control.Monad.Trans (MonadTrans(..))
 import Data.Aeson (ToJSON(..), FromJSON(..), Value(..))
 import qualified Data.Aeson as A
@@ -203,6 +203,10 @@ lift500 = failWith internalServerError500
     functor @f@.  (For use with @body@, we only need the instance
     for 'RequestParser', but you might as well write it generically.)
 
+    The 'URI' to be supplied to the 'ReaderT' wrapper is the base URI
+    of the app (which might affect the interpretation of URLs in the
+    body of the request, for example).
+
     If an error occurs parsing the request, a 400 (Bad Request)
     response is thrown.
 -}
@@ -220,9 +224,9 @@ body = do
     response is thrown.
 -}
 fromRequestBody :: RequestParser a -> URI -> ActionStatusM a
-fromRequestBody expr _ = do
+fromRequestBody expr base = do
     kvs <- requestData
-    case evaluateE expr kvs of
+    case evaluateE (runReaderT expr base) kvs of
         Left errs -> badRequest $ showEvaluationErrors errs
         Right a -> return a
 
@@ -337,7 +341,14 @@ showEvaluationErrors es = LT.concat [ LT.concat [ showEvaluationError e, "\r\n" 
                                     | e<-es ]
 
 -- | Type synonym for our usual evaluation applicative.
-type RequestParser = EvaluatorE LT.Text ParamValue [EvaluationError LT.Text ParamValue]
+type RequestParser = ReaderT URI
+    (EvaluatorE LT.Text ParamValue [EvaluationError LT.Text ParamValue])
+instance Holes LT.Text ParamValue RequestParser where
+    hole = ReaderT . const . hole
+instance Errs [EvaluationError LT.Text ParamValue] RequestParser where
+    throwLeft = mapReaderT throwLeft
+    catch fa handle = ReaderT $ \uri ->
+        (runReaderT fa uri) `catch` (\e -> runReaderT (handle e) uri)
 
 -- | How to report missing keys in a 'RequestParser'.
 instance MissingKeyError LT.Text [EvaluationError LT.Text ParamValue] where
