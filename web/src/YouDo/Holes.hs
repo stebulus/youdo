@@ -13,7 +13,7 @@ class Holes k v f | f->k v where
     hole :: k -> f v
 
 class Errs e f | f->e where
-    throwLeft :: (Errs e f) => f (Either e a) -> f a
+    throwLeft :: f (Either e a) -> f a
     catch :: f a -> (e -> f a) -> f a
 
 throw :: (Functor f, Errs e f) => f e -> f a
