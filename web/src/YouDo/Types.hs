@@ -22,25 +22,18 @@ data ( DB YoudoID YoudoData YoudoUpdate IO yd
      , DB UserID UserData UserUpdate IO ud
      ) => YoudoDatabase yd ud = YoudoDatabase { youdos :: yd, users :: ud }
 
+{-
+    Youdos
+-}
+
 type Youdo = Versioned YoudoID YoudoData
-instance NamedResource YoudoID where
-    resourceName = const "youdos"
 instance FromRow Youdo where
     fromRow = Versioned <$> (VersionedID <$> field <*> field)
         <*> (YoudoData <$> field <*> field <*> field <*> field <*> field)
-instance BasedToJSON YoudoData where
-    basedToJSON yd = do
-        assigner <- basedToJSON $ assignerid yd
-        assignee <- basedToJSON $ assigneeid yd
-        return $ object
-            [ "assigner" .= assigner
-            , "assignee" .= assignee
-            , "description" .= description yd
-            , "duedate" .= duedate yd
-            , "completed" .= completed yd
-            ]
 
 newtype YoudoID = YoudoID Int deriving (Eq)
+instance NamedResource YoudoID where
+    resourceName = const "youdos"
 instance Show YoudoID where
     show (YoudoID n) = show n
 instance BasedToJSON YoudoID where
@@ -74,6 +67,17 @@ instance RequestParsable YoudoData where
                          <*> parse "description" `defaultTo` ""
                          <*> parse "duedate" `defaultTo` DueDate Nothing
                          <*> parse "completed" `defaultTo` False
+instance BasedToJSON YoudoData where
+    basedToJSON yd = do
+        assigner <- basedToJSON $ assignerid yd
+        assignee <- basedToJSON $ assigneeid yd
+        return $ object
+            [ "assigner" .= assigner
+            , "assignee" .= assignee
+            , "description" .= description yd
+            , "duedate" .= duedate yd
+            , "completed" .= completed yd
+            ]
 
 data YoudoUpdate = YoudoUpdate { newAssignerid :: Maybe UserID
                                , newAssigneeid :: Maybe UserID
@@ -87,7 +91,6 @@ instance RequestParsable YoudoUpdate where
                            <*> optional (parse "description")
                            <*> optional (parse "duedate")
                            <*> optional (parse "completed")
-
 instance Updater YoudoUpdate YoudoData where
     doUpdate upd yd =
         yd { assignerid = fromMaybe (assignerid yd) (newAssignerid upd)
@@ -97,16 +100,18 @@ instance Updater YoudoUpdate YoudoData where
            , completed = fromMaybe (completed yd) (newCompleted upd)
            }
 
+{-
+    Users
+-}
+
 type User = Versioned UserID UserData
-instance NamedResource UserID where
-    resourceName = const "users"
 instance FromRow User where
     fromRow = Versioned <$> (VersionedID <$> field <*> field)
                         <*> (UserData <$> field)
-instance BasedToJSON UserData where
-    basedToJSON yduser = return $ object [ "name" .= name yduser ]
 
 newtype UserID = UserID Int deriving (Eq)
+instance NamedResource UserID where
+    resourceName = const "users"
 instance Show UserID where
     show (UserID n) = show n
 instance BasedToJSON UserID where
@@ -128,6 +133,25 @@ instance FromJSON UserID where
 instance Parsable UserID where
     parseParam x = UserID <$> parseParam x
 
+data UserData = UserData { name :: String }
+    deriving (Show, Eq)
+instance RequestParsable UserData where
+    template = UserData <$> parse "name"
+instance BasedToJSON UserData where
+    basedToJSON yduser = return $ object [ "name" .= name yduser ]
+
+data UserUpdate = UserUpdate { newName :: Maybe String } deriving (Show, Eq)
+instance RequestParsable UserUpdate where
+    template = UserUpdate <$> optional (parse "name")
+instance Updater UserUpdate UserData where
+    doUpdate upd u = case newName upd of
+        Nothing -> u
+        Just n -> u { name = n }
+
+{-
+    IDs in general
+-}
+
 basedIDFromJSON :: Value -> URI -> Parser Int
 basedIDFromJSON (String txt) base =
     case basedIDFromText (LT.fromStrict txt) base of
@@ -143,22 +167,10 @@ basedIDFromText txt base = do
         (n,"/"):_ -> Right n
         _ -> Left "invalid ID"
 
-data UserData = UserData { name :: String }
-    deriving (Show, Eq)
-instance RequestParsable UserData where
-    template = UserData <$> parse "name"
+{-
+    The duedate field, as a newtype mostly to avoid orphan instances.
+-}
 
-data UserUpdate = UserUpdate { newName :: Maybe String } deriving (Show, Eq)
-
-instance RequestParsable UserUpdate where
-    template = UserUpdate <$> optional (parse "name")
-
-instance Updater UserUpdate UserData where
-    doUpdate upd u = case newName upd of
-        Nothing -> u
-        Just n -> u { name = n }
-
--- This newtype avoids orphan instances.
 newtype DueDate = DueDate { toMaybeTime :: Maybe UTCTime } deriving (Eq, Show)
 instance Parsable DueDate where
     parseParam "" = Right $ DueDate Nothing
@@ -177,7 +189,6 @@ instance FromJSON DueDate where
     parseJSON x = typeMismatch "String or Null" x
 instance BasedFromJSON DueDate where
     basedParseJSON = flip $ const parseJSON
-
 instance FromField DueDate where
     fromField fld = (fmap.fmap) DueDate $ fromField fld
 instance ToField DueDate where
