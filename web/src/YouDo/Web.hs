@@ -100,9 +100,9 @@ basedjson x uri = Scotty.json $ basedToJSON x uri
 
 -- | A value that can be reported to a web client.
 class WebResult r where
-    report :: r                           -- ^The value to report.
-              -> URI                      -- ^The base URI.
-              -> ActionStatusM ()         -- ^An action that reports that value.
+    report :: r                     -- ^The value to report.
+           -> URI                   -- ^The base URI.
+           -> ActionStatusM ()      -- ^An action that reports that value.
 
 -- | A value that can be serialized as JSON, respecting a base URI.
 class BasedToJSON a where
