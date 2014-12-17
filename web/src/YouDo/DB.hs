@@ -118,7 +118,7 @@ class Updater u a where
     'body'.
 -}
 webdb :: ( NamedResource k, DB k v u IO d
-         , Parsable k, FromJSON k
+         , Parsable k
          , BasedToJSON v
          , RequestParsable v
          , RequestParsable u
