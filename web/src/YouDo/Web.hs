@@ -29,7 +29,7 @@ import Codec.MIME.Parse (parseMIMEType)
 import Control.Applicative ((<$>), Applicative(..))
 import Control.Monad.Error (mapErrorT, throwError)
 import Control.Monad.Reader (ReaderT, ask)
-import Control.Monad.Trans.Class (lift)
+import Control.Monad.Trans (MonadTrans(..))
 import Data.Aeson (ToJSON(..), FromJSON(..), Value(..))
 import qualified Data.Aeson as A
 import qualified Data.Aeson.Types as A
@@ -74,8 +74,25 @@ resource route acts =
     not a problem because @capture@ is normally used right next to
     the route pattern that declares the relevant captures, so there's
     little room for error.  (See 'YouDo.DB.webdb', for example.)
+
+    The returned action is wrapped in a 'MonadTrans' for compatibility
+    with other combinators used in request-parsing applicative
+    expressions, such as 'body', which produce values of type 'ReaderT
+    URI ActionStatusM b' to depend on the base URI.  (This one does
+    not actually depend on the base URI.)
+
+    If the capture is not found, @capture@ raises the status HTTP 500
+    (Internal Server Error), because you shouldn't ask for captures
+    that you don't know are there.  If the capture cannot be parsed
+    as type @a@ then 'Scotty.next' is called (as with 'param'); if
+    no other route pattern matches the request (the usual situation)
+    then this will result in an HTTP 404 (Not Found), which makes
+    sense because presumably an URL that doesn't parse according to
+    the server's expectations doesn't denote any existing resource.
 -}
-capture :: (FromParam a b) => LT.Text -> ReaderT URI ActionStatusM b
+capture :: (FromParam a b, MonadTrans t)
+        => LT.Text                          -- ^The name of the capture.
+        -> t ActionStatusM b      -- ^The action to get its value.
 capture k = lift $ lift500 $ fromParam <$> param k
 
 -- | How to convert a Scotty capture to type b.
