@@ -1,5 +1,6 @@
 {-# LANGUAGE MultiParamTypeClasses, FlexibleContexts, FlexibleInstances #-}
 module YouDo.DB.Memory where
+import Control.Applicative ((<$>))
 import Control.Concurrent.MVar (MVar, withMVar, modifyMVar, newMVar)
 import Data.Function (on)
 import Data.List (nubBy)
@@ -52,12 +53,16 @@ instance (Eq k, NamedResource k, Updater u v)
                                             (doUpdate (thing vu) (thing x))
                                 return (newx:xs, success newx)
 
-empty :: IO (YoudoDatabase (MemoryDB YoudoID YoudoData YoudoUpdate)
-                           (MemoryDB UserID UserData UserUpdate))
+empty :: IO (YoudoDatabase
+                (LockDB IO YoudoID YoudoData YoudoUpdate
+                    (MemoryDB YoudoID YoudoData YoudoUpdate))
+                (LockDB IO UserID UserData UserUpdate
+                    (MemoryDB UserID UserData UserUpdate)))
 empty = do
     txnIncr <- (fmap.fmap) TransactionID $ newIncrementer 0
-    yd <- newdb YoudoID txnIncr
-    ud <- newdb UserID txnIncr
+    mv <- newMVar ()
+    yd <- LockDB mv <$> newdb YoudoID txnIncr
+    ud <- LockDB mv <$> newdb UserID txnIncr
     result <- create (UserData "yddb") ud
     case result of
         Right (Right (Right _)) -> return $ YoudoDatabase yd ud

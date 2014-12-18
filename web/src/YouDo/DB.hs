@@ -10,7 +10,7 @@ License     : GPL-3
 module YouDo.DB (
     -- *Database and web interface
     DB(..), Updater(..), webdb, NamedResource(..),
-    idjson, veridjson,
+    idjson, veridjson, LockDB(..),
     -- *Versioning of database objects
     Versioned(..), VersionedID(..), TransactionID(..),
     -- *Results of database operations
@@ -24,7 +24,8 @@ module YouDo.DB (
 
 import Control.Applicative (Applicative(..), (<$>), (<*>))
 import Control.Concurrent.MVar
-import Control.Monad.IO.Class (liftIO)
+import Control.Monad (join)
+import Control.Monad.IO.Class (MonadIO(..))
 import Control.Monad.Reader (ReaderT(..))
 import Data.Aeson (FromJSON(..), (.=), Value(..))
 import qualified Data.HashMap.Strict as M
@@ -192,6 +193,24 @@ idjson k base = jsonurl $ resourceURL k base
 -- | The URL for a specific version of a 'NamedResource' object, as a JSON 'Value'.
 veridjson :: (Show k, NamedResource k) => VersionedID k -> URI -> Value
 veridjson k base = jsonurl $ resourceVersionURL k base
+
+-- | A 'DB' wrapper that locks on a given 'MVar'.
+-- The 'dbResourceName' operation is not locked.
+data (MonadIO m, DB m k v u d) => LockDB m k v u d = LockDB (MVar ()) d
+
+instance (MonadIO m, DB m k v u d) => DB m k v u (LockDB m k v u d) where
+    get k = hoistLockDB (get k)
+    getVersion verid = hoistLockDB (getVersion verid)
+    getVersions k = hoistLockDB (getVersions k)
+    getAll = hoistLockDB getAll
+    create v = hoistLockDB (create v)
+    update veru = hoistLockDB (update veru)
+    dbResourceName (LockDB _ db) = dbResourceName db
+
+hoistLockDB :: (MonadIO m, DB m k v u d)
+            => (d  -> m a) -> LockDB m k v u d -> m a
+hoistLockDB f (LockDB mv db) =
+    join $ liftIO $ withMVar mv $ const (return $ f db)
 
 {- |
     An identifier of a version of a thing, as was produced in a
