@@ -37,14 +37,13 @@ import YouDo.Types
 app :: ( DB IO YoudoID YoudoData YoudoUpdate ydb
        , DB IO UserID UserData UserUpdate udb
        ) => YoudoDatabase ydb udb     -- ^The database.
-       -> MVar ()       -- ^All database access is under this MVar.
        -> URI           -- ^The base URI.
        -> ScottyM ()
-app db mv base =
+app db base =
     let api0base = (fromJust $ parseURIReference $ "./0/") `relativeTo` base
     in do
-        webdb mv (youdos db) api0base
-        webdb mv (users db) api0base
+        webdb (youdos db) api0base
+        webdb (users db) api0base
 
 -- | The kind of database to connect to.
 data DBOption = InMemory            -- ^A transient in-memory database; see "YouDo.DB.Memory"
@@ -92,17 +91,16 @@ mainOpts opts = do
                                           $ setHost "127.0.0.1"  -- for now
                                           $ defaultSettings
                                }
-        runApp db mv = scotty $ app db mv baseuri
+        runApp db = scotty $ app db baseuri
         p = port opts
-    mv <- newMVar ()
     case dbopt opts of
         InMemory -> do
             db <- YouDo.DB.Memory.empty
-            runApp db mv
+            runApp db
         Postgres connstr -> do
+            mv <- newMVar ()
             bracket (connectPostgreSQL (pack connstr))
                     (\conn -> close conn)
-                    (\conn -> runApp (YoudoDatabase
-                                        (PostgresYoudoDB conn)
-                                        (PostgresUserDB conn))
-                                     mv)
+                    (\conn -> runApp $ YoudoDatabase
+                                        (LockDB mv (PostgresYoudoDB conn))
+                                        (LockDB mv (PostgresUserDB conn)))

@@ -366,9 +366,8 @@ serverTest :: (IsRequest a) =>
 serverTest testName f = Test $ TestInstance
     { run = do
         db <- empty
-        mv <- newMVar ()
         waiApp <- scottyApp
-                  $ app db mv $ fromJust $ parseURI "http://example.com"
+                  $ app db $ fromJust $ parseURI "http://example.com"
         result <- runEitherT $ f $ request waiApp
         return $ Finished $ case result of
             Left msg -> Fail msg

@@ -124,15 +124,12 @@ webdb :: ( NamedResource k, DB IO k v u d
          , RequestParsable v
          , RequestParsable u
          )
-      => MVar ()        -- ^All database access is under this MVar.
-      -> d              -- ^The database.
+      => d              -- ^The database.
       -> URI            -- ^The base URI.
       -> ScottyM ()
-webdb mv db base = do
+webdb db base = do
     let rtype = dbResourceName db
-        dodb m = flip report base =<< liftIO =<< lock <$>
-                        (runReaderT m base <*> pure db)
-        lock a = withMVar mv $ const a
+        dodb m = flip report base =<< liftIO =<< (runReaderT m base <*> pure db)
         route s = fromString $ uriPath $
             (fromJust $ parseURIReference $ rtype ++ s) `relativeTo` base
     resource (route "")
