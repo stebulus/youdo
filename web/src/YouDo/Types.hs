@@ -18,8 +18,8 @@ import YouDo.DB
 import YouDo.TimeParser (parseUTCTime)
 import YouDo.Web
 
-data ( DB YoudoID YoudoData YoudoUpdate IO yd
-     , DB UserID UserData UserUpdate IO ud
+data ( DB IO YoudoID YoudoData YoudoUpdate yd
+     , DB IO UserID UserData UserUpdate ud
      ) => YoudoDatabase yd ud = YoudoDatabase { youdos :: yd, users :: ud }
 
 {-

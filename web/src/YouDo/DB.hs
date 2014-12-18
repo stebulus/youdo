@@ -49,7 +49,7 @@ import YouDo.Web
     example), but it's not required.
 -}
 class (Monad m, NamedResource k)
-      => DB k v u m d | d->v, d->k, d->u, d->m where
+      => DB m k v u d | d->v, d->k, d->u, d->m where
 
     -- | Get the object with the specified key.
     get :: k -> d -> m (GetResult (Versioned k v))
@@ -117,7 +117,7 @@ class Updater u a where
     shouldn't be.)  The request body, when needed, is interpreted via
     'body'.
 -}
-webdb :: ( NamedResource k, DB k v u IO d
+webdb :: ( NamedResource k, DB IO k v u d
          , Parsable k
          , BasedToJSON v
          , RequestParsable v

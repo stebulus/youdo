@@ -26,7 +26,7 @@ newIncrementer initial = do
     return $ modifyMVar mv $ \n -> return (succ n, n)
 
 instance (Eq k, NamedResource k, Updater u v)
-         => DB k v u IO (MemoryDB k v u) where
+         => DB IO k v u (MemoryDB k v u) where
     get k d = withMVar (mvar d) $ \xs ->
         return $ one $ [x | x<-xs, thingid (version x) == k]
     getVersions k d = withMVar (mvar d) $ \xs ->

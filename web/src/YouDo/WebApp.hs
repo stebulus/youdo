@@ -34,8 +34,8 @@ import YouDo.Types
 
 -- | The Scotty application.
 -- Consists of 'webdb' interfaces for the given Youdo and User DB instances.
-app :: ( DB YoudoID YoudoData YoudoUpdate IO ydb
-       , DB UserID UserData UserUpdate IO udb
+app :: ( DB IO YoudoID YoudoData YoudoUpdate ydb
+       , DB IO UserID UserData UserUpdate udb
        ) => YoudoDatabase ydb udb     -- ^The database.
        -> MVar ()       -- ^All database access is under this MVar.
        -> URI           -- ^The base URI.

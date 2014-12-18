@@ -9,7 +9,7 @@ import YouDo.DB
 import YouDo.Types
 
 newtype PostgresYoudoDB = PostgresYoudoDB Connection
-instance DB YoudoID YoudoData YoudoUpdate IO PostgresYoudoDB where
+instance DB IO YoudoID YoudoData YoudoUpdate PostgresYoudoDB where
     get ydid (PostgresYoudoDB conn) =
         one <$> query conn
               "select id, txnid, assignerid, assigneeid, description, duedate, completed \
@@ -34,7 +34,7 @@ instance DB YoudoID YoudoData YoudoUpdate IO PostgresYoudoDB where
                 :: IO [Youdo]
             return $ one ids
 newtype PostgresUserDB = PostgresUserDB Connection
-instance DB UserID UserData UserUpdate IO PostgresUserDB where
+instance DB IO UserID UserData UserUpdate PostgresUserDB where
     get uid (PostgresUserDB conn) =
         one <$> query conn
               "select id, name from yd_user where id = ?"
