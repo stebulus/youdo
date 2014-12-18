@@ -123,10 +123,11 @@ webdb :: ( NamedResource k, DB IO k v u d
          , BasedToJSON v
          , RequestParsable v
          , RequestParsable u
-         ) => MVar ()     -- ^All database access is under this MVar.
-         -> d           -- ^The database.
-         -> URI           -- ^The base URI.
-         -> ScottyM ()
+         )
+      => MVar ()        -- ^All database access is under this MVar.
+      -> d              -- ^The database.
+      -> URI            -- ^The base URI.
+      -> ScottyM ()
 webdb mv db base = do
     let rtype = dbResourceName db
         dodb m = flip report base =<< liftIO =<< lock <$>
