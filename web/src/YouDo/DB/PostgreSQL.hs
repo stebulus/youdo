@@ -2,11 +2,21 @@
 module YouDo.DB.PostgreSQL where
 
 import Control.Applicative ((<$>))
+import Control.Concurrent.MVar (newMVar)
 import Database.PostgreSQL.Simple (query, query_, execute, withTransaction,
     Only(..), Connection, Query)
 
 import YouDo.DB
 import YouDo.Types
+
+-- | Access a Youdo database over the given connection.
+youdoDB :: Connection
+        -> IO (YoudoDatabase (LockDB IO YoudoID YoudoData YoudoUpdate PostgresYoudoDB)
+                             (LockDB IO UserID UserData UserUpdate PostgresUserDB))
+youdoDB conn = do
+    mv <- newMVar ()
+    return $ YoudoDatabase (LockDB mv (PostgresYoudoDB conn))
+                           (LockDB mv (PostgresUserDB conn))
 
 -- | A 'DB' instance backed by a PostgreSQL database.
 -- Not thread-safe!  Use 'LockDB' if needed.

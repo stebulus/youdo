@@ -98,9 +98,6 @@ mainOpts opts = do
             db <- YouDo.DB.Memory.empty
             runApp db
         Postgres connstr -> do
-            mv <- newMVar ()
             bracket (connectPostgreSQL (pack connstr))
                     (\conn -> close conn)
-                    (\conn -> runApp $ YoudoDatabase
-                                        (LockDB mv (PostgresYoudoDB conn))
-                                        (LockDB mv (PostgresUserDB conn)))
+                    (\conn -> youdoDB conn >>= runApp)
