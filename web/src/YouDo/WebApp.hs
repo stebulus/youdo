@@ -94,9 +94,7 @@ mainOpts opts = do
         runApp db = scotty $ app db baseuri
         p = port opts
     case dbopt opts of
-        InMemory -> do
-            db <- YouDo.DB.Memory.empty
-            runApp db
+        InMemory -> YouDo.DB.Memory.empty >>= runApp
         Postgres connstr -> do
             bracket (connectPostgreSQL (pack connstr))
                     (\conn -> close conn)
