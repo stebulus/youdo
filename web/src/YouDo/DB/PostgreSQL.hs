@@ -8,6 +8,8 @@ import Database.PostgreSQL.Simple (query, query_, execute, withTransaction,
 import YouDo.DB
 import YouDo.Types
 
+-- | A 'DB' instance backed by a PostgreSQL database.
+-- Not thread-safe!  Use 'LockDB' if needed.
 newtype PostgresYoudoDB = PostgresYoudoDB Connection
 instance DB IO YoudoID YoudoData YoudoUpdate PostgresYoudoDB where
     get ydid (PostgresYoudoDB conn) =
