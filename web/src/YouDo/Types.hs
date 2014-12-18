@@ -140,9 +140,9 @@ data UserUpdate = UserUpdate { newName :: Maybe String } deriving (Show, Eq)
 instance RequestParsable UserUpdate where
     template = UserUpdate <$> optional (parse "name")
 instance Updater UserUpdate UserData where
-    doUpdate upd u = case newName upd of
-        Nothing -> u
-        Just n -> u { name = n }
+    doUpdate upd x = case newName upd of
+        Nothing -> x
+        Just n -> x { name = n }
 
 {-
     IDs in general

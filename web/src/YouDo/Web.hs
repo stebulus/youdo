@@ -11,6 +11,8 @@ module YouDo.Web (
     resource,
     -- * Base URIs
     BasedToJSON(..), BasedFromJSON(..), BasedParsable(..), basedjson,
+    -- * Relative URIs
+    RelativeToURI(..), (//), u,
     -- * Interpreting requests
     capture,
     body, fromRequestBody, RequestParser, parse, ParamValue(..), requestData,
@@ -34,10 +36,11 @@ import qualified Data.Aeson as A
 import qualified Data.Aeson.Types as A
 import qualified Data.HashMap.Strict as M
 import Data.List (intercalate)
+import Data.Maybe (fromJust)
 import qualified Data.Text.Lazy as LT
 import Network.HTTP.Types (badRequest400, methodNotAllowed405,
     unsupportedMediaType415, internalServerError500, Status, StdMethod(..))
-import Network.URI (URI(..))
+import Network.URI (URI(..), relativeTo, parseURIReference)
 import Web.Scotty (ScottyM, matchAny, header, addroute, param, params,
     ActionM, Parsable(..), status, setHeader, RoutePattern)
 import qualified Web.Scotty as Scotty
@@ -97,6 +100,40 @@ capture k = lift $ lift500 $ param k
 -- | Like 'Scotty.json', but for based representations.
 basedjson :: BasedToJSON a => a -> URI -> ActionM ()
 basedjson x uri = Scotty.json $ basedToJSON x uri
+
+-- | Something that can be evaluated relative to a URI.
+class RelativeToURI a where
+    (.//) :: URI -> a -> a
+instance RelativeToURI URI where
+    a .// b = b `relativeTo` a
+infixl 7 .//
+
+{- |
+    This version of '(.//)' ensures that there is a slash
+    at the end of the path part of the URI before evaluating 'b'
+    relative to it. Thus, for example,
+
+    @
+        u "foo" // u "bar" == u "foo/bar"
+    @
+
+    which is probably what the writer intended.
+-}
+(//) :: (RelativeToURI b) => URI -> b -> b
+a // b = a' .// b
+    where a' = if maybeLast apath == Just '/'
+               then a
+               else a { uriPath = apath ++ "/" }
+          apath = uriPath a
+          maybeLast [] = Nothing
+          maybeLast xs = Just $ last xs
+infixl 7 //
+
+-- | Parse a 'URI', throwing an exception if it fails.
+-- (It's probably best to use this only for string literals
+-- whose validity you can see yourself.)
+u :: String -> URI
+u = fromJust . parseURIReference
 
 -- | A value that can be reported to a web client.
 class WebResult r where
