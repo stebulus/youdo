@@ -13,7 +13,6 @@ module YouDo.WebApp (
 ) where
 
 import Control.Applicative
-import Control.Concurrent.MVar
 import Control.Exception (bracket)
 import Data.ByteString.Char8 (pack)
 import Data.Default
