@@ -37,8 +37,15 @@ app :: ( DB IO YoudoID YoudoData YoudoUpdate ydb
        ) => YoudoDatabase ydb udb     -- ^The database.
        -> URI           -- ^The base URI.
        -> ScottyM ()
-app db uri = toScotty $ ($ db) <$>
-    uri // u"0" // ( setBase $
+app db uri = toScotty $ ($ db) <$> uri // api0
+
+-- | The Youdo API, version 0.
+api0 :: ( DB IO YoudoID YoudoData YoudoUpdate ydb
+        , DB IO UserID UserData UserUpdate udb
+        )
+     => API (YoudoDatabase ydb udb -> ActionStatusM ())
+api0 =
+    u"0" // ( setBase $
         ((. youdos) <$> webdb)
         <>
         ((. users) <$> webdb)
