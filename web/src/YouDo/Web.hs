@@ -13,10 +13,10 @@ module YouDo.Web (
     BasedToJSON(..), BasedFromJSON(..), BasedParsable(..), basedjson,
     Based(..), RelativeToURI(..), (//), u,
     -- * Interpreting requests
-    capture,
-    body, fromRequestBody, RequestParser, ParamValue(..), requestData,
+    fromRequestBody, RequestParser, ParamValue(..), requestData,
     EvaluationError(..), optional,
     FromRequestBody(..), FromRequestBodyContext(..),
+    FromRequestContext(..),
     -- * Reporting results
     WebResult(..),
     -- * Error handling and HTTP status
@@ -175,36 +175,6 @@ resource acts = API [Based { base = Nothing
                            , debased = acts
                            }]
 
-{- |
-    Get the value of a Scotty capture.
-
-    Due to limitations of Scotty, this could in theory retrieve the
-    value of a field in the form data or a query parameter, but only
-    if there's no capture with the given name.  In practice this is
-    not a problem because @capture@ is normally used right next to
-    the route pattern that declares the relevant captures, so there's
-    little room for error.  (See 'YouDo.DB.webdb', for example.)
-
-    The returned action is wrapped in a 'MonadTrans' for compatibility
-    with other combinators used in request-parsing applicative
-    expressions, such as 'body', which produce values of type 'ReaderT
-    URI ActionStatusM b' to depend on the base URI.  (This one does
-    not actually depend on the base URI.)
-
-    If the capture is not found, @capture@ raises the status HTTP 500
-    (Internal Server Error), because you shouldn't ask for captures
-    that you don't know are there.  If the capture cannot be parsed
-    as type @a@ then 'Scotty.next' is called (as with 'param'); if
-    no other route pattern matches the request (the usual situation)
-    then this will result in an HTTP 404 (Not Found), which makes
-    sense because presumably an URL that doesn't parse according to
-    the server's expectations doesn't denote any existing resource.
--}
-capture :: (Parsable a, MonadTrans t)
-        => LT.Text                -- ^The name of the capture.
-        -> t ActionStatusM a      -- ^The action to get its value.
-capture k = lift $ lift500 $ param k
-
 -- | Like 'Scotty.json', but for based representations.
 basedjson :: BasedToJSON a => a -> URI -> ActionM ()
 basedjson x uri = Scotty.json $ basedToJSON x uri
@@ -347,32 +317,8 @@ lift500 :: ActionM a -> ActionStatusM a
 lift500 = failWith internalServerError500
 
 {- |
-    A value of type @a@ is obtained from the HTTP request using the
-    'template' method of its 'RequestParsable' instance; usually you
-    will have defined an instance like
-
-    @
-        instance 'RequestParsable' MyType where
-            template = MyType \<$\> parse \"id\" \<*\> parse \"name\"
-    @
-
-    The 'URI' to be supplied to the 'ReaderT' wrapper is the base URI
-    of the app (which might affect the interpretation of URLs in the
-    body of the request, for example).
-
-    If an error occurs parsing the request, a 400 (Bad Request)
-    response is thrown.
--}
-body :: (FromRequestBody RequestParser a)
-     => ReaderT URI ActionStatusM a
-body = do
-    uri <- ask
-    lift $ fromRequestBody template uri
-
-{- |
     Use the given 'RequestParser' to interpret the data in the HTTP
-    request.  See the discussion in 'body' for the usual method
-    of defining a 'RequestParser'.
+    request.
 
     If an error occurs parsing the request, a 400 (Bad Request)
     response is thrown.
@@ -458,6 +404,55 @@ class FromRequestBodyContext f where
     -}
     defaultTo :: f a -> a -> f a
 
+class (FromRequestBodyContext g) => FromRequestContext f g | f->g where
+    {-  Obsolete docs.
+
+        Get the value of a Scotty capture.
+
+        Due to limitations of Scotty, this could in theory retrieve the
+        value of a field in the form data or a query parameter, but only
+        if there's no capture with the given name.  In practice this is
+        not a problem because @capture@ is normally used right next to
+        the route pattern that declares the relevant captures, so there's
+        little room for error.  (See 'YouDo.DB.webdb', for example.)
+
+        The returned action is wrapped in a 'MonadTrans' for compatibility
+        with other combinators used in request-parsing applicative
+        expressions, such as 'body', which produce values of type 'ReaderT
+        URI ActionStatusM b' to depend on the base URI.  (This one does
+        not actually depend on the base URI.)
+
+        If the capture is not found, @capture@ raises the status HTTP 500
+        (Internal Server Error), because you shouldn't ask for captures
+        that you don't know are there.  If the capture cannot be parsed
+        as type @a@ then 'Scotty.next' is called (as with 'param'); if
+        no other route pattern matches the request (the usual situation)
+        then this will result in an HTTP 404 (Not Found), which makes
+        sense because presumably an URL that doesn't parse according to
+        the server's expectations doesn't denote any existing resource.
+    -}
+    capture :: (Parsable a) => LT.Text -> f a
+
+    {-  Obsolete docs.
+
+        A value of type @a@ is obtained from the HTTP request using the
+        'template' method of its 'RequestParsable' instance; usually you
+        will have defined an instance like
+
+        @
+            instance 'RequestParsable' MyType where
+                template = MyType \<$\> parse \"id\" \<*\> parse \"name\"
+        @
+
+        The 'URI' to be supplied to the 'ReaderT' wrapper is the base URI
+        of the app (which might affect the interpretation of URLs in the
+        body of the request, for example).
+
+        If an error occurs parsing the request, a 400 (Bad Request)
+        response is thrown.
+    -}
+    body :: (FromRequestBody g a) => f a
+
 {- |
     An error encountered when evaluating a 'RequestParsable' object
     by filling in values for its 'hole's and calling 'evaluateE'.
@@ -525,6 +520,12 @@ instance FromRequestBodyContext RequestParser where
         case es of
             [MissingKey _] -> pure d
             _ -> throw $ pure es
+
+instance FromRequestContext (ReaderT URI ActionStatusM) RequestParser where
+    capture k = lift $ lift500 $ param k
+    body = do
+        uri <- ask
+        lift $ fromRequestBody template uri
 
 -- | How to report missing keys in a 'RequestParser'.
 instance MissingKeyError LT.Text [EvaluationError LT.Text ParamValue] where
