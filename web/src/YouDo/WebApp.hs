@@ -16,11 +16,9 @@ import Control.Applicative
 import Control.Exception (bracket)
 import Data.ByteString.Char8 (pack)
 import Data.Default
-import Data.Maybe (fromJust)
 import Data.Monoid ((<>))
 import Database.PostgreSQL.Simple (close, connectPostgreSQL)
-import Network.URI (URI(..), URIAuth(..), nullURI, parseURIReference,
-    relativeTo)
+import Network.URI (URI(..), URIAuth(..), nullURI)
 import Network.Wai.Handler.Warp (setPort, setHost, defaultSettings)
 import Options.Applicative (option, strOption, flag', auto, long, short,
     metavar, help, execParser, Parser, fullDesc, helper, info, header)
@@ -29,6 +27,7 @@ import Web.Scotty (scottyOpts, Options(..), ScottyM)
 import YouDo.DB
 import YouDo.DB.Memory
 import YouDo.DB.PostgreSQL
+import YouDo.Web
 import YouDo.Types
 
 -- | The Scotty application.
@@ -38,11 +37,12 @@ app :: ( DB IO YoudoID YoudoData YoudoUpdate ydb
        ) => YoudoDatabase ydb udb     -- ^The database.
        -> URI           -- ^The base URI.
        -> ScottyM ()
-app db base =
-    let api0base = (fromJust $ parseURIReference $ "./0/") `relativeTo` base
-    in do
-        webdb (youdos db) api0base
-        webdb (users db) api0base
+app db base = toScotty $
+    base // u"0" // ( setBase $
+        webdb (youdos db)
+        <>
+        webdb (users db)
+    )
 
 -- | The kind of database to connect to.
 data DBOption = InMemory            -- ^A transient in-memory database; see "YouDo.DB.Memory"

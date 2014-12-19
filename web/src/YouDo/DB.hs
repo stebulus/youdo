@@ -31,14 +31,14 @@ import Data.Aeson (FromJSON(..), (.=), Value(..))
 import qualified Data.HashMap.Strict as M
 import Data.List (foldl', intercalate)
 import Data.Maybe (fromJust)
-import Data.String (fromString)
+import Data.Monoid ((<>))
 import qualified Data.Text as ST
 import qualified Data.Text.Lazy as LT
 import Database.PostgreSQL.Simple.FromField (FromField(..))
 import Network.HTTP.Types (ok200, created201, notFound404,
     conflict409, internalServerError500, StdMethod(..))
 import Network.URI
-import Web.Scotty (Parsable(..), ScottyM, status, setHeader, text)
+import Web.Scotty (Parsable(..), status, setHeader, text)
 
 import YouDo.Web
 
@@ -125,26 +125,31 @@ webdb :: ( NamedResource k, DB IO k v u d
          , RequestParsable u
          )
       => d              -- ^The database.
-      -> URI            -- ^The base URI.
-      -> ScottyM ()
-webdb db base = do
-    let rtype = dbResourceName db
-        dodb m = flip report base =<< liftIO =<< (runReaderT m base <*> pure db)
-        route s = fromString $ uriPath $
-            (fromJust $ parseURIReference $ rtype ++ s) `relativeTo` base
-    resource (route "")
-             [ (GET, dodb $ pure getAll)
-             , (POST, dodb $ create <$> body)
-             ]
-    resource (route "/:id/")
-             [ (GET, dodb $ get <$> capture "id") ]
-    resource (route "/:id/versions")
-             [ (GET, dodb $ getVersions <$> capture "id") ]
-    resource (route "/:id/:txnid") $
-             let verid = VersionedID <$> capture "id" <*> capture "txnid"
-             in [ (GET, dodb $ getVersion <$> verid)
-                , (POST, dodb $ update <$> (Versioned <$> verid <*> body))
-                ]
+      -> API
+webdb db =
+    u (dbResourceName db) // (
+        resource
+            [ (GET, dodb $ pure getAll)
+            , (POST, dodb $ create <$> body)
+            ]
+        <>
+        u":id" // resource
+            [ (GET, dodb $ get <$> capture "id") ]
+        <>
+        u":id/versions" .// resource
+            [ (GET, dodb $ getVersions <$> capture "id") ]
+        <>
+        u":id/:txnid" .// resource (
+            let verid = VersionedID <$> capture "id" <*> capture "txnid"
+            in [ (GET, dodb $ getVersion <$> verid)
+               , (POST, dodb $ update <$> (Versioned <$> verid <*> body))
+               ]
+        )
+    )
+    where dodb m base = do
+            lift500 $ setHeader "foo" $ LT.pack $ show base
+            flip report base =<< liftIO =<<
+                (runReaderT m base <*> pure db)
 
 {- |
     Class for types that have a name.  Minimum implementation:

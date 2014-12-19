@@ -8,11 +8,10 @@ License     : GPL-3
 -}
 module YouDo.Web (
     -- * Resources as bundles of operations
-    resource,
-    -- * Base URIs
+    resource, API(..), setBase, toScotty,
+    -- * Base and relative URIs
     BasedToJSON(..), BasedFromJSON(..), BasedParsable(..), basedjson,
-    -- * Relative URIs
-    RelativeToURI(..), (//), u,
+    Based(..), RelativeToURI(..), (//), u,
     -- * Interpreting requests
     capture,
     body, fromRequestBody, RequestParser, parse, ParamValue(..), requestData,
@@ -36,36 +35,68 @@ import qualified Data.Aeson as A
 import qualified Data.Aeson.Types as A
 import qualified Data.HashMap.Strict as M
 import Data.List (intercalate)
-import Data.Maybe (fromJust)
+import Data.Maybe (fromMaybe)
+import Data.Monoid (Monoid(..))
+import Data.String (IsString(..))
 import qualified Data.Text.Lazy as LT
 import Network.HTTP.Types (badRequest400, methodNotAllowed405,
     unsupportedMediaType415, internalServerError500, Status, StdMethod(..))
-import Network.URI (URI(..), relativeTo, parseURIReference)
+import Network.URI (URI(..), relativeTo, nullURI)
 import Web.Scotty (ScottyM, matchAny, header, addroute, param, params,
-    ActionM, Parsable(..), status, setHeader, RoutePattern)
+    ActionM, Parsable(..), status, setHeader)
 import qualified Web.Scotty as Scotty
 import Web.Scotty.Internal.Types (ActionT(..), ActionError(..),
     ScottyError(..))
 
 import YouDo.Holes
 
+data Based a = Based { base :: Maybe URI
+                     , relToBase :: URI
+                     , payload :: a
+                     }
+instance RelativeToURI (Based a) where
+    uri .// x@Based { base = Nothing } = x { relToBase = uri .// (relToBase x) }
+    uri .// x@Based { base = Just y } = x { base = Just (uri .// y) }
+
+newtype API = API [Based [(StdMethod, URI -> ActionStatusM ())]]
+instance RelativeToURI API where
+    uri .// (API xs) = API $ map (uri .//) xs
+instance Monoid API where
+    mempty = API mempty
+    (API xs) `mappend` (API ys) = API (xs `mappend` ys)
+setBase :: API -> API
+setBase (API xs) = API $ map f xs
+    where f x = x { base = Just $ maybe nullURI id (base x) }
+
+toScotty :: API -> ScottyM ()
+toScotty (API xs) = mapM_ f xs
+    where f basable =
+            let baseuri = fromMaybe nullURI $ base basable
+                route = fromString $ uriPath (baseuri .// relToBase basable)
+                allowedMethods = intercalate ","
+                    $ map (show . fst) (payload basable)
+            in do
+                sequence_ [ addroute method route
+                            $ statusErrors
+                            $ actf baseuri
+                          | (method, actf)<-payload basable ]
+                matchAny route $ do
+                    status methodNotAllowed405
+                        -- http://tools.ietf.org/html/rfc2616#section-10.4.6
+                    setHeader "Allow" $ LT.pack allowedMethods
+
 -- | A web resource, with a complete list of its supported methods.
 -- Defining a resource this way causes a 405 (Method Not Allowed)
 -- response when a request uses a method which is not in the
 -- given list.  (Scotty's default is 404 (Not Found), which is less
 -- appropriate.)
-resource :: RoutePattern            -- ^Route to this resource.
-            -> [(StdMethod, ActionStatusM ())]
+resource :: [(StdMethod, URI -> ActionStatusM ())]
                                     -- ^Allowed methods and their actions.
-            -> ScottyM ()
-resource route acts =
-    let allowedMethods = intercalate "," $ map (show . fst) acts
-    in do
-        sequence_ [ addroute method route $ statusErrors act
-                  | (method, act) <- acts ]
-        matchAny route $ do
-            status methodNotAllowed405  -- http://tools.ietf.org/html/rfc2616#section-10.4.6
-            setHeader "Allow" $ LT.pack allowedMethods
+            -> API
+resource acts = API [Based { base = Nothing
+                           , relToBase = nullURI
+                           , payload = acts
+                           }]
 
 {- |
     Get the value of a Scotty capture.
@@ -129,11 +160,11 @@ a // b = a' .// b
           maybeLast xs = Just $ last xs
 infixl 7 //
 
--- | Parse a 'URI', throwing an exception if it fails.
+-- | Create a 'URI' with the given string as path component.
 -- (It's probably best to use this only for string literals
 -- whose validity you can see yourself.)
 u :: String -> URI
-u = fromJust . parseURIReference
+u s = nullURI { uriPath = s }
 
 -- | A value that can be reported to a web client.
 class WebResult r where
@@ -145,7 +176,7 @@ class WebResult r where
 class BasedToJSON a where
     basedToJSON :: a -> URI -> Value
 instance BasedToJSON a => BasedToJSON [a] where
-    basedToJSON xs base = toJSON $ map (flip basedToJSON base) xs
+    basedToJSON xs uri = toJSON $ map (flip basedToJSON uri) xs
 
 -- | A value that can be deserialized from JSON, respecting a base URI.
 class BasedFromJSON a where
@@ -256,8 +287,8 @@ lift500 = failWith internalServerError500
 -}
 body :: (RequestParsable a) => ReaderT URI ActionStatusM a
 body = do
-    base <- ask
-    lift $ fromRequestBody template base
+    uri <- ask
+    lift $ fromRequestBody template uri
 
 {- |
     Use the given 'RequestParser' to interpret the data in the HTTP
@@ -268,9 +299,9 @@ body = do
     response is thrown.
 -}
 fromRequestBody :: RequestParser a -> URI -> ActionStatusM a
-fromRequestBody expr base = do
+fromRequestBody expr uri = do
     kvs <- requestData
-    case evaluateE (runReaderT expr base) kvs of
+    case evaluateE (runReaderT expr uri) kvs of
         Left errs -> badRequest $ showEvaluationErrors errs
         Right a -> return a
 
@@ -414,12 +445,12 @@ parse k =
 -- | Parse a 'ParamValue' into the appropriate type.
 basedParseEither :: (BasedParsable a, BasedFromJSON a)
             => k -> ParamValue -> URI -> Either (EvaluationError k ParamValue) a
-basedParseEither k x@(ScottyParam txt) base =
-    case basedParseParam txt base of
+basedParseEither k x@(ScottyParam txt) uri =
+    case basedParseParam txt uri of
         Left e -> Left $ ParseError k x e
         Right a -> Right a
-basedParseEither k x@(JSONField jsonval) base =
-    case runJSONParser (basedParseJSON jsonval base) of
+basedParseEither k x@(JSONField jsonval) uri =
+    case runJSONParser (basedParseJSON jsonval uri) of
         Left e -> Left $ ParseError k x $ LT.pack e
         Right a -> Right a
     where runJSONParser :: A.Parser a -> Either String a
