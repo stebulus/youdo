@@ -53,13 +53,13 @@ import YouDo.Holes
 -- | A wrapper that manages the URI of an object and its base URI.  (Used by 'API'.)
 data Based a = Based { base :: Maybe URI
                      , relToBase :: URI
-                     , payload :: a
+                     , debased :: a
                      }
 instance RelativeToURI (Based a) where
     uri .// x@Based { base = Nothing } = x { relToBase = uri .// (relToBase x) }
     uri .// x@Based { base = Just y } = x { base = Just (uri .// y) }
 instance Functor Based where
-    fmap f based = based { payload = f $ payload based }
+    fmap f based = based { debased = f $ debased based }
 
 {- |
     A web API.
@@ -141,16 +141,16 @@ setBase (API xs) = API $ map f xs
 -- | Convert an 'API' to a Scotty application.
 toScotty :: API (ActionStatusM ()) -> ScottyM ()
 toScotty (API xs) = mapM_ f xs
-    where f basable =
-            let baseuri = fromMaybe nullURI $ base basable
-                route = fromString $ uriPath (baseuri .// relToBase basable)
+    where f based =
+            let baseuri = fromMaybe nullURI $ base based
+                route = fromString $ uriPath (baseuri .// relToBase based)
                 allowedMethods = intercalate ","
-                    $ map (show . fst) (payload basable)
+                    $ map (show . fst) (debased based)
             in do
                 sequence_ [ addroute method route
                             $ statusErrors
                             $ actf baseuri
-                          | (method, actf)<-payload basable ]
+                          | (method, actf)<-debased based ]
                 matchAny route $ do
                     status methodNotAllowed405
                         -- http://tools.ietf.org/html/rfc2616#section-10.4.6
@@ -172,7 +172,7 @@ resource :: [(StdMethod, URI -> a)]  -- ^Allowed methods and their actions.
             -> API a
 resource acts = API [Based { base = Nothing
                            , relToBase = nullURI
-                           , payload = acts
+                           , debased = acts
                            }]
 
 {- |
