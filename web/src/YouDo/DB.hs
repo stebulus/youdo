@@ -166,22 +166,22 @@ webdb =
 class (Show a) => NamedResource a where
     resourceName :: Maybe a -> String
     resourceBaseURL :: Maybe a -> URI -> URI
-    resourceBaseURL x base = namedResourceURL [ resourceName x
-                                              , ""
-                                              ] base
+    resourceBaseURL x uri = namedResourceURL [ resourceName x
+                                             , ""
+                                             ] uri
     resourceURL :: a -> URI -> URI
-    resourceURL x base = namedResourceURL [ resourceName (Just x)
-                                          , show x
-                                          , ""
-                                          ] base
+    resourceURL x uri = namedResourceURL [ resourceName (Just x)
+                                         , show x
+                                         , ""
+                                         ] uri
     resourceVersionURL :: VersionedID a -> URI -> URI
-    resourceVersionURL x base = namedResourceURL [ resourceName (Just (thingid x))
-                                                 , show (thingid x)
-                                                 , show (txnid x)
-                                                 ] base
+    resourceVersionURL x uri = namedResourceURL [ resourceName (Just (thingid x))
+                                                , show (thingid x)
+                                                , show (txnid x)
+                                                ] uri
 
 namedResourceURL :: [String] -> URI -> URI
-namedResourceURL xs base = reluri `relativeTo` base
+namedResourceURL xs uri = reluri `relativeTo` uri
     where reluri = fromJust $ parseURIReference $ intercalate "/" (".":xs)
 
 jsonurl :: URI -> Value
@@ -189,11 +189,11 @@ jsonurl = String . ST.pack . show
 
 -- | The URL for a 'NamedResource' object, as a JSON 'Value'.
 idjson :: (Show k, NamedResource k) => k -> URI -> Value
-idjson k base = jsonurl $ resourceURL k base
+idjson k uri = jsonurl $ resourceURL k uri
 
 -- | The URL for a specific version of a 'NamedResource' object, as a JSON 'Value'.
 veridjson :: (Show k, NamedResource k) => VersionedID k -> URI -> Value
-veridjson k base = jsonurl $ resourceVersionURL k base
+veridjson k uri = jsonurl $ resourceVersionURL k uri
 
 -- | A 'DB' wrapper that locks on a given 'MVar'.
 -- The 'dbResourceName' operation is not locked.
@@ -236,7 +236,7 @@ instance (RequestParsable (VersionedID a), RequestParsable b)
 -- with @"url"@ and @"thisVersion"@ fields.
 instance (Show k, NamedResource k, BasedToJSON v)
          => BasedToJSON (Versioned k v) where
-    basedToJSON v base = Object augmentedmap
+    basedToJSON v uri = Object augmentedmap
         where augmentedmap = foldl' (flip (uncurry M.insert)) origmap
                     [ "url" .= show objurl
                     , "thisVersion" .= show verurl
@@ -244,9 +244,9 @@ instance (Show k, NamedResource k, BasedToJSON v)
               origmap = case origval of
                     Object m -> m
                     _ -> error "data did not encode as JSON object"
-              origval = basedToJSON (thing v) base
-              objurl = resourceURL (thingid (version v)) base
-              verurl = resourceVersionURL (version v) base
+              origval = basedToJSON (thing v) uri
+              objurl = resourceURL (thingid (version v)) uri
+              verurl = resourceVersionURL (version v) uri
 
 -- | Transaction identifier.
 newtype TransactionID = TransactionID Int deriving (Eq)
@@ -296,10 +296,10 @@ instance Result (GetResult a) a where
     success x = Right $ Right x
 
 instance (BasedToJSON a) => WebResult (GetResult a) where
-    report (Right (Right a)) base =
+    report (Right (Right a)) uri =
         lift500 $ do
             status ok200  -- http://tools.ietf.org/html/rfc2616#section-10.2.1
-            basedjson a base
+            basedjson a uri
     report (Left NotFound) _ =
         lift500 $
             status notFound404  -- http://tools.ietf.org/html/rfc2616#section-10.4.5
@@ -332,16 +332,16 @@ newerVersion x = Left $ NewerVersion x
 
 instance (BasedToJSON b, NamedResource k, Show k, BasedToJSON v)
          => WebResult (UpdateResult b (Versioned k v)) where
-    report (Right (Right (Right a))) base =
+    report (Right (Right (Right a))) uri =
         lift500 $ do
             status created201  -- http://tools.ietf.org/html/rfc2616#section-10.2.2
-            setHeader "Location" $ LT.pack $ show $ resourceVersionURL (version a) base
-            basedjson a base
-    report (Left (NewerVersion b)) base =
+            setHeader "Location" $ LT.pack $ show $ resourceVersionURL (version a) uri
+            basedjson a uri
+    report (Left (NewerVersion b)) uri =
         lift500 $ do
             status conflict409  -- http://tools.ietf.org/html/rfc2616#section-10.4.10
-            basedjson b base
-    report (Right gr) base = report gr base
+            basedjson b uri
+    report (Right gr) uri = report gr uri
 
 {- |
     Result of a 'DB' create operation.  The data supplied describes
@@ -359,14 +359,14 @@ invalidObject errs = Left $ InvalidObject errs
 
 instance (NamedResource k, Show k, BasedToJSON v)
          => WebResult (CreateResult (Versioned k v)) where
-    report (Right (Right (Right a))) base =
+    report (Right (Right (Right a))) uri =
         lift500 $ do
            status created201  -- http://tools.ietf.org/html/rfc2616#section-10.2.2
-           setHeader "Location" $ LT.pack $ show $ resourceURL (thingid (version a)) base
-           basedjson a base
+           setHeader "Location" $ LT.pack $ show $ resourceURL (thingid (version a)) uri
+           basedjson a uri
     report (Left (InvalidObject msgs)) _ =
         badRequest $ LT.concat [ LT.concat [msg, "\r\n"] | msg<-msgs ]
-    report (Right gr) base = report gr base
+    report (Right gr) uri = report gr uri
 
 {- |
     Make a result of the contents of a singleton list.

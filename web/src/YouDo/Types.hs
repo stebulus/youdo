@@ -39,13 +39,13 @@ instance Show YoudoID where
 instance BasedToJSON YoudoID where
     basedToJSON = idjson
 instance BasedFromJSON YoudoID where
-    basedParseJSON val base =
+    basedParseJSON val uri =
         fmap YoudoID $ basedIDFromJSON val resourcebase
-        where resourcebase = resourceBaseURL (Nothing :: Maybe YoudoID) base
+        where resourcebase = resourceBaseURL (Nothing :: Maybe YoudoID) uri
 instance BasedParsable YoudoID where
-    basedParseParam txt base =
+    basedParseParam txt uri =
         fmap YoudoID $ basedIDFromText txt resourcebase
-        where resourcebase = resourceBaseURL (Nothing :: Maybe YoudoID) base
+        where resourcebase = resourceBaseURL (Nothing :: Maybe YoudoID) uri
 instance FromField YoudoID where
     fromField fld = (fmap.fmap) YoudoID $ fromField fld
 instance ToField YoudoID where
@@ -66,7 +66,7 @@ instance RequestParsable YoudoData where
                          <*> parse "duedate" `defaultTo` DueDate Nothing
                          <*> parse "completed" `defaultTo` False
 instance BasedToJSON YoudoData where
-    basedToJSON yd base =
+    basedToJSON yd uri =
         object
             [ "assigner" .= assigner
             , "assignee" .= assignee
@@ -74,8 +74,8 @@ instance BasedToJSON YoudoData where
             , "duedate" .= duedate yd
             , "completed" .= completed yd
             ]
-        where assigner = basedToJSON (assignerid yd) base
-              assignee = basedToJSON (assigneeid yd) base
+        where assigner = basedToJSON (assignerid yd) uri
+              assignee = basedToJSON (assigneeid yd) uri
 
 data YoudoUpdate = YoudoUpdate { newAssignerid :: Maybe UserID
                                , newAssigneeid :: Maybe UserID
@@ -115,13 +115,13 @@ instance Show UserID where
 instance BasedToJSON UserID where
     basedToJSON = idjson
 instance BasedFromJSON UserID where
-    basedParseJSON val base = do
+    basedParseJSON val uri = do
         fmap UserID $ basedIDFromJSON val resourcebase
-        where resourcebase = resourceBaseURL (Nothing :: Maybe UserID) base
+        where resourcebase = resourceBaseURL (Nothing :: Maybe UserID) uri
 instance BasedParsable UserID where
-    basedParseParam txt base =
+    basedParseParam txt uri =
         fmap UserID $ basedIDFromText txt resourcebase
-        where resourcebase = resourceBaseURL (Nothing :: Maybe UserID) base
+        where resourcebase = resourceBaseURL (Nothing :: Maybe UserID) uri
 instance FromField UserID where
     fromField fld = (fmap.fmap) UserID $ fromField fld
 instance ToField UserID where
@@ -149,16 +149,16 @@ instance Updater UserUpdate UserData where
 -}
 
 basedIDFromJSON :: Value -> URI -> Parser Int
-basedIDFromJSON (String txt) base =
-    case basedIDFromText (LT.fromStrict txt) base of
+basedIDFromJSON (String txt) uri =
+    case basedIDFromText (LT.fromStrict txt) uri of
         Left msg -> fail $ LT.unpack msg
         Right n -> return n
 basedIDFromJSON val _ = typeMismatch "ID URL" val
 
 basedIDFromText :: LT.Text -> URI -> Either LT.Text Int
-basedIDFromText txt base = do
-    uri <- maybe (Left "invalid URL") Right $ parseURI (LT.unpack txt)
-    case reads $ show $ uri `relativeFrom` base of
+basedIDFromText txt uri = do
+    iduri <- maybe (Left "invalid URL") Right $ parseURI (LT.unpack txt)
+    case reads $ show $ iduri `relativeFrom` uri of
         (n,""):_ -> Right n
         (n,"/"):_ -> Right n
         _ -> Left "invalid ID"
