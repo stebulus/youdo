@@ -122,8 +122,8 @@ webdb :: forall k v u d.
          ( NamedResource k, DB IO k v u d
          , Parsable k
          , BasedToJSON v
-         , RequestParsable v
-         , RequestParsable u
+         , FromRequestBody RequestParser v
+         , FromRequestBody RequestParser u
          )
       => API (d -> ActionStatusM ())
 webdb =
@@ -228,8 +228,11 @@ data Versioned a b = Versioned
     , thing :: b
     } deriving (Show, Eq)
 
-instance (RequestParsable (VersionedID a), RequestParsable b)
-         => RequestParsable (Versioned a b) where
+instance ( FromRequestBody f (VersionedID a)
+         , FromRequestBody f b
+         , Applicative f
+         )
+         => FromRequestBody f (Versioned a b) where
     template = Versioned <$> template <*> template
 
 -- | Augment JSON representations of 'Versioned' objects

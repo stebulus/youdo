@@ -14,9 +14,9 @@ module YouDo.Web (
     Based(..), RelativeToURI(..), (//), u,
     -- * Interpreting requests
     capture,
-    body, fromRequestBody, RequestParser, parse, ParamValue(..), requestData,
-    EvaluationError(..), defaultTo, optional,
-    RequestParsable(..),
+    body, fromRequestBody, RequestParser, ParamValue(..), requestData,
+    EvaluationError(..), optional,
+    FromRequestBody(..), FromRequestBodyContext(..),
     -- * Reporting results
     WebResult(..),
     -- * Error handling and HTTP status
@@ -363,7 +363,8 @@ lift500 = failWith internalServerError500
     If an error occurs parsing the request, a 400 (Bad Request)
     response is thrown.
 -}
-body :: (RequestParsable a) => ReaderT URI ActionStatusM a
+body :: (FromRequestBody RequestParser a)
+     => ReaderT URI ActionStatusM a
 body = do
     uri <- ask
     lift $ fromRequestBody template uri
@@ -419,20 +420,43 @@ requestData = do
     return $ paramdata ++ bodydata
 
 {- |
-    An object that can be constructed by a 'RequestParser'.
-    Typically the 'template' method should be implemented as an
-    applicative expression; see the example under 'body'.
+    A way to construct values of type @a@ from the body of an HTTP
+    request, in context @f@.
 
-    The type signatures here are more general than 'RequestParser',
-    to faciliate future use with other functors, e.g., to generate
-    HTML forms and documentation from the same applicative expression.
+    Typically the 'template' method should be implemented as an
+    applicative expression; see 'YouDo.Types' for examples.
 -}
-class RequestParsable a where
-    template :: ( Applicative f
-                , Holes LT.Text ParamValue (ReaderT URI f)
-                , Errs [EvaluationError LT.Text ParamValue] (ReaderT URI f)
-                )
-             => ReaderT URI f a
+class FromRequestBody f a where
+    template :: f a
+
+{- |
+    The functor @f@ represents a context within which we can make
+    some use of a way to construct values of type @a@ from the body
+    of an HTTP request.  See 'FromRequestBody'.
+-}
+class FromRequestBodyContext f where
+    {- |
+        In 'template' implementations, represents reading the value
+        for the given key and parsing it as a value of type @a@.
+
+        There is no provision for reporting errors in this interface,
+        because what "error" means depends on the functor $f$.
+        (For example, a functor that actually produces a value of
+        type @a@ needs to be able to report the error that there is
+        no value for the given key, whereas a functor that produces
+        documentation describing the template doesn't.)
+    -}
+    parse :: (BasedParsable a, BasedFromJSON a)
+          => LT.Text      -- ^The key whose value should be parsed.
+          -> f a
+
+    {- |
+        In 'template' implementations, represents that if the
+        given @f a@ has no value because the key given to 'parse'
+        was not present in the request, then the given value should
+        be substituted.
+    -}
+    defaultTo :: f a -> a -> f a
 
 {- |
     An error encountered when evaluating a 'RequestParsable' object
@@ -450,21 +474,10 @@ data EvaluationError k v
     | CheckError LT.Text       -- ^An error was detected by 'check'.
     deriving (Show, Eq)
 
--- | If the first argument fails to evaluate due to a single
--- 'MissingKey' error, replace it with the second argument.
--- Other error situations are left as is.
--- (Combinator for use in 'template' implementations.)
-defaultTo :: (Applicative f, Errs [EvaluationError k v] f)
-          => f a -> a -> f a
-defaultTo fa d = fa `catch` \es ->
-    case es of
-        [MissingKey _] -> pure d
-        _ -> throw $ pure es
-
--- | If the argument fails to evaluate due to a single 'MissingKey'
--- error, replace it with 'Nothing'; otherwise, 'Just' the first
--- argument.
-optional :: (Applicative f, Errs [EvaluationError k v] f)
+-- | If the argument failed because it depends on a missing key,
+-- replace it with 'Nothing'; otherwise, 'Just' the value in the
+-- first argument.
+optional :: (Functor f, FromRequestBodyContext f)
          => f a -> f (Maybe a)
 optional fa = (Just <$> fa) `defaultTo` Nothing
 
@@ -501,24 +514,21 @@ instance Errs [EvaluationError LT.Text ParamValue] RequestParser where
     catch fa handle = ReaderT $ \uri ->
         (runReaderT fa uri) `catch` (\e -> runReaderT (handle e) uri)
 
+instance FromRequestBodyContext RequestParser where
+    parse k =
+        let basedParse = flip $ basedParseEither k
+            enlist (Left e) = Left [e]
+            enlist (Right a) = Right a
+        in throwLeft $ enlist <$>
+            (ReaderT $ fmap . basedParse <*> runReaderT (hole k))
+    defaultTo fa d = fa `catch` \es ->
+        case es of
+            [MissingKey _] -> pure d
+            _ -> throw $ pure es
+
 -- | How to report missing keys in a 'RequestParser'.
 instance MissingKeyError LT.Text [EvaluationError LT.Text ParamValue] where
     missingKeyError k = [MissingKey k]
-
--- | A named hole which parses a 'ParamValue' into the appropriate type.
--- (Combinator for use in 'template' implementations.)
-parse :: ( Functor f
-         , BasedParsable a, BasedFromJSON a
-         , Holes k ParamValue (ReaderT URI f)
-         , Errs [EvaluationError k ParamValue] (ReaderT URI f)
-         )
-      => k -> ReaderT URI f a
-parse k =
-    let basedParse = flip $ basedParseEither k
-        enlist (Left e) = Left [e]
-        enlist (Right a) = Right a
-    in throwLeft $ enlist <$>
-        (ReaderT $ fmap . basedParse <*> runReaderT (hole k))
 
 -- | Parse a 'ParamValue' into the appropriate type.
 basedParseEither :: (BasedParsable a, BasedFromJSON a)

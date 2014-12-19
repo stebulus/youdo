@@ -59,7 +59,8 @@ data YoudoData = YoudoData { assignerid :: UserID
                            , duedate :: DueDate
                            , completed :: Bool
                            } deriving (Show)
-instance RequestParsable YoudoData where
+instance (Applicative f, FromRequestBodyContext f)
+         => FromRequestBody f YoudoData where
     template = YoudoData <$> parse "assigner"
                          <*> parse "assignee"
                          <*> parse "description" `defaultTo` ""
@@ -83,7 +84,8 @@ data YoudoUpdate = YoudoUpdate { newAssignerid :: Maybe UserID
                                , newDuedate :: Maybe DueDate
                                , newCompleted :: Maybe Bool
                                } deriving (Show)
-instance RequestParsable YoudoUpdate where
+instance (Applicative f, FromRequestBodyContext f)
+         => FromRequestBody f YoudoUpdate where
     template = YoudoUpdate <$> optional (parse "assigner")
                            <*> optional (parse "assignee")
                            <*> optional (parse "description")
@@ -131,13 +133,15 @@ instance Parsable UserID where
 
 data UserData = UserData { name :: String }
     deriving (Show, Eq)
-instance RequestParsable UserData where
+instance (Applicative f, FromRequestBodyContext f)
+         => FromRequestBody f UserData where
     template = UserData <$> parse "name"
 instance BasedToJSON UserData where
     basedToJSON yduser _ = object [ "name" .= name yduser ]
 
 data UserUpdate = UserUpdate { newName :: Maybe String } deriving (Show, Eq)
-instance RequestParsable UserUpdate where
+instance (Functor f, FromRequestBodyContext f)
+         => FromRequestBody f UserUpdate where
     template = UserUpdate <$> optional (parse "name")
 instance Updater UserUpdate UserData where
     doUpdate upd x = case newName upd of
