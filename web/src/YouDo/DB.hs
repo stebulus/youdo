@@ -118,14 +118,21 @@ class Updater u a where
     shouldn't be.)  The request body, when needed, is interpreted via
     'body'.
 -}
-webdb :: forall k v u d.
+webdb :: forall k v u d f g.
          ( NamedResource k, DB IO k v u d
          , Parsable k
          , BasedToJSON v
-         , FromRequestBody RequestParser v
-         , FromRequestBody RequestParser u
+         , FromRequestBody g v
+         , FromRequestBody g u
+         , FromRequestContext (ReaderT URI f) g
+         , WebResult f (GetResult (Versioned k v))
+         , WebResult f (GetResult [Versioned k v])
+         , WebResult f (CreateResult (Versioned k v))
+         , WebResult f (UpdateResult (Versioned k v) (Versioned k v))
+         , Applicative f
+         , MonadIO f
          )
-      => API (d -> ActionStatusM ())
+      => API (d -> f ())
 webdb =
     u (resourceName (Nothing :: Maybe k)) // (
         resource
@@ -298,7 +305,7 @@ instance Result (GetResult a) a where
     failure msg = Right $ Left msg
     success x = Right $ Right x
 
-instance (BasedToJSON a) => WebResult (GetResult a) where
+instance (BasedToJSON a) => WebResult ActionStatusM (GetResult a) where
     report (Right (Right a)) uri =
         lift500 $ do
             status ok200  -- http://tools.ietf.org/html/rfc2616#section-10.2.1
@@ -334,7 +341,7 @@ newerVersion :: b -> UpdateResult b a
 newerVersion x = Left $ NewerVersion x
 
 instance (BasedToJSON b, NamedResource k, Show k, BasedToJSON v)
-         => WebResult (UpdateResult b (Versioned k v)) where
+         => WebResult ActionStatusM (UpdateResult b (Versioned k v)) where
     report (Right (Right (Right a))) uri =
         lift500 $ do
             status created201  -- http://tools.ietf.org/html/rfc2616#section-10.2.2
@@ -361,7 +368,7 @@ invalidObject :: [LT.Text] -> CreateResult a
 invalidObject errs = Left $ InvalidObject errs
 
 instance (NamedResource k, Show k, BasedToJSON v)
-         => WebResult (CreateResult (Versioned k v)) where
+         => WebResult ActionStatusM (CreateResult (Versioned k v)) where
     report (Right (Right (Right a))) uri =
         lift500 $ do
            status created201  -- http://tools.ietf.org/html/rfc2616#section-10.2.2
