@@ -118,16 +118,16 @@ class Updater u a where
     shouldn't be.)  The request body, when needed, is interpreted via
     'body'.
 -}
-webdb :: ( NamedResource k, DB IO k v u d
+webdb :: forall k v u d.
+         ( NamedResource k, DB IO k v u d
          , Parsable k
          , BasedToJSON v
          , RequestParsable v
          , RequestParsable u
          )
-      => d              -- ^The database.
-      -> API
-webdb db =
-    u (dbResourceName db) // (
+      => API (d -> ActionStatusM ())
+webdb =
+    u (resourceName (Nothing :: Maybe k)) // (
         resource
             [ (GET, dodb $ pure getAll)
             , (POST, dodb $ create <$> body)
@@ -146,10 +146,8 @@ webdb db =
                ]
         )
     )
-    where dodb m base = do
-            lift500 $ setHeader "foo" $ LT.pack $ show base
-            flip report base =<< liftIO =<<
-                (runReaderT m base <*> pure db)
+    where dodb m uri db = flip report uri =<< liftIO =<<
+            (runReaderT m uri <*> pure db)
 
 {- |
     Class for types that have a name.  Minimum implementation:

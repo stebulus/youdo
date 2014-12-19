@@ -57,18 +57,22 @@ data Based a = Based { base :: Maybe URI
 instance RelativeToURI (Based a) where
     uri .// x@Based { base = Nothing } = x { relToBase = uri .// (relToBase x) }
     uri .// x@Based { base = Just y } = x { base = Just (uri .// y) }
+instance Functor Based where
+    fmap f based = based { payload = f $ payload based }
 
-newtype API = API [Based [(StdMethod, URI -> ActionStatusM ())]]
-instance RelativeToURI API where
+newtype API a = API [Based [(StdMethod, URI -> a)]]
+instance RelativeToURI (API a) where
     uri .// (API xs) = API $ map (uri .//) xs
-instance Monoid API where
+instance Monoid (API a) where
     mempty = API mempty
     (API xs) `mappend` (API ys) = API (xs `mappend` ys)
-setBase :: API -> API
+instance Functor API where
+    fmap f (API xs) = API $ (fmap.fmap.fmap.fmap.fmap) f xs
+setBase :: API a -> API a
 setBase (API xs) = API $ map f xs
     where f x = x { base = Just $ maybe nullURI id (base x) }
 
-toScotty :: API -> ScottyM ()
+toScotty :: API (ActionStatusM ()) -> ScottyM ()
 toScotty (API xs) = mapM_ f xs
     where f basable =
             let baseuri = fromMaybe nullURI $ base basable
@@ -90,9 +94,8 @@ toScotty (API xs) = mapM_ f xs
 -- response when a request uses a method which is not in the
 -- given list.  (Scotty's default is 404 (Not Found), which is less
 -- appropriate.)
-resource :: [(StdMethod, URI -> ActionStatusM ())]
-                                    -- ^Allowed methods and their actions.
-            -> API
+resource :: [(StdMethod, URI -> a)]  -- ^Allowed methods and their actions.
+            -> API a
 resource acts = API [Based { base = Nothing
                            , relToBase = nullURI
                            , payload = acts

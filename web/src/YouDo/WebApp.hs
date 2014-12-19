@@ -37,11 +37,11 @@ app :: ( DB IO YoudoID YoudoData YoudoUpdate ydb
        ) => YoudoDatabase ydb udb     -- ^The database.
        -> URI           -- ^The base URI.
        -> ScottyM ()
-app db base = toScotty $
-    base // u"0" // ( setBase $
-        webdb (youdos db)
+app db uri = toScotty $ ($ db) <$>
+    uri // u"0" // ( setBase $
+        ((. youdos) <$> webdb)
         <>
-        webdb (users db)
+        ((. users) <$> webdb)
     )
 
 -- | The kind of database to connect to.
