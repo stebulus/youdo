@@ -30,6 +30,7 @@ import Web.Scotty (scottyOpts, Options(..), ScottyM)
 import YouDo.DB
 import YouDo.DB.Memory
 import YouDo.DB.PostgreSQL
+import YouDo.Monad.Null
 import YouDo.Web
 import YouDo.Types
 
@@ -62,12 +63,6 @@ instance DB NullMonad UserID UserData UserUpdate NullUserDB where
     getAll = const NullMonad
     create = const $ const NullMonad
     update = const $ const NullMonad
-data NullMonad a = NullMonad
-instance Monad NullMonad where
-    return _ = NullMonad
-    _ >>= _ = NullMonad
-instance WebResult NullMonad r where
-    report _ _ = NullMonad
 
 -- | The Youdo API, version 0.
 api0 :: ( DB m YoudoID YoudoData YoudoUpdate ydb

@@ -27,6 +27,7 @@ library
                        , YouDo.DB.Memory
                        , YouDo.DB.PostgreSQL
                        , YouDo.Holes
+                       , YouDo.Monad.Null
                        , YouDo.Test
                        , YouDo.TimeParser
                        , YouDo.Types

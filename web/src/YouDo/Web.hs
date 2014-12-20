@@ -53,6 +53,7 @@ import Web.Scotty.Internal.Types (ActionT(..), ActionError(..),
     ScottyError(..))
 
 import YouDo.Holes
+import YouDo.Monad.Null
 
 -- | A wrapper that manages the URI of an object and its base URI.  (Used by 'API'.)
 data Based a = Based { base :: Maybe URI
@@ -260,6 +261,9 @@ class WebResult m r where
     report :: URI                   -- ^The base URI.
            -> r                     -- ^The value to report.
            -> m ()                  -- ^An action that reports that value.
+
+instance WebResult NullMonad r where
+    report _ _ = NullMonad
 
 -- | A value that can be serialized as JSON, respecting a base URI.
 class BasedToJSON a where
