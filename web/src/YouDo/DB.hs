@@ -134,9 +134,8 @@ class Updater u a where
     'body'.
 -}
 webdb :: forall k v u d f g m.
-         ( NamedResource k, DB m k v u d
+         ( DB m k v u d
          , Parsable k
-         , BasedToJSON v
          , FromRequestBody g v
          , FromRequestBody g u
          , FromRequestContext (ReaderT URI f) g
