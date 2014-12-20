@@ -168,7 +168,7 @@ toScotty api = mapM_ f $ toAssocList api
                     setHeader "Allow" $ LT.pack allowedMethods
 
 -- | Convert an 'API' to documentation.
-docs :: API (APIDoc a) -> API (ActionStatusM ())
+docs :: API (APIDoc (NullMonad b)) -> API (ActionStatusM ())
 docs api = resource [(GET, const $ lift500 $ Scotty.text txt)]
     where txt = snd $ runWriter $ do
                     forM_ (toAssocList api) $ \(uri, acts) -> do

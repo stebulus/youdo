@@ -50,7 +50,7 @@ import YouDo.Web
     example), but it's not required.
 -}
 class (Monad m, NamedResource k)
-      => DB m k v u d | d->v, d->k, d->u, d->m where
+      => DB m k v u d | d->k, d->v, d->u where
 
     -- | Get the object with the specified key.
     get :: k -> d -> m (GetResult (Versioned k v))
