@@ -70,7 +70,7 @@ api0 =
         <>
         (pullback users webdb)
     )
-    where pullback f api = (fmap.fmap) (. f) api
+    where pullback f = (fmap.fmap) (. f)
 
 -- | The kind of database to connect to.
 data DBOption = InMemory            -- ^A transient in-memory database; see "YouDo.DB.Memory"
