@@ -36,9 +36,10 @@ import YouDo.Types
 -- Consists of 'webdb' interfaces for the given Youdo and User DB instances.
 app :: ( DB IO YoudoID YoudoData YoudoUpdate ydb
        , DB IO UserID UserData UserUpdate udb
-       ) => YoudoDatabase IO ydb udb     -- ^The database.
-       -> URI           -- ^The base URI.
-       -> ScottyM ()
+       )
+    => YoudoDatabase IO ydb udb     -- ^The database.
+    -> URI                          -- ^The base URI.
+    -> ScottyM ()
 app db uri = toScotty $ fmap join
                       $ (fmap.fmap) ($ mapYoudoDB liftIO db)
                       $ uri // api0
