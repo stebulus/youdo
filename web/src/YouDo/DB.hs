@@ -81,12 +81,6 @@ class (Monad m, NamedResource k)
     update :: (Versioned k u) -> d
         -> m (UpdateResult (Versioned k v) (Versioned k v))
 
-    -- | The name of this resource.
-    -- Obtained from the 'NamedResource' instance for 'k'.
-    dbResourceName :: d -> String
-    dbResourceName = const $ resourceName x
-        where x = Nothing :: Maybe k    -- ScopedTypeVariables used!
-
 -- | Change results of a 'DB' from one monad to another.
 mapDB :: (DB m k v u d) => (forall a. m a -> n a) -> d -> LiftedDB m n k v u d
 mapDB = LiftedDB
@@ -100,7 +94,6 @@ instance (Monad n, DB m k v u d) => DB n k v u (LiftedDB m n k v u d) where
     getAll (LiftedDB f d) = f $ getAll d
     create v (LiftedDB f d) = f $ create v d
     update verku (LiftedDB f d) = f $ update verku d
-    dbResourceName (LiftedDB _ d) = dbResourceName d
 
 {- |
     A @u@ can be used to change an @a@.
@@ -215,7 +208,6 @@ veridjson :: (Show k, NamedResource k) => VersionedID k -> URI -> Value
 veridjson k uri = jsonurl $ resourceVersionURL k uri
 
 -- | A 'DB' wrapper that locks on a given 'MVar'.
--- The 'dbResourceName' operation is not locked.
 data (MonadIO m, DB m k v u d) => LockDB m k v u d = LockDB (MVar ()) d
 
 instance (MonadIO m, DB m k v u d) => DB m k v u (LockDB m k v u d) where
@@ -225,7 +217,6 @@ instance (MonadIO m, DB m k v u d) => DB m k v u (LockDB m k v u d) where
     getAll = hoistLockDB getAll
     create v = hoistLockDB (create v)
     update veru = hoistLockDB (update veru)
-    dbResourceName (LockDB _ db) = dbResourceName db
 
 hoistLockDB :: (MonadIO m, DB m k v u d)
             => (d  -> m a) -> LockDB m k v u d -> m a
