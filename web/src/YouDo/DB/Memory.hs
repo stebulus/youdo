@@ -70,7 +70,7 @@ instance (Eq k, NamedResource k, Updater u v)
 
 -- | Create a new empty 'YoudoDatabase' backed by 'MemoryDB's.
 -- All operations (to either 'DB') are locked under a single MVar.
-empty :: IO (YoudoDatabase
+empty :: IO (YoudoDatabase IO
                 (LockDB IO YoudoID YoudoData YoudoUpdate
                     (MemoryDB YoudoID YoudoData YoudoUpdate))
                 (LockDB IO UserID UserData UserUpdate

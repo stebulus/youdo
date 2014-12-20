@@ -36,28 +36,25 @@ import YouDo.Types
 -- Consists of 'webdb' interfaces for the given Youdo and User DB instances.
 app :: ( DB IO YoudoID YoudoData YoudoUpdate ydb
        , DB IO UserID UserData UserUpdate udb
-       ) => YoudoDatabase ydb udb     -- ^The database.
+       ) => YoudoDatabase IO ydb udb     -- ^The database.
        -> URI           -- ^The base URI.
        -> ScottyM ()
-app db uri = toScotty $ ($ db) <$> uri // api0
+app db uri = toScotty $ fmap join
+                      $ (fmap.fmap) ($ mapYoudoDB liftIO db)
+                      $ uri // api0
 
 -- | The Youdo API, version 0.
-api0 :: ( DB IO YoudoID YoudoData YoudoUpdate ydb
-        , DB IO UserID UserData UserUpdate udb
+api0 :: ( DB ActionStatusM YoudoID YoudoData YoudoUpdate ydb
+        , DB ActionStatusM UserID UserData UserUpdate udb
         )
-     => API (YoudoDatabase ydb udb -> ActionStatusM ())
+     => API (ActionStatusM (YoudoDatabase ActionStatusM ydb udb -> ActionStatusM ()))
 api0 =
     u"0" // ( setBase $
-        (hoist youdos webdb)
+        (pullback youdos webdb)
         <>
-        (hoist users webdb)
+        (pullback users webdb)
     )
-    where hoist f api = (fmap.fmap) join
-                        $ fmap sink
-                        $ (fmap.fmap) (. mapDB liftIO . f) api
-
-sink :: (Functor f) => f (a->b) -> a -> f b
-sink fab a = fmap ($ a) fab
+    where pullback f api = (fmap.fmap) (. f) api
 
 -- | The kind of database to connect to.
 data DBOption = InMemory            -- ^A transient in-memory database; see "YouDo.DB.Memory"

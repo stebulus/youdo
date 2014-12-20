@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings, FlexibleInstances, FlexibleContexts,
-    MultiParamTypeClasses #-}
+    MultiParamTypeClasses, RankNTypes #-}
 module YouDo.Types where
 
 import Control.Applicative ((<$>), (<*>), Applicative(..))
@@ -18,9 +18,22 @@ import YouDo.DB
 import YouDo.TimeParser (parseUTCTime)
 import YouDo.Web
 
-data ( DB IO YoudoID YoudoData YoudoUpdate yd
-     , DB IO UserID UserData UserUpdate ud
-     ) => YoudoDatabase yd ud = YoudoDatabase { youdos :: yd, users :: ud }
+data ( DB m YoudoID YoudoData YoudoUpdate yd
+     , DB m UserID UserData UserUpdate ud
+     ) => YoudoDatabase m yd ud = YoudoDatabase { youdos :: yd, users :: ud }
+
+mapYoudoDB :: ( DB m YoudoID YoudoData YoudoUpdate yd
+              , DB m UserID UserData UserUpdate ud
+              , Monad n
+              )
+           => (forall a. m a -> n a)
+           -> YoudoDatabase m yd ud
+           -> YoudoDatabase n
+                    (LiftedDB m n YoudoID YoudoData YoudoUpdate yd)
+                    (LiftedDB m n UserID UserData UserUpdate ud)
+mapYoudoDB f db = YoudoDatabase { youdos = mapDB f (youdos db)
+                                , users = mapDB f (users db)
+                                }
 
 {-
     Youdos
