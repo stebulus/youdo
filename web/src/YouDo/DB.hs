@@ -1,6 +1,6 @@
 {-# LANGUAGE MultiParamTypeClasses, FunctionalDependencies,
     FlexibleInstances, FlexibleContexts, OverloadedStrings,
-    ScopedTypeVariables #-}
+    ScopedTypeVariables, RankNTypes #-}
 {-|
 Module      : YouDo.DB
 Description : Database types for YouDo
@@ -9,7 +9,7 @@ License     : GPL-3
 -}
 module YouDo.DB (
     -- *Database and web interface
-    DB(..), Updater(..), webdb, NamedResource(..),
+    DB(..), mapDB, LiftedDB(..), Updater(..), webdb, NamedResource(..),
     idjson, veridjson, LockDB(..),
     -- *Versioning of database objects
     Versioned(..), VersionedID(..), TransactionID(..),
@@ -87,6 +87,21 @@ class (Monad m, NamedResource k)
     dbResourceName = const $ resourceName x
         where x = Nothing :: Maybe k    -- ScopedTypeVariables used!
 
+-- | Change results of a 'DB' from one monad to another.
+mapDB :: (DB m k v u d) => (forall a. m a -> n a) -> d -> LiftedDB m n k v u d
+mapDB = LiftedDB
+
+data LiftedDB m n k v u d = LiftedDB (forall a. m a -> n a) d
+
+instance (Monad n, DB m k v u d) => DB n k v u (LiftedDB m n k v u d) where
+    get k (LiftedDB f d) = f $ get k d
+    getVersion verk (LiftedDB f d) = f $ getVersion verk d
+    getVersions k (LiftedDB f d) = f $ getVersions k d
+    getAll (LiftedDB f d) = f $ getAll d
+    create v (LiftedDB f d) = f $ create v d
+    update verku (LiftedDB f d) = f $ update verku d
+    dbResourceName (LiftedDB _ d) = dbResourceName d
+
 {- |
     A @u@ can be used to change an @a@.
     In an instance 'DB' @k v u m d@, we might well have @Updater u v@
@@ -118,21 +133,20 @@ class Updater u a where
     shouldn't be.)  The request body, when needed, is interpreted via
     'body'.
 -}
-webdb :: forall k v u d f g.
-         ( NamedResource k, DB IO k v u d
+webdb :: forall k v u d f g m.
+         ( NamedResource k, DB m k v u d
          , Parsable k
          , BasedToJSON v
          , FromRequestBody g v
          , FromRequestBody g u
          , FromRequestContext (ReaderT URI f) g
-         , WebResult f (GetResult (Versioned k v))
-         , WebResult f (GetResult [Versioned k v])
-         , WebResult f (CreateResult (Versioned k v))
-         , WebResult f (UpdateResult (Versioned k v) (Versioned k v))
+         , WebResult m (GetResult (Versioned k v))
+         , WebResult m (GetResult [Versioned k v])
+         , WebResult m (CreateResult (Versioned k v))
+         , WebResult m (UpdateResult (Versioned k v) (Versioned k v))
          , Applicative f
-         , MonadIO f
          )
-      => API (d -> f ())
+      => API (f (d -> m ()))
 webdb =
     u (resourceName (Nothing :: Maybe k)) // (
         resource
@@ -153,8 +167,7 @@ webdb =
                ]
         )
     )
-    where dodb m uri db = report uri =<< liftIO =<<
-            (runReaderT m uri <*> pure db)
+    where dodb rdrt uri = (fmap.fmap) (>>= report uri) (runReaderT rdrt uri)
 
 {- |
     Class for types that have a name.  Minimum implementation:

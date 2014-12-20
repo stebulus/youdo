@@ -14,6 +14,8 @@ module YouDo.WebApp (
 
 import Control.Applicative
 import Control.Exception (bracket)
+import Control.Monad (join)
+import Control.Monad.IO.Class (liftIO)
 import Data.ByteString.Char8 (pack)
 import Data.Default
 import Data.Monoid ((<>))
@@ -46,10 +48,16 @@ api0 :: ( DB IO YoudoID YoudoData YoudoUpdate ydb
      => API (YoudoDatabase ydb udb -> ActionStatusM ())
 api0 =
     u"0" // ( setBase $
-        ((. youdos) <$> webdb)
+        (hoist youdos webdb)
         <>
-        ((. users) <$> webdb)
+        (hoist users webdb)
     )
+    where hoist f api = (fmap.fmap) join
+                        $ fmap sink
+                        $ (fmap.fmap) (. mapDB liftIO . f) api
+
+sink :: (Functor f) => f (a->b) -> a -> f b
+sink fab a = fmap ($ a) fab
 
 -- | The kind of database to connect to.
 data DBOption = InMemory            -- ^A transient in-memory database; see "YouDo.DB.Memory"
