@@ -16,6 +16,7 @@ import Control.Applicative
 import Control.Exception (bracket)
 import Control.Monad (join)
 import Control.Monad.IO.Class (liftIO)
+import Control.Monad.Reader (ReaderT)
 import Data.ByteString.Char8 (pack)
 import Data.Default
 import Data.Monoid ((<>))
@@ -45,10 +46,24 @@ app db uri = toScotty $ fmap join
                       $ uri // api0
 
 -- | The Youdo API, version 0.
-api0 :: ( DB ActionStatusM YoudoID YoudoData YoudoUpdate ydb
-        , DB ActionStatusM UserID UserData UserUpdate udb
+api0 :: ( DB m YoudoID YoudoData YoudoUpdate ydb
+        , DB m UserID UserData UserUpdate udb
+        , FromRequestBody g YoudoData
+        , FromRequestBody g YoudoUpdate
+        , FromRequestBody g UserData
+        , FromRequestBody g UserUpdate
+        , FromRequestContext (ReaderT URI f) g
+        , WebResult m (GetResult Youdo)
+        , WebResult m (GetResult [Youdo])
+        , WebResult m (CreateResult Youdo)
+        , WebResult m (UpdateResult Youdo Youdo)
+        , WebResult m (GetResult User)
+        , WebResult m (GetResult [User])
+        , WebResult m (CreateResult User)
+        , WebResult m (UpdateResult User User)
+        , Applicative f
         )
-     => API (ActionStatusM (YoudoDatabase ActionStatusM ydb udb -> ActionStatusM ()))
+     => API (f (YoudoDatabase m ydb udb -> m ()))
 api0 =
     u"0" // ( setBase $
         (pullback youdos webdb)
