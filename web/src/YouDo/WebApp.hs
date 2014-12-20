@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings, RankNTypes, FlexibleContexts,
-    FlexibleInstances #-}
+    FlexibleInstances, MultiParamTypeClasses #-}
 {-|
 Module      : YouDo.WebApp
 Description : Web application for YouDo
@@ -41,9 +41,33 @@ app :: ( DB IO YoudoID YoudoData YoudoUpdate ydb
     => YoudoDatabase IO ydb udb     -- ^The database.
     -> URI                          -- ^The base URI.
     -> ScottyM ()
-app db uri = toScotty $ fmap join
-                      $ (fmap.fmap) ($ mapYoudoDB liftIO db)
-                      $ uri // api0
+app db uri = toScotty $
+                fmap join (uri // api0 (mapYoudoDB liftIO db))
+                <> uri // u"apidocs" //
+                    docs (uri // api0 (YoudoDatabase NullYoudoDB NullUserDB))
+
+data NullYoudoDB = NullYoudoDB
+instance DB NullMonad YoudoID YoudoData YoudoUpdate NullYoudoDB where
+    get = const $ const NullMonad
+    getVersion = const $ const NullMonad
+    getVersions = const $ const NullMonad
+    getAll = const NullMonad
+    create = const $ const NullMonad
+    update = const $ const NullMonad
+data NullUserDB = NullUserDB
+instance DB NullMonad UserID UserData UserUpdate NullUserDB where
+    get = const $ const NullMonad
+    getVersion = const $ const NullMonad
+    getVersions = const $ const NullMonad
+    getAll = const NullMonad
+    create = const $ const NullMonad
+    update = const $ const NullMonad
+data NullMonad a = NullMonad
+instance Monad NullMonad where
+    return _ = NullMonad
+    _ >>= _ = NullMonad
+instance WebResult NullMonad r where
+    report _ _ = NullMonad
 
 -- | The Youdo API, version 0.
 api0 :: ( DB m YoudoID YoudoData YoudoUpdate ydb
@@ -63,14 +87,14 @@ api0 :: ( DB m YoudoID YoudoData YoudoUpdate ydb
         , WebResult m (UpdateResult User User)
         , Applicative f
         )
-     => API (f (YoudoDatabase m ydb udb -> m ()))
-api0 =
+     => YoudoDatabase m ydb udb
+     -> API (f (m ()))
+api0 db =
     u"0" // ( setBase $
-        (pullback youdos webdb)
+        ((fmap.fmap) ($ youdos db) webdb)
         <>
-        (pullback users webdb)
+        ((fmap.fmap) ($ users db) webdb)
     )
-    where pullback f = (fmap.fmap) (. f)
 
 -- | The kind of database to connect to.
 data DBOption = InMemory            -- ^A transient in-memory database; see "YouDo.DB.Memory"

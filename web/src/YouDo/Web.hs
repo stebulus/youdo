@@ -9,6 +9,8 @@ License     : GPL-3
 module YouDo.Web (
     -- * Resources as bundles of operations
     resource, API(..), setBase, toAssocList, toScotty,
+    -- * API documentation
+    docs,
     -- * Base and relative URIs
     BasedToJSON(..), BasedFromJSON(..), BasedParsable(..), basedjson,
     Based(..), RelativeToURI(..), (//), u,
@@ -26,9 +28,11 @@ module YouDo.Web (
 
 import Codec.MIME.Type (mimeType, MIMEType(Application))
 import Codec.MIME.Parse (parseMIMEType)
-import Control.Applicative ((<$>), Applicative(..))
+import Control.Applicative ((<$>), Applicative(..), Const(..))
+import Control.Monad (forM_)
 import Control.Monad.Error (mapErrorT, throwError)
 import Control.Monad.Reader (ReaderT(..), ask, mapReaderT)
+import Control.Monad.Writer (tell, runWriter)
 import Control.Monad.Trans (MonadTrans(..))
 import Data.Aeson (ToJSON(..), Value(..))
 import qualified Data.Aeson as A
@@ -161,6 +165,37 @@ toScotty api = mapM_ f $ toAssocList api
                     status methodNotAllowed405
                         -- http://tools.ietf.org/html/rfc2616#section-10.4.6
                     setHeader "Allow" $ LT.pack allowedMethods
+
+-- | Convert an 'API' to documentation.
+docs :: API (APIDoc a) -> API (ActionStatusM ())
+docs api = resource [(GET, const $ lift500 $ Scotty.text txt)]
+    where txt = snd $ runWriter $ do
+                    forM_ (toAssocList api) $ \(uri, acts) -> do
+                        tell $ LT.replicate 40 "-"
+                        tell "\r\n\r\n"
+                        forM_ acts $ \(method, doc) -> do
+                            tell $ LT.pack $ show method
+                            tell " "
+                            tell $ LT.pack $ uriPath uri
+                            tell "\r\n"
+                            tell $ getConst doc
+                            tell "\r\n"
+
+-- | The 'Applicative' that does the analysis work of 'docs'.
+type APIDoc = Const LT.Text
+
+instance FromRequestContext (ReaderT URI APIDoc) APIDoc where
+    capture k = ReaderT $ const $ Const $ LT.concat [
+        "in url      : ", k, "\r\n"
+        ]
+    body = ReaderT $ const $ template
+instance FromRequestBodyContext APIDoc where
+    parse k = Const $ LT.concat [
+        "in json body: ", k, "\r\n"
+        ]
+    defaultTo doc x = doc <* Const (LT.concat [
+        "     default: ", LT.pack $ show x, "\r\n"
+        ])
 
 {- |
     A web resource, with a complete list of its supported methods.
@@ -408,7 +443,7 @@ class FromRequestBodyContext f where
         was not present in the request, then the given value should
         be substituted.
     -}
-    defaultTo :: f a -> a -> f a
+    defaultTo :: (Show a) => f a -> a -> f a
 
 class (FromRequestBodyContext g) => FromRequestContext f g | f->g where
     {-  Obsolete docs.
@@ -478,7 +513,7 @@ data EvaluationError k v
 -- | If the argument failed because it depends on a missing key,
 -- replace it with 'Nothing'; otherwise, 'Just' the value in the
 -- first argument.
-optional :: (Functor f, FromRequestBodyContext f)
+optional :: (Functor f, FromRequestBodyContext f, Show a)
          => f a -> f (Maybe a)
 optional fa = (Just <$> fa) `defaultTo` Nothing
 
