@@ -216,8 +216,8 @@ u s = nullURI { uriPath = s }
 
 -- | A value that can be reported to a web client.
 class WebResult m r where
-    report :: r                     -- ^The value to report.
-           -> URI                   -- ^The base URI.
+    report :: URI                   -- ^The base URI.
+           -> r                     -- ^The value to report.
            -> m ()                  -- ^An action that reports that value.
 
 -- | A value that can be serialized as JSON, respecting a base URI.

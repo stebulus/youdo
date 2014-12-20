@@ -153,7 +153,7 @@ webdb =
                ]
         )
     )
-    where dodb m uri db = flip report uri =<< liftIO =<<
+    where dodb m uri db = report uri =<< liftIO =<<
             (runReaderT m uri <*> pure db)
 
 {- |
@@ -306,14 +306,14 @@ instance Result (GetResult a) a where
     success x = Right $ Right x
 
 instance (BasedToJSON a) => WebResult ActionStatusM (GetResult a) where
-    report (Right (Right a)) uri =
+    report uri (Right (Right a)) =
         lift500 $ do
             status ok200  -- http://tools.ietf.org/html/rfc2616#section-10.2.1
             basedjson a uri
-    report (Left NotFound) _ =
+    report _ (Left NotFound) =
         lift500 $
             status notFound404  -- http://tools.ietf.org/html/rfc2616#section-10.4.5
-    report (Right (Left msg)) _ =
+    report _ (Right (Left msg)) =
         lift500 $ do
             status internalServerError500  -- http://tools.ietf.org/html/rfc2616#section-10.5.1
             text msg
@@ -342,16 +342,16 @@ newerVersion x = Left $ NewerVersion x
 
 instance (BasedToJSON b, NamedResource k, Show k, BasedToJSON v)
          => WebResult ActionStatusM (UpdateResult b (Versioned k v)) where
-    report (Right (Right (Right a))) uri =
+    report uri (Right (Right (Right a))) =
         lift500 $ do
             status created201  -- http://tools.ietf.org/html/rfc2616#section-10.2.2
             setHeader "Location" $ LT.pack $ show $ resourceVersionURL (version a) uri
             basedjson a uri
-    report (Left (NewerVersion b)) uri =
+    report uri (Left (NewerVersion b)) =
         lift500 $ do
             status conflict409  -- http://tools.ietf.org/html/rfc2616#section-10.4.10
             basedjson b uri
-    report (Right gr) uri = report gr uri
+    report uri (Right gr) = report uri gr
 
 {- |
     Result of a 'DB' create operation.  The data supplied describes
@@ -369,14 +369,14 @@ invalidObject errs = Left $ InvalidObject errs
 
 instance (NamedResource k, Show k, BasedToJSON v)
          => WebResult ActionStatusM (CreateResult (Versioned k v)) where
-    report (Right (Right (Right a))) uri =
+    report uri (Right (Right (Right a))) =
         lift500 $ do
            status created201  -- http://tools.ietf.org/html/rfc2616#section-10.2.2
            setHeader "Location" $ LT.pack $ show $ resourceURL (thingid (version a)) uri
            basedjson a uri
-    report (Left (InvalidObject msgs)) _ =
+    report _ (Left (InvalidObject msgs)) =
         badRequest $ LT.concat [ LT.concat [msg, "\r\n"] | msg<-msgs ]
-    report (Right gr) uri = report gr uri
+    report uri (Right gr) = report uri gr
 
 {- |
     Make a result of the contents of a singleton list.
