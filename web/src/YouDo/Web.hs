@@ -8,7 +8,7 @@ License     : GPL-3
 -}
 module YouDo.Web (
     -- * Resources as bundles of operations
-    resource, API(..), setBase, toScotty,
+    resource, API(..), setBase, toAssocList, toScotty,
     -- * Base and relative URIs
     BasedToJSON(..), BasedFromJSON(..), BasedParsable(..), basedjson,
     Based(..), RelativeToURI(..), (//), u,
@@ -138,19 +138,25 @@ setBase :: API a -> API a
 setBase (API xs) = API $ map f xs
     where f x = x { base = Just $ maybe nullURI id (base x) }
 
--- | Convert an 'API' to a Scotty application.
-toScotty :: API (ActionStatusM ()) -> ScottyM ()
-toScotty (API xs) = mapM_ f xs
+-- | Convert an 'API' to a nested associative list.
+toAssocList :: API a -> [(URI, [(StdMethod, a)])]
+toAssocList (API xs) = map f xs
     where f based =
             let baseuri = fromMaybe nullURI $ base based
-                route = fromString $ uriPath (baseuri .// relToBase based)
-                allowedMethods = intercalate ","
-                    $ map (show . fst) (debased based)
+                uri = baseuri .// relToBase based
+            in (uri, [ (method, actf baseuri) | (method, actf)<-debased based ])
+
+-- | Convert an 'API' to a Scotty application.
+toScotty :: API (ActionStatusM ()) -> ScottyM ()
+toScotty api = mapM_ f $ toAssocList api
+    where f (uri, acts) =
+            let route = fromString $ uriPath uri
+                allowedMethods = intercalate "," $ map (show . fst) acts
             in do
                 sequence_ [ addroute method route
                             $ statusErrors
-                            $ actf baseuri
-                          | (method, actf)<-debased based ]
+                            $ act
+                          | (method, act)<-acts ]
                 matchAny route $ do
                     status methodNotAllowed405
                         -- http://tools.ietf.org/html/rfc2616#section-10.4.6
