@@ -86,7 +86,7 @@ api0 :: ( DB m YoudoID YoudoData YoudoUpdate ydb
         , WebResult m (GetResult [User])
         , WebResult m (CreateResult User)
         , WebResult m (UpdateResult User User)
-        , WebResult m (GetResult Transaction)
+        , WebResult m (GetResult TxnDeluxe)
         , Applicative f
         )
      => YoudoDatabase m ydb udb tdb
@@ -97,18 +97,20 @@ api0 db =
         <>
         ((fmap.fmap) ($ users db) webdb)
         <>
-        ((fmap.fmap) ($ transactions db) webtxndb)
+        ((fmap.fmap) ($ db) webtxndb)
     )
 
-webtxndb :: ( TxnDB m d
-            , WebResult m (GetResult Transaction)
+webtxndb :: ( DB m YoudoID YoudoData YoudoUpdate y
+            , DB m UserID UserData UserUpdate u
+            , TxnDB m t
+            , WebResult m (GetResult TxnDeluxe)
             , FromRequestContext (ReaderT URI f) g
             , Applicative f
             )
-         => API (f (d -> m ()))
+         => API (f (YoudoDatabase m y u t -> m ()))
 webtxndb =
     u (resourceName (Nothing :: Maybe TransactionID)) // u":txnid" //
-        resource [ (GET, dodb $ getTxn <$> capture "txnid") ]
+        resource [ (GET, dodb $ getTxnDeluxe <$> capture "txnid") ]
     where dodb rdrt uri = (fmap.fmap) (>>= report uri) (runReaderT rdrt uri)
 
 -- | The kind of database to connect to.

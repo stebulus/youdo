@@ -1,11 +1,13 @@
 {-# LANGUAGE OverloadedStrings, FlexibleInstances, FlexibleContexts,
-    MultiParamTypeClasses, RankNTypes #-}
+    MultiParamTypeClasses, RankNTypes, ScopedTypeVariables  #-}
 module YouDo.Types where
 
 import Control.Applicative ((<$>), (<*>), Applicative(..))
 import Control.Concurrent.MVar (MVar, withMVar)
 import Control.Monad (join)
 import Control.Monad.IO.Class (MonadIO(..))
+import Control.Monad.Trans (lift)
+import Control.Monad.Trans.Either (EitherT(..), left, right)
 import Data.Aeson (ToJSON(..), FromJSON(..), (.=), object, Value(..))
 import Data.Aeson.Types (typeMismatch, Parser)
 import Data.Maybe (fromMaybe)
@@ -46,6 +48,37 @@ mapYoudoDB f db = YoudoDatabase { youdos = mapDB f (youdos db)
                                 , users = mapDB f (users db)
                                 , transactions = mapTxnDB f (transactions db)
                                 }
+
+data TxnDeluxe = TxnDeluxe Transaction [Youdo] [User]
+
+instance BasedToJSON TxnDeluxe where
+    basedToJSON (TxnDeluxe txn ys us) uri = augmentObject (basedToJSON txn uri)
+        [ "youdos" .= basedToJSON ys uri
+        , "users" .= basedToJSON us uri
+        ]
+
+getTxnDeluxe :: ( DB m YoudoID YoudoData YoudoUpdate y
+                , DB m UserID UserData UserUpdate u
+                , TxnDB m t
+                )
+             => TransactionID -> YoudoDatabase m y u t
+             -> m (GetResult TxnDeluxe)
+getTxnDeluxe k (YoudoDatabase yd ud td) =
+        return . either id success =<< meith
+    where meith = runEitherT $ do
+            txn <- hoistGetResult $ getTxn k td
+            ys <- hoistGetResult $ getFromTxn k yd
+            us <- hoistGetResult $ getFromTxn k ud
+            return $ TxnDeluxe txn ys us
+
+hoistGetResult :: (Monad m)
+               => m (GetResult a) -> EitherT (GetResult b) m a
+hoistGetResult act = do
+    result <- lift act
+    case result of
+        Left x -> left (Left x)
+        Right (Left x) -> left (Right (Left x))
+        Right (Right x) -> right x
 
 {-
     Transactions

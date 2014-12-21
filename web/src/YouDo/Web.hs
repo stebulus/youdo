@@ -21,7 +21,7 @@ module YouDo.Web (
     HasCaptureDescr(..), HasJSONDescr(..),
     FromRequestBody(..), FromRequestBodyContext(..), FromRequestContext(..),
     -- * Reporting results
-    WebResult(..),
+    WebResult(..), augmentObject,
     -- * Error handling and HTTP status
     ActionStatusM, ErrorWithStatus, raiseStatus, failWith,
     catchActionError, bindError, statusErrors, badRequest, lift500
@@ -39,7 +39,7 @@ import Data.Aeson (ToJSON(..), Value(..))
 import qualified Data.Aeson as A
 import qualified Data.Aeson.Types as A
 import qualified Data.HashMap.Strict as M
-import Data.List (intercalate)
+import Data.List (intercalate, foldl')
 import Data.Maybe (fromMaybe)
 import Data.Monoid (Monoid(..), (<>))
 import Data.String (IsString(..))
@@ -322,6 +322,13 @@ instance BasedParsable Bool where
 -- | Implementation of 'basedParseParam' for types that don't care about the URI.
 ignoreBaseInParam :: (Parsable a) => LT.Text -> URI -> Either LT.Text a
 ignoreBaseInParam t _ = parseParam t
+
+-- | Augment a JSON object with some extra pairs.
+-- Causes a run-time error if the given object is not an 'Object'.
+augmentObject :: Value -> [A.Pair] -> Value
+augmentObject (Object m) pairs =
+    Object $ foldl' (flip (uncurry M.insert)) m pairs
+augmentObject _ _ = error "augmentObject: not an object"
 
 type ActionStatusM = ActionT ErrorWithStatus IO
 

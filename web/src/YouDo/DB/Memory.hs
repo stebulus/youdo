@@ -46,6 +46,9 @@ instance (Eq k, NamedResource k, Updater u v)
     getVersion vk d = do
         xs <- readIORef $ things d
         return $ one $ [x | x<-xs, version x == vk]
+    getFromTxn tid d = do
+        xs <- readIORef $ things d
+        return $ success [ x | x<-xs, txnid (version x) == tid ]
     getAll d = do
         xs <- readIORef $ things d
         return $ success $ nubBy ((==) `on` thingid . version) xs

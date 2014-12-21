@@ -28,8 +28,7 @@ import Control.Monad (join)
 import Control.Monad.IO.Class (MonadIO(..))
 import Control.Monad.Reader (ReaderT(..))
 import Data.Aeson (FromJSON(..), (.=), Value(..))
-import qualified Data.HashMap.Strict as M
-import Data.List (foldl', intercalate)
+import Data.List (intercalate)
 import Data.Maybe (fromJust)
 import Data.Monoid ((<>))
 import qualified Data.Text as ST
@@ -62,6 +61,9 @@ class (Monad m, NamedResource k)
     -- | Get all versions of the specified object.
     getVersions :: k -> d -> m (GetResult [Versioned k v])
 
+    -- | Get all versions introduced in the given transaction.
+    getFromTxn :: TransactionID -> d -> m (GetResult [Versioned k v])
+
     -- | Get all objects.
     getAll :: d -> m (GetResult [Versioned k v])
 
@@ -92,6 +94,7 @@ instance (Monad n, DB m k v u d) => DB n k v u (LiftedDB m n k v u d) where
     get k (LiftedDB f d) = f $ get k d
     getVersion verk (LiftedDB f d) = f $ getVersion verk d
     getVersions k (LiftedDB f d) = f $ getVersions k d
+    getFromTxn tid (LiftedDB f d) = f $ getFromTxn tid d
     getAll (LiftedDB f d) = f $ getAll d
     create v (LiftedDB f d) = f $ create v d
     update verku (LiftedDB f d) = f $ update verku d
@@ -216,6 +219,7 @@ instance (MonadIO m, DB m k v u d) => DB m k v u (LockDB m k v u d) where
     get k = hoistLockDB (get k)
     getVersion verid = hoistLockDB (getVersion verid)
     getVersions k = hoistLockDB (getVersions k)
+    getFromTxn tid = hoistLockDB (getFromTxn tid)
     getAll = hoistLockDB getAll
     create v = hoistLockDB (create v)
     update veru = hoistLockDB (update veru)
@@ -251,19 +255,11 @@ instance ( FromRequestBody f (VersionedID a)
 -- with @"url"@, @"thisVersion"@, and @"transaction"@ fields.
 instance (Show k, NamedResource k, BasedToJSON v)
          => BasedToJSON (Versioned k v) where
-    basedToJSON v uri = Object augmentedmap
-        where augmentedmap = foldl' (flip (uncurry M.insert)) origmap
-                    [ "url" .= show objurl
-                    , "thisVersion" .= show verurl
-                    , "transaction" .= txnurl
-                    ]
-              origmap = case origval of
-                    Object m -> m
-                    _ -> error "data did not encode as JSON object"
-              origval = basedToJSON (thing v) uri
-              objurl = resourceURL (thingid (version v)) uri
-              verurl = resourceVersionURL (version v) uri
-              txnurl = basedToJSON (txnid (version v)) uri
+    basedToJSON v uri = augmentObject (basedToJSON (thing v) uri)
+        [ "url" .= show (resourceURL (thingid (version v)) uri)
+        , "thisVersion" .= show (resourceVersionURL (version v) uri)
+        , "transaction" .= basedToJSON (txnid (version v)) uri
+        ]
 
 -- | Transaction identifier.
 newtype TransactionID = TransactionID Int deriving (Eq)

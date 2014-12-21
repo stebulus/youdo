@@ -23,6 +23,7 @@ import Data.Monoid ((<>), Monoid(..))
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as LT
 import Data.Time.Clock (getCurrentTime)
+import qualified Data.Vector as V
 import Distribution.TestSuite (Test(..), TestInstance(..), Progress(..),
     Result(..))
 import Network.HTTP.Types (Status, ResponseHeaders, ok200, created201,
@@ -344,6 +345,9 @@ tests = return $
         liftIO $ threadDelay 10000
         afterPost <- liftIO getCurrentTime
         stat ~= created201
+        youdourl <- case lookup (mk "Location") hdrs of
+            Nothing -> left "missing location header"
+            Just h -> return $ SB.unpack h
         lookup (mk "Content-Type") hdrs
             ~= Just "application/json; charset=utf-8"
         obj <- hoistEither (eitherDecode bod :: Either String Object)
@@ -371,6 +375,15 @@ tests = return $
                                     ++ (show beforePost) ++ ","
                                     ++ (show afterPost) ++ "]"
             Just x -> failure $ "expected String, got " ++ (show x)
+        M.lookup "users" obj' ~= (Just $ Array $ V.fromList [])
+        youdo <- case M.lookup "youdos" obj' of
+            Just (Array a) -> do
+                V.length a ~= 1
+                case V.head a of
+                    Object yobj -> return yobj
+                    x -> left $ "expected object, got " ++ (show x)
+            x -> left $ "expected array, got " ++ (show x)
+        M.lookup "url" youdo ~= Just (String $ T.pack youdourl)
     ]
 
 evaluateNoURI :: RequestParser a
