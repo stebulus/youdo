@@ -3,6 +3,9 @@
 module YouDo.Types where
 
 import Control.Applicative ((<$>), (<*>), Applicative(..))
+import Control.Concurrent.MVar (MVar, withMVar)
+import Control.Monad (join)
+import Control.Monad.IO.Class (MonadIO(..))
 import Data.Aeson (ToJSON(..), FromJSON(..), (.=), object, Value(..))
 import Data.Aeson.Types (typeMismatch, Parser)
 import Data.Maybe (fromMaybe)
@@ -20,20 +23,66 @@ import YouDo.Web
 
 data ( DB m YoudoID YoudoData YoudoUpdate yd
      , DB m UserID UserData UserUpdate ud
-     ) => YoudoDatabase m yd ud = YoudoDatabase { youdos :: yd, users :: ud }
+     , TxnDB m td
+     )
+  => YoudoDatabase m yd ud td
+  = YoudoDatabase { youdos :: yd
+                  , users :: ud
+                  , transactions :: td
+                  }
 
 mapYoudoDB :: ( DB m YoudoID YoudoData YoudoUpdate yd
               , DB m UserID UserData UserUpdate ud
+              , TxnDB m td
               , Monad n
               )
            => (forall a. m a -> n a)
-           -> YoudoDatabase m yd ud
+           -> YoudoDatabase m yd ud td
            -> YoudoDatabase n
                     (LiftedDB m n YoudoID YoudoData YoudoUpdate yd)
                     (LiftedDB m n UserID UserData UserUpdate ud)
+                    (LiftedTxnDB m n td)
 mapYoudoDB f db = YoudoDatabase { youdos = mapDB f (youdos db)
                                 , users = mapDB f (users db)
+                                , transactions = mapTxnDB f (transactions db)
                                 }
+
+{-
+    Transactions
+-}
+
+data Transaction = Transaction { ownid :: TransactionID
+                               , timestamp :: UTCTime
+                               }
+instance FromRow Transaction where
+    fromRow = Transaction <$> field <*> field
+instance BasedToJSON Transaction where
+    basedToJSON txn uri =
+        object [ "url" .= idjson (ownid txn) uri
+               , "timestamp" .= timestamp txn
+               ]
+
+-- | A read-only store of transaction information.
+class (Monad m) => TxnDB m d where
+    -- | Get the specified transaction.
+    getTxn :: TransactionID -> d -> m (GetResult Transaction)
+
+-- | Change results of a 'TxnDB' from one monad to another.
+mapTxnDB :: (Monad n, TxnDB m d)
+         => (forall a. m a -> n a) -> d -> LiftedTxnDB m n d
+mapTxnDB = LiftedTxnDB
+
+data LiftedTxnDB m n d = LiftedTxnDB (forall a. m a -> n a) d
+
+instance (Monad n, TxnDB m d) => TxnDB n (LiftedTxnDB m n d) where
+    getTxn t (LiftedTxnDB f d) = f $ getTxn t d
+
+-- | A 'TxnDB' wrapper that locks on a given 'MVar'.
+data (TxnDB m d) => LockTxnDB m d = LockTxnDB (MVar ()) d
+
+instance (MonadIO m, TxnDB m d) => TxnDB m (LockTxnDB m d) where
+    getTxn t (LockTxnDB mv d) =
+        join $ liftIO $ withMVar mv $ const $ return $ getTxn t d
 
 {-
     Youdos

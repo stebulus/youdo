@@ -3,6 +3,7 @@
 module YouDo.Web.Test where
 import Blaze.ByteString.Builder (toLazyByteString)
 import Control.Applicative ((<$>), (<*>))
+import Control.Concurrent (threadDelay)
 import Control.Concurrent.MVar (newEmptyMVar, newMVar, takeMVar, putMVar,
     modifyMVar_, modifyMVar)
 import Control.Exception (SomeException, handle)
@@ -21,6 +22,7 @@ import Data.Maybe (fromJust)
 import Data.Monoid ((<>), Monoid(..))
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as LT
+import Data.Time.Clock (getCurrentTime)
 import Distribution.TestSuite (Test(..), TestInstance(..), Progress(..),
     Result(..))
 import Network.HTTP.Types (Status, ResponseHeaders, ok200, created201,
@@ -34,6 +36,7 @@ import Web.Scotty (scottyApp, parseParam)
 import YouDo.DB.Memory
 import YouDo.Holes
 import YouDo.Test (plainTest)
+import YouDo.TimeParser (parseUTCTime)
 import YouDo.Types (DueDate, UserID(..))
 import YouDo.Web (ParamValue(..), parse, EvaluationError(..),
     BasedFromJSON(..), BasedParsable(..), RequestParser)
@@ -326,6 +329,49 @@ tests = return $
                       ]
         return $ plainTest ("UserID from URL, " ++ dataname ++ ", " ++ fname)
                            $ f userurl ~= result
+
+    ++
+    [ serverTest "transaction URLs" $ \req -> do
+        beforePost <- liftIO getCurrentTime
+        liftIO $ threadDelay 10000
+        (stat, hdrs, bod) <- liftIO $ req
+            $ post "http://example.com/0/youdos"
+            <> body "assigner=http://example.com/0/users/0\
+                    \&assignee=http://example.com/0/users/0\
+                    \&description=blah\
+                    \&duedate=2014-11-30T14:10:05.038Z&completed=false"
+            <> header "Content-Type" "application/x-www-form-urlencoded"
+        liftIO $ threadDelay 10000
+        afterPost <- liftIO getCurrentTime
+        stat ~= created201
+        lookup (mk "Content-Type") hdrs
+            ~= Just "application/json; charset=utf-8"
+        obj <- hoistEither (eitherDecode bod :: Either String Object)
+        txnurl <- case M.lookup "transaction" obj of
+            Just (String thetxnurl) -> return thetxnurl
+            Just x -> left $ "expected String, got " ++ (show x)
+            Nothing -> left "no transaction field"
+        (stat', _, bod') <- liftIO $ req $ get $ T.unpack txnurl
+        stat' ~= ok200
+        obj' <- hoistEither (eitherDecode bod' :: Either String Object)
+        M.lookup "url" obj' ~= Just (String txnurl)
+        case M.lookup "timestamp" obj' of
+            Nothing -> failure "no timestamp field"
+            Just (String timestr) ->
+                case parseUTCTime (LT.fromStrict timestr) of
+                    Left e -> failure $
+                                "can't parse time " ++ (show timestr)
+                                ++ ": " ++ e
+                    Right t ->
+                        if beforePost <= t && t <= afterPost
+                            then success
+                            else failure $
+                                    "transaction time " ++ (show timestr)
+                                    ++ " is not in expected range ["
+                                    ++ (show beforePost) ++ ","
+                                    ++ (show afterPost) ++ "]"
+            Just x -> failure $ "expected String, got " ++ (show x)
+    ]
 
 evaluateNoURI :: RequestParser a
               -> [(LT.Text,ParamValue)]

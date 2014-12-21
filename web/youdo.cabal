@@ -83,7 +83,9 @@ Test-Suite test-web
                        , bytestring ==0.10.*
                        , case-insensitive ==1.1.*
                        , text ==0.11.*
+                       , time ==1.4.*
                        , unordered-containers ==0.2.*
+                       , vector ==0.10.*
                        , attoparsec ==0.11.*
 
 Test-Suite test-holes

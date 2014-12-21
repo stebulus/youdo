@@ -13,11 +13,13 @@ import YouDo.Types
 youdoDB :: Connection
         -> IO (YoudoDatabase IO
                 (LockDB IO YoudoID YoudoData YoudoUpdate PostgresYoudoDB)
-                (LockDB IO UserID UserData UserUpdate PostgresUserDB))
+                (LockDB IO UserID UserData UserUpdate PostgresUserDB)
+                (LockTxnDB IO PostgresTxnDB))
 youdoDB conn = do
     mv <- newMVar ()
     return $ YoudoDatabase (LockDB mv (PostgresYoudoDB conn))
                            (LockDB mv (PostgresUserDB conn))
+                           (LockTxnDB mv (PostgresTxnDB conn))
 
 -- | A 'DB' instance backed by a PostgreSQL database.
 -- Not thread-safe!  Use 'LockDB' if needed.
@@ -52,3 +54,10 @@ instance DB IO UserID UserData UserUpdate PostgresUserDB where
         one <$> query conn
               "select id, name from yd_user where id = ?"
               (Only uid)
+
+newtype PostgresTxnDB = PostgresTxnDB Connection
+instance TxnDB IO PostgresTxnDB where
+    getTxn tid (PostgresTxnDB conn) =
+        one <$> query conn
+            "select id from transaction where id = ?"
+            (Only tid)

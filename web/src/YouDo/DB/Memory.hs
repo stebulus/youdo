@@ -1,11 +1,12 @@
 {-# LANGUAGE MultiParamTypeClasses, FlexibleContexts, FlexibleInstances #-}
 module YouDo.DB.Memory (MemoryDB, empty) where
 import Control.Applicative ((<$>))
-import Control.Concurrent.MVar (newMVar)
+import Control.Concurrent.MVar (MVar, newMVar, readMVar, modifyMVar)
 import Data.IORef (IORef, newIORef, readIORef, writeIORef, modifyIORef')
 import Data.Function (on)
 import Data.List (nubBy)
-import Data.Maybe (listToMaybe)
+import Data.Maybe (listToMaybe, fromMaybe)
+import Data.Time.Clock (getCurrentTime)
 
 import YouDo.DB
 import YouDo.Types
@@ -68,19 +69,45 @@ instance (Eq k, NamedResource k, Updater u v)
                                 modifyIORef' (things d) (newx : )
                                 return $ success newx
 
+data MemoryTxnDB = MemoryTxnDB { mvTransactions :: MVar [Transaction]
+                               , newTransaction :: IO TransactionID
+                               }
+
+newtxndb :: IO MemoryTxnDB
+newtxndb = do
+    txns <- newMVar []
+    let ionewtxn = modifyMVar txns $ \xs -> do
+        let nextid = TransactionID $ fromMaybe 0 $
+                (\(Transaction (TransactionID n) _) -> n+1)
+                <$> listToMaybe xs
+        time <- getCurrentTime
+        let newtxn = Transaction nextid time
+        return (newtxn : xs, nextid)
+    return $ MemoryTxnDB txns ionewtxn
+
+instance TxnDB IO MemoryTxnDB where
+    getTxn tid d = do
+        txns <- readMVar $ mvTransactions d
+        case filter (\(Transaction thetxnid _) -> tid == thetxnid) txns of
+            [] -> return notFound
+            (txn:_) -> return $ success $ txn
+
 -- | Create a new empty 'YoudoDatabase' backed by 'MemoryDB's.
 -- All operations (to either 'DB') are locked under a single MVar.
 empty :: IO (YoudoDatabase IO
                 (LockDB IO YoudoID YoudoData YoudoUpdate
                     (MemoryDB YoudoID YoudoData YoudoUpdate))
                 (LockDB IO UserID UserData UserUpdate
-                    (MemoryDB UserID UserData UserUpdate)))
+                    (MemoryDB UserID UserData UserUpdate))
+                (LockTxnDB IO MemoryTxnDB))
 empty = do
-    txnIncr <- (fmap.fmap) TransactionID $ newIncrementer 0
     mv <- newMVar ()
+    unlockedtd <- newtxndb
+    let txnIncr = newTransaction unlockedtd
+    let td = LockTxnDB mv unlockedtd
     yd <- LockDB mv <$> newdb YoudoID txnIncr
     ud <- LockDB mv <$> newdb UserID txnIncr
     result <- create (UserData "yddb") ud
     case result of
-        Right (Right (Right _)) -> return $ YoudoDatabase yd ud
+        Right (Right (Right _)) -> return $ YoudoDatabase yd ud td
         _ -> error "could not create yddb user"

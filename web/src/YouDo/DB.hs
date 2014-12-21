@@ -35,6 +35,7 @@ import Data.Monoid ((<>))
 import qualified Data.Text as ST
 import qualified Data.Text.Lazy as LT
 import Database.PostgreSQL.Simple.FromField (FromField(..))
+import Database.PostgreSQL.Simple.ToField (ToField(..))
 import Network.HTTP.Types (ok200, created201, notFound404,
     conflict409, internalServerError500, StdMethod(..))
 import Network.URI
@@ -247,13 +248,14 @@ instance ( FromRequestBody f (VersionedID a)
     template = Versioned <$> template <*> template
 
 -- | Augment JSON representations of 'Versioned' objects
--- with @"url"@ and @"thisVersion"@ fields.
+-- with @"url"@, @"thisVersion"@, and @"transaction"@ fields.
 instance (Show k, NamedResource k, BasedToJSON v)
          => BasedToJSON (Versioned k v) where
     basedToJSON v uri = Object augmentedmap
         where augmentedmap = foldl' (flip (uncurry M.insert)) origmap
                     [ "url" .= show objurl
                     , "thisVersion" .= show verurl
+                    , "transaction" .= txnurl
                     ]
               origmap = case origval of
                     Object m -> m
@@ -261,13 +263,20 @@ instance (Show k, NamedResource k, BasedToJSON v)
               origval = basedToJSON (thing v) uri
               objurl = resourceURL (thingid (version v)) uri
               verurl = resourceVersionURL (version v) uri
+              txnurl = basedToJSON (txnid (version v)) uri
 
 -- | Transaction identifier.
 newtype TransactionID = TransactionID Int deriving (Eq)
+instance NamedResource TransactionID where
+    resourceName = const "transactions"
 instance Show TransactionID where
     show (TransactionID n) = show n
+instance BasedToJSON TransactionID where
+    basedToJSON = idjson
 instance FromField TransactionID where
     fromField fld = (fmap.fmap) TransactionID $ fromField fld
+instance ToField TransactionID where
+    toField (TransactionID n) = toField n
 instance Parsable TransactionID where
     parseParam x = TransactionID <$> parseParam x
 instance FromJSON TransactionID where

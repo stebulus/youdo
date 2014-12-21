@@ -16,11 +16,12 @@ import Control.Applicative
 import Control.Exception (bracket)
 import Control.Monad (join)
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad.Reader (ReaderT)
+import Control.Monad.Reader (ReaderT, runReaderT)
 import Data.ByteString.Char8 (pack)
 import Data.Default
 import Data.Monoid ((<>))
 import Database.PostgreSQL.Simple (close, connectPostgreSQL)
+import Network.HTTP.Types (StdMethod(GET))
 import Network.URI (URI(..), URIAuth(..), nullURI)
 import Network.Wai.Handler.Warp (setPort, setHost, defaultSettings)
 import Options.Applicative (option, strOption, flag', auto, long, short,
@@ -38,14 +39,15 @@ import YouDo.Types
 -- Consists of 'webdb' interfaces for the given Youdo and User DB instances.
 app :: ( DB IO YoudoID YoudoData YoudoUpdate ydb
        , DB IO UserID UserData UserUpdate udb
+       , TxnDB IO tdb
        )
-    => YoudoDatabase IO ydb udb     -- ^The database.
-    -> URI                          -- ^The base URI.
+    => YoudoDatabase IO ydb udb tdb     -- ^The database.
+    -> URI                              -- ^The base URI.
     -> ScottyM ()
 app db uri = toScotty $
                 fmap join (uri // api0 (mapYoudoDB liftIO db))
                 <> uri // u"apidocs" //
-                    docs (uri // api0 (YoudoDatabase NullYoudoDB NullUserDB))
+                    docs (uri // api0 (YoudoDatabase NullYoudoDB NullUserDB NullTxnDB))
 
 data NullYoudoDB = NullYoudoDB
 instance DB NullMonad YoudoID YoudoData YoudoUpdate NullYoudoDB where
@@ -63,10 +65,14 @@ instance DB NullMonad UserID UserData UserUpdate NullUserDB where
     getAll = const NullMonad
     create = const $ const NullMonad
     update = const $ const NullMonad
+data NullTxnDB = NullTxnDB
+instance TxnDB NullMonad NullTxnDB where
+    getTxn = const $ const NullMonad
 
 -- | The Youdo API, version 0.
 api0 :: ( DB m YoudoID YoudoData YoudoUpdate ydb
         , DB m UserID UserData UserUpdate udb
+        , TxnDB m tdb
         , FromRequestBody g YoudoData
         , FromRequestBody g YoudoUpdate
         , FromRequestBody g UserData
@@ -80,16 +86,30 @@ api0 :: ( DB m YoudoID YoudoData YoudoUpdate ydb
         , WebResult m (GetResult [User])
         , WebResult m (CreateResult User)
         , WebResult m (UpdateResult User User)
+        , WebResult m (GetResult Transaction)
         , Applicative f
         )
-     => YoudoDatabase m ydb udb
+     => YoudoDatabase m ydb udb tdb
      -> API (f (m ()))
 api0 db =
     u"0" // ( setBase $
         ((fmap.fmap) ($ youdos db) webdb)
         <>
         ((fmap.fmap) ($ users db) webdb)
+        <>
+        ((fmap.fmap) ($ transactions db) webtxndb)
     )
+
+webtxndb :: ( TxnDB m d
+            , WebResult m (GetResult Transaction)
+            , FromRequestContext (ReaderT URI f) g
+            , Applicative f
+            )
+         => API (f (d -> m ()))
+webtxndb =
+    u (resourceName (Nothing :: Maybe TransactionID)) // u":txnid" //
+        resource [ (GET, dodb $ getTxn <$> capture "txnid") ]
+    where dodb rdrt uri = (fmap.fmap) (>>= report uri) (runReaderT rdrt uri)
 
 -- | The kind of database to connect to.
 data DBOption = InMemory            -- ^A transient in-memory database; see "YouDo.DB.Memory"
