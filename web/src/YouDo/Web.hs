@@ -13,15 +13,13 @@ module YouDo.Web (
     -- * API documentation
     docs,
     -- * Base and relative URIs
-    BasedToJSON(..), BasedFromJSON(..), BasedParsable(..), basedjson,
+    BasedFromJSON(..), BasedParsable(..),
     Based(..), RelativeToURI(..), (//), u,
     -- * Interpreting requests
     fromRequestBody, RequestParser, ParamValue(..), requestData,
     EvaluationError(..), optional,
     HasCaptureDescr(..), HasJSONDescr(..),
     FromRequestBody(..), FromRequestBodyContext(..), FromRequestContext(..),
-    -- * Reporting results
-    WebResult(..), augmentObject,
 ) where
 
 import Codec.MIME.Type (mimeType, MIMEType(Application))
@@ -236,10 +234,6 @@ resource acts = API [Based { base = Nothing
                            , debased = acts
                            }]
 
--- | Like 'Scotty.json', but for based representations.
-basedjson :: BasedToJSON a => a -> URI -> ActionM ()
-basedjson x uri = Scotty.json $ basedToJSON x uri
-
 -- | Something that can be evaluated relative to a URI.
 -- (Compare '(.//)' to '(//)'.)
 class RelativeToURI a where
@@ -275,21 +269,6 @@ infixl 7 //
 u :: String -> URI
 u s = nullURI { uriPath = s }
 
--- | A value that can be reported to a web client.
-class WebResult m r where
-    report :: URI                   -- ^The base URI.
-           -> r                     -- ^The value to report.
-           -> m ()                  -- ^An action that reports that value.
-
-instance WebResult NullMonad r where
-    report _ _ = NullMonad
-
--- | A value that can be serialized as JSON, respecting a base URI.
-class BasedToJSON a where
-    basedToJSON :: a -> URI -> Value
-instance BasedToJSON a => BasedToJSON [a] where
-    basedToJSON xs uri = toJSON $ map (flip basedToJSON uri) xs
-
 -- | A value that can be deserialized from JSON, respecting a base URI.
 class BasedFromJSON a where
     basedParseJSON :: Value -> URI -> A.Parser a
@@ -317,13 +296,6 @@ instance BasedParsable Bool where
 -- | Implementation of 'basedParseParam' for types that don't care about the URI.
 ignoreBaseInParam :: (Parsable a) => LT.Text -> URI -> Either LT.Text a
 ignoreBaseInParam t _ = parseParam t
-
--- | Augment a JSON object with some extra pairs.
--- Causes a run-time error if the given object is not an 'Object'.
-augmentObject :: Value -> [A.Pair] -> Value
-augmentObject (Object m) pairs =
-    Object $ foldl' (flip (uncurry M.insert)) m pairs
-augmentObject _ _ = error "augmentObject: not an object"
 
 {- |
     Use the given 'RequestParser' to interpret the data in the HTTP

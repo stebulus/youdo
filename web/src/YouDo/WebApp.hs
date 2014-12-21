@@ -33,6 +33,7 @@ import YouDo.DB.Memory
 import YouDo.DB.PostgreSQL
 import YouDo.Monad.Null
 import YouDo.Web
+import YouDo.Web.Response
 import YouDo.Types
 
 -- | The Scotty application.
