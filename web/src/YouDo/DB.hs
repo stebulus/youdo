@@ -1,6 +1,10 @@
-{-# LANGUAGE MultiParamTypeClasses, FunctionalDependencies,
-    FlexibleInstances, FlexibleContexts, OverloadedStrings,
-    ScopedTypeVariables, RankNTypes #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-|
 Module      : YouDo.DB
 Description : Database types for YouDo

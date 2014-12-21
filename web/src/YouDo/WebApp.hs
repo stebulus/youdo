@@ -1,5 +1,8 @@
-{-# LANGUAGE OverloadedStrings, RankNTypes, FlexibleContexts,
-    FlexibleInstances, MultiParamTypeClasses #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RankNTypes #-}
 {-|
 Module      : YouDo.WebApp
 Description : Web application for YouDo

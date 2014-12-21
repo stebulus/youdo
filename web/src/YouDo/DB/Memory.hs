@@ -1,4 +1,6 @@
-{-# LANGUAGE MultiParamTypeClasses, FlexibleContexts, FlexibleInstances #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 module YouDo.DB.Memory (MemoryDB, empty) where
 import Control.Applicative ((<$>))
 import Control.Concurrent.MVar (MVar, newMVar, readMVar, modifyMVar)

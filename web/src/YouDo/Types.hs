@@ -1,5 +1,9 @@
-{-# LANGUAGE OverloadedStrings, FlexibleInstances, FlexibleContexts,
-    MultiParamTypeClasses, RankNTypes, ScopedTypeVariables  #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
 module YouDo.Types where
 
 import Control.Applicative ((<$>), (<*>), Applicative(..))
