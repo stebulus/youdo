@@ -288,13 +288,13 @@ tests = return $
         return m
 
     ++
-    [ plainTest "Holex parsing from Scotty parameters" $ do
+    [ plainTest "Holes parsing from Scotty parameters" $ do
         let expr = (+) <$> (parse "a") <*> (parse "b") :: RequestParser Int
             val = evaluateNoURI expr [("a", ScottyParam "1"), ("b", ScottyParam "-3")]
             val' = evaluateNoURI expr [("a", ScottyParam "1"), ("b", ScottyParam "q")]
         (val,val') ~= (Right (-2),
             Left [ParseError "b" (ScottyParam "q") "readEither: no parse"])
-    , plainTest "Holex parsing from JSON fields" $ do
+    , plainTest "Holes parsing from JSON fields" $ do
         let expr = (+) <$> (parse "a") <*> (parse "b") :: RequestParser Int
             val = evaluateNoURI expr [("a", JSONField (Number 1)),
                                       ("b", JSONField (Number (-3)))]
