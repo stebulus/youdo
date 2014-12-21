@@ -8,13 +8,9 @@ Copyright   : (c) Steven Taschuk, 2014
 License     : GPL-3
 -}
 module YouDo.Web (
-    -- * Resources as bundles of operations
-    resource, API(..), setBase, toAssocList, toScotty,
-    -- * API documentation
     docs,
     -- * Base and relative URIs
     BasedFromJSON(..), BasedParsable(..),
-    Based(..), RelativeToURI(..), (//), u,
     -- * Interpreting requests
     fromRequestBody, RequestParser, ParamValue(..), requestData,
     EvaluationError(..), optional,
@@ -29,137 +25,21 @@ import Control.Monad (forM_)
 import Control.Monad.Reader (ReaderT(..), ask, mapReaderT)
 import Control.Monad.Writer (tell, runWriter)
 import Control.Monad.Trans (MonadTrans(..))
-import Data.Aeson (ToJSON(..), Value(..))
+import Data.Aeson (Value(..))
 import qualified Data.Aeson as A
 import qualified Data.Aeson.Types as A
 import qualified Data.HashMap.Strict as M
-import Data.List (intercalate, foldl')
-import Data.Maybe (fromMaybe)
 import Data.Monoid (Monoid(..), (<>))
-import Data.String (IsString(..))
 import qualified Data.Text.Lazy as LT
-import Network.HTTP.Types (methodNotAllowed405, unsupportedMediaType415,
-    StdMethod(..))
-import Network.URI (URI(..), relativeTo, nullURI)
-import Web.Scotty (ScottyM, matchAny, header, addroute, param, params,
-    ActionM, Parsable(..), status, setHeader)
+import Network.HTTP.Types (unsupportedMediaType415, StdMethod(..))
+import Network.URI (URI(..))
+import Web.Scotty (header, param, params, Parsable(..))
 import qualified Web.Scotty as Scotty
 
 import YouDo.Holes
 import YouDo.Monad.Null
 import YouDo.Web.ActionM
-
--- | A wrapper that manages the URI of an object and its base URI.  (Used by 'API'.)
-data Based a = Based { base :: Maybe URI
-                     , relToBase :: URI
-                     , debased :: a
-                     }
-instance RelativeToURI (Based a) where
-    uri .// x@Based { base = Nothing } = x { relToBase = uri .// (relToBase x) }
-    uri .// x@Based { base = Just y } = x { base = Just (uri .// y) }
-instance Functor Based where
-    fmap f based = based { debased = f $ debased based }
-
-{- |
-    A web API.
-
-    Create endpoints by calling 'resource' and adjust their location
-    with '(//)'.  For example,
-
-    @
-        'u'"foo" // 'u'"bar" //
-            'resource' [ (GET, getSomething)
-                       , (POST, doSomething)
-                       ]
-    @
-
-    produces a resource which supports HTTP GET and POST and has a
-    nominal location of @"foo/bar"@.
-
-    'API's may be combined; for example:
-
-    @
-        'u'"foo" // (
-            'u'"bar" //
-                'resource' [ (GET, getSomething)
-                           , (POST, doSomething)
-                           ]
-            <>
-            'u'"snee" // 'u' "qux" //
-                'resource' [ (GET, getSomethingElse) ]
-        )
-    @
-
-    produces an API with endpoints at @"foo/bar"@ and at
-    @"foo/snee/qux"@.
-
-    The functions passed to 'resource' (@getSomething@ and such
-    above) receive a base URI as an argument.  By default, this is
-    'nullURI'; it can be set to another value by calling 'setBase'
-    at the appropriate point in a chain of '(//)'.  For example, with
-
-    @
-        'u'"foo" // setBase (
-            'u'"bar" //
-                'resource' [ (GET, getSomething)
-                           , (POST, doSomething)
-                           ]
-            <>
-            'u'"snee" // 'u' "qux" //
-                'resource' [ (GET, getSomethingElse) ]
-        )
-    @
-
-    the functions for both resources would receive the URI @"foo/"@
-    as their base URI.  (There's a slash at the end because '(//)'
-    was used instead of '(.//)'.)
-
-    If 'setBase' is called more than once above a resource, the
-    lowermost counts.  Thus you can set a high-level default base
-    URI for most resources and override it for specific subtrees.
-
-    The functions passed to 'resource' return type 'a'; ultimately this
-    should be 'ActionStatusM ()' so that the 'API' can be passed to
-    'toScotty', but other types may be useful at earlier stages of
-    the computation.  (See 'Youdo.WebApp.api0', for example.)
--}
-newtype API a = API [Based [(StdMethod, URI -> a)]]
-instance RelativeToURI (API a) where
-    uri .// (API xs) = API $ map (uri .//) xs
-instance Monoid (API a) where
-    mempty = API mempty
-    (API xs) `mappend` (API ys) = API (xs `mappend` ys)
-instance Functor API where
-    fmap f (API xs) = API $ (fmap.fmap.fmap.fmap.fmap) f xs
-
--- | Set the base URI to the current point.  See 'API'.
-setBase :: API a -> API a
-setBase (API xs) = API $ map f xs
-    where f x = x { base = Just $ maybe nullURI id (base x) }
-
--- | Convert an 'API' to a nested associative list.
-toAssocList :: API a -> [(URI, [(StdMethod, a)])]
-toAssocList (API xs) = map f xs
-    where f based =
-            let baseuri = fromMaybe nullURI $ base based
-                uri = baseuri .// relToBase based
-            in (uri, [ (method, actf baseuri) | (method, actf)<-debased based ])
-
--- | Convert an 'API' to a Scotty application.
-toScotty :: API (ActionStatusM ()) -> ScottyM ()
-toScotty api = mapM_ f $ toAssocList api
-    where f (uri, acts) =
-            let route = fromString $ uriPath uri
-                allowedMethods = intercalate "," $ map (show . fst) acts
-            in do
-                sequence_ [ addroute method route
-                            $ statusErrors
-                            $ act
-                          | (method, act)<-acts ]
-                matchAny route $ do
-                    status methodNotAllowed405
-                        -- http://tools.ietf.org/html/rfc2616#section-10.4.6
-                    setHeader "Allow" $ LT.pack allowedMethods
+import YouDo.Web.Service
 
 -- | Convert an 'API' to documentation.
 docs :: API (APIDoc (NullMonad b)) -> API (ActionStatusM ())
@@ -214,60 +94,6 @@ instance HasJSONDescr Bool where
 
 addConst :: (Monoid a) => Const a b -> a -> Const a b
 addConst c a = Const $ getConst c <> a
-
-{- |
-    A web resource, with a complete list of its supported methods.
-    Defining a resource this way causes a 405 (Method Not Allowed)
-    response when a request uses a method which is not in the
-    given list.  (Scotty's default is 404 (Not Found), which is less
-    appropriate.)
-
-    The URI argument to the enclosed functions is the base URI,
-    whatever that means in the context of the application.
-    (Note especially that it's not necessarily the URI of this
-    resource itself; see 'API'.)
--}
-resource :: [(StdMethod, URI -> a)]  -- ^Allowed methods and their actions.
-            -> API a
-resource acts = API [Based { base = Nothing
-                           , relToBase = nullURI
-                           , debased = acts
-                           }]
-
--- | Something that can be evaluated relative to a URI.
--- (Compare '(.//)' to '(//)'.)
-class RelativeToURI a where
-    (.//) :: URI -> a -> a
-instance RelativeToURI URI where
-    a .// b = b `relativeTo` a
-infixl 7 .//
-
-{- |
-    This version of '(.//)' ensures that there is a slash
-    at the end of the path part of the URI before evaluating 'b'
-    relative to it. Thus, for example,
-
-    @
-        u "foo" // u "bar" == u "foo/bar"
-    @
-
-    which is probably what the writer intended.
--}
-(//) :: (RelativeToURI b) => URI -> b -> b
-a // b = a' .// b
-    where a' = if maybeLast apath == Just '/'
-               then a
-               else a { uriPath = apath ++ "/" }
-          apath = uriPath a
-          maybeLast [] = Nothing
-          maybeLast xs = Just $ last xs
-infixl 7 //
-
--- | Create a 'URI' with the given string as path component.
--- (It's probably best to use this only for string literals
--- whose validity you can see yourself.)
-u :: String -> URI
-u s = nullURI { uriPath = s }
 
 -- | A value that can be deserialized from JSON, respecting a base URI.
 class BasedFromJSON a where

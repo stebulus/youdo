@@ -33,7 +33,9 @@ library
                        , YouDo.Types
                        , YouDo.Web
                        , YouDo.Web.ActionM
+                       , YouDo.Web.Relative
                        , YouDo.Web.Response
+                       , YouDo.Web.Service
                        , YouDo.WebApp
   ghc-options:         -Wall
   build-depends:       base ==4.6.*
