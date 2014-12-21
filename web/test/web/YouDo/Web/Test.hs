@@ -1,9 +1,11 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module YouDo.Web.Test where
 import Blaze.ByteString.Builder (toLazyByteString)
 import Control.Applicative ((<$>), (<*>))
 import Control.Concurrent.MVar (newEmptyMVar, newMVar, takeMVar, putMVar,
     modifyMVar_, modifyMVar)
+import Control.Exception (SomeException, handle)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader (runReaderT)
 import Control.Monad.Trans.Either (EitherT(..), left, right, hoistEither)
@@ -368,7 +370,8 @@ serverTest testName f = Test $ TestInstance
         db <- empty
         waiApp <- scottyApp
                   $ app db $ fromJust $ parseURI "http://example.com"
-        result <- runEitherT $ f $ request waiApp
+        result <- handle (\(e::SomeException) -> return $ Left $ show e)
+            $ runEitherT $ f $ request waiApp
         return $ Finished $ case result of
             Left msg -> Fail msg
             Right _ -> Pass
