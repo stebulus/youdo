@@ -40,9 +40,9 @@ import Network.HTTP.Types (ok200, created201, notFound404,
 import Network.URI
 import Web.Scotty (Parsable(..), status, setHeader, text)
 
-import YouDo.Web
 import YouDo.Web.ActionM
 import YouDo.Web.Relative
+import YouDo.Web.Request
 import YouDo.Web.Response
 import YouDo.Web.Service
 

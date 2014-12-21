@@ -27,8 +27,8 @@ import Web.Scotty (text)
 
 import YouDo.Const
 import YouDo.Monad.Null
-import YouDo.Web
 import YouDo.Web.ActionM
+import YouDo.Web.Request
 import YouDo.Web.Service
 
 -- | Convert an 'API' to documentation.

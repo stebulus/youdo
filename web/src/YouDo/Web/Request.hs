@@ -1,31 +1,39 @@
-{-# LANGUAGE OverloadedStrings, RankNTypes, FlexibleContexts,
-    FlexibleInstances, MultiParamTypeClasses, FunctionalDependencies,
-    ScopedTypeVariables #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-|
-Module      : YouDo.Web
-Description : A tiny web framework on top of Scotty.
+Module      : YouDo.Web.Request
+Description : Interpreting HTTP requests.
 Copyright   : (c) Steven Taschuk, 2014
 License     : GPL-3
 -}
-module YouDo.Web (
-    -- * Base and relative URIs
-    BasedFromJSON(..), BasedParsable(..),
-    -- * Interpreting requests
-    fromRequestBody, RequestParser, ParamValue(..), requestData,
-    EvaluationError(..), optional,
-    HasCaptureDescr(..), HasJSONDescr(..),
-    FromRequestBody(..), FromRequestBodyContext(..), FromRequestContext(..),
-) where
+module YouDo.Web.Request (
+    BasedFromJSON(..),
+    BasedParsable(..),
+    fromRequestBody,
+    RequestParser,
+    ParamValue(..),
+    requestData,
+    EvaluationError(..),
+    optional,
+    HasCaptureDescr(..),
+    HasJSONDescr(..),
+    FromRequestBody(..),
+    FromRequestBodyContext(..),
+    FromRequestContext(..))
+where
 
 import Codec.MIME.Type (mimeType, MIMEType(Application))
 import Codec.MIME.Parse (parseMIMEType)
 import Control.Applicative ((<$>), Applicative(..), Const(..))
 import Control.Monad.Reader (ReaderT(..), ask, mapReaderT)
 import Control.Monad.Trans (MonadTrans(..))
-import Data.Aeson (Value(..))
-import qualified Data.Aeson as A
-import qualified Data.Aeson.Types as A
-import qualified Data.HashMap.Strict as M
+import Data.Aeson (Value(..), FromJSON(..), eitherDecode')
+import Data.Aeson.Types (Parser, parseEither)
+import Data.HashMap.Strict (toList)
 import qualified Data.Text.Lazy as LT
 import Network.HTTP.Types (unsupportedMediaType415)
 import Network.URI (URI(..))
@@ -57,7 +65,7 @@ instance HasJSONDescr Bool where
 
 -- | A value that can be deserialized from JSON, respecting a base URI.
 class BasedFromJSON a where
-    basedParseJSON :: Value -> URI -> A.Parser a
+    basedParseJSON :: Value -> URI -> Parser a
 instance BasedFromJSON String where
     basedParseJSON = ignoreBaseInJSON
 instance BasedFromJSON Int where
@@ -66,8 +74,8 @@ instance BasedFromJSON Bool where
     basedParseJSON = ignoreBaseInJSON
 
 -- | Implementation of 'basedParseJSON' for types that don't care about the URI.
-ignoreBaseInJSON :: (A.FromJSON a) => Value -> URI -> A.Parser a
-ignoreBaseInJSON v _ = A.parseJSON v
+ignoreBaseInJSON :: (FromJSON a) => Value -> URI -> Parser a
+ignoreBaseInJSON v _ = parseJSON v
 
 -- | A value that can be deserialized from a Scotty param, respecting a base URI.
 class BasedParsable a where
@@ -119,11 +127,11 @@ requestData = do
                         return []
                     Just (Application "json") -> do
                         bod <- lift500 Scotty.body
-                        case A.eitherDecode' bod of
+                        case eitherDecode' bod of
                             Left err ->
                                 badRequest $ LT.pack err
                             Right (Object obj) ->
-                                return [(LT.fromStrict k, JSONField v) | (k,v)<-M.toList obj]
+                                return [(LT.fromStrict k, JSONField v) | (k,v)<-toList obj]
                             Right _ ->
                                 badRequest "json payload is not an object"
                     Nothing -> badRequest $
@@ -309,8 +317,8 @@ basedParseEither k x@(JSONField jsonval) uri =
     case runJSONParser (basedParseJSON jsonval uri) of
         Left e -> Left $ ParseError k x $ LT.pack e
         Right a -> Right a
-    where runJSONParser :: A.Parser a -> Either String a
-          runJSONParser p = A.parseEither (const p) ()
+    where runJSONParser :: Parser a -> Either String a
+          runJSONParser p = parseEither (const p) ()
 
 -- | The values obtainable from an HTTP request.
 data ParamValue = ScottyParam LT.Text

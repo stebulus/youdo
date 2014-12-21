@@ -33,9 +33,9 @@ import YouDo.DB.Memory
 import YouDo.DB.PostgreSQL
 import YouDo.Monad.Null
 import YouDo.Types
-import YouDo.Web
 import YouDo.Web.Docs
 import YouDo.Web.Relative
+import YouDo.Web.Request
 import YouDo.Web.Response
 import YouDo.Web.Service
 
