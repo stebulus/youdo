@@ -8,7 +8,6 @@ Copyright   : (c) Steven Taschuk, 2014
 License     : GPL-3
 -}
 module YouDo.Web (
-    docs,
     -- * Base and relative URIs
     BasedFromJSON(..), BasedParsable(..),
     -- * Interpreting requests
@@ -21,57 +20,21 @@ module YouDo.Web (
 import Codec.MIME.Type (mimeType, MIMEType(Application))
 import Codec.MIME.Parse (parseMIMEType)
 import Control.Applicative ((<$>), Applicative(..), Const(..))
-import Control.Monad (forM_)
 import Control.Monad.Reader (ReaderT(..), ask, mapReaderT)
-import Control.Monad.Writer (tell, runWriter)
 import Control.Monad.Trans (MonadTrans(..))
 import Data.Aeson (Value(..))
 import qualified Data.Aeson as A
 import qualified Data.Aeson.Types as A
 import qualified Data.HashMap.Strict as M
-import Data.Monoid (Monoid(..), (<>))
 import qualified Data.Text.Lazy as LT
-import Network.HTTP.Types (unsupportedMediaType415, StdMethod(..))
+import Network.HTTP.Types (unsupportedMediaType415)
 import Network.URI (URI(..))
 import Web.Scotty (header, param, params, Parsable(..))
 import qualified Web.Scotty as Scotty
 
+import YouDo.Const
 import YouDo.Holes
-import YouDo.Monad.Null
 import YouDo.Web.ActionM
-import YouDo.Web.Service
-
--- | Convert an 'API' to documentation.
-docs :: API (APIDoc (NullMonad b)) -> API (ActionStatusM ())
-docs api = resource [(GET, const $ lift500 $ Scotty.text txt)]
-    where txt = snd $ runWriter $ do
-                    forM_ (toAssocList api) $ \(uri, acts) -> do
-                        tell $ LT.replicate 40 "-"
-                        tell "\r\n\r\n"
-                        forM_ acts $ \(method, doc) -> do
-                            tell $ LT.pack $ show method
-                            tell " "
-                            tell $ LT.pack $ uriPath uri
-                            tell "\r\n"
-                            tell $ getConst doc
-                            tell "\r\n"
-
--- | The 'Applicative' that does the analysis work of 'docs'.
-type APIDoc = Const LT.Text
-
-instance FromRequestContext (ReaderT URI APIDoc) APIDoc where
-    capture k = ReaderT $ const
-        $ flip addConst ")\r\n"
-        $ addCaptureDescr
-        $ Const $ LT.concat [ "in url      : ", k, " (" ]
-    body = ReaderT $ const $ template
-instance FromRequestBodyContext APIDoc where
-    parse k = flip addConst ")\r\n"
-        $ addJSONDescr
-        $ Const $ LT.concat [ "in json body: ", k, " (" ]
-    defaultTo doc x = doc <* Const (LT.concat [
-        "     default: ", LT.pack $ show x, "\r\n"
-        ])
 
 class HasCaptureDescr a where
     captureDescr :: Maybe a -> LT.Text
@@ -91,9 +54,6 @@ instance HasJSONDescr Int where
     jsonDescr = const $ "integer"
 instance HasJSONDescr Bool where
     jsonDescr = const $ "boolean"
-
-addConst :: (Monoid a) => Const a b -> a -> Const a b
-addConst c a = Const $ getConst c <> a
 
 -- | A value that can be deserialized from JSON, respecting a base URI.
 class BasedFromJSON a where

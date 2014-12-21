@@ -33,6 +33,7 @@ library
                        , YouDo.Types
                        , YouDo.Web
                        , YouDo.Web.ActionM
+                       , YouDo.Web.Docs
                        , YouDo.Web.Relative
                        , YouDo.Web.Response
                        , YouDo.Web.Service
