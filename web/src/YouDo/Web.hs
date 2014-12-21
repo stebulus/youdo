@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings, RankNTypes, FlexibleContexts,
-    FlexibleInstances, MultiParamTypeClasses, FunctionalDependencies #-}
+    FlexibleInstances, MultiParamTypeClasses, FunctionalDependencies,
+    ScopedTypeVariables #-}
 {-|
 Module      : YouDo.Web
 Description : A tiny web framework on top of Scotty.
@@ -17,8 +18,8 @@ module YouDo.Web (
     -- * Interpreting requests
     fromRequestBody, RequestParser, ParamValue(..), requestData,
     EvaluationError(..), optional,
-    FromRequestBody(..), FromRequestBodyContext(..),
-    FromRequestContext(..),
+    HasCaptureDescr(..), HasJSONDescr(..),
+    FromRequestBody(..), FromRequestBodyContext(..), FromRequestContext(..),
     -- * Reporting results
     WebResult(..),
     -- * Error handling and HTTP status
@@ -40,7 +41,7 @@ import qualified Data.Aeson.Types as A
 import qualified Data.HashMap.Strict as M
 import Data.List (intercalate)
 import Data.Maybe (fromMaybe)
-import Data.Monoid (Monoid(..))
+import Data.Monoid (Monoid(..), (<>))
 import Data.String (IsString(..))
 import qualified Data.Text.Lazy as LT
 import Network.HTTP.Types (badRequest400, methodNotAllowed405,
@@ -186,17 +187,40 @@ docs api = resource [(GET, const $ lift500 $ Scotty.text txt)]
 type APIDoc = Const LT.Text
 
 instance FromRequestContext (ReaderT URI APIDoc) APIDoc where
-    capture k = ReaderT $ const $ Const $ LT.concat [
-        "in url      : ", k, "\r\n"
-        ]
+    capture k = ReaderT $ const
+        $ flip addConst ")\r\n"
+        $ addCaptureDescr
+        $ Const $ LT.concat [ "in url      : ", k, " (" ]
     body = ReaderT $ const $ template
 instance FromRequestBodyContext APIDoc where
-    parse k = Const $ LT.concat [
-        "in json body: ", k, "\r\n"
-        ]
+    parse k = flip addConst ")\r\n"
+        $ addJSONDescr
+        $ Const $ LT.concat [ "in json body: ", k, " (" ]
     defaultTo doc x = doc <* Const (LT.concat [
         "     default: ", LT.pack $ show x, "\r\n"
         ])
+
+class HasCaptureDescr a where
+    captureDescr :: Maybe a -> LT.Text
+    addCaptureDescr :: Const LT.Text a -> Const LT.Text a
+    addCaptureDescr c = addConst c $ captureDescr x
+        where x = Nothing :: Maybe a
+
+class HasJSONDescr a where
+    jsonDescr :: Maybe a -> LT.Text
+    addJSONDescr :: Const LT.Text a -> Const LT.Text a
+    addJSONDescr c = addConst c $ jsonDescr x
+        where x = Nothing :: Maybe a
+
+instance HasJSONDescr String where
+    jsonDescr = const $ "string"
+instance HasJSONDescr Int where
+    jsonDescr = const $ "integer"
+instance HasJSONDescr Bool where
+    jsonDescr = const $ "boolean"
+
+addConst :: (Monoid a) => Const a b -> a -> Const a b
+addConst c a = Const $ getConst c <> a
 
 {- |
     A web resource, with a complete list of its supported methods.
@@ -437,7 +461,7 @@ class FromRequestBodyContext f where
         no value for the given key, whereas a functor that produces
         documentation describing the template doesn't.)
     -}
-    parse :: (BasedParsable a, BasedFromJSON a)
+    parse :: (BasedParsable a, BasedFromJSON a, HasJSONDescr a)
           => LT.Text      -- ^The key whose value should be parsed.
           -> f a
 
@@ -476,7 +500,7 @@ class (FromRequestBodyContext g) => FromRequestContext f g | f->g where
         sense because presumably an URL that doesn't parse according to
         the server's expectations doesn't denote any existing resource.
     -}
-    capture :: (Parsable a) => LT.Text -> f a
+    capture :: (Parsable a, HasCaptureDescr a) => LT.Text -> f a
 
     {-  Obsolete docs.
 

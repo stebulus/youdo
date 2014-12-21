@@ -129,6 +129,7 @@ class Updater u a where
 webdb :: forall k v u d f g m.
          ( DB m k v u d
          , Parsable k
+         , HasCaptureDescr k
          , FromRequestBody g v
          , FromRequestBody g u
          , FromRequestContext (ReaderT URI f) g
@@ -271,6 +272,8 @@ instance Parsable TransactionID where
     parseParam x = TransactionID <$> parseParam x
 instance FromJSON TransactionID where
     parseJSON x = TransactionID <$> parseJSON x
+instance HasCaptureDescr TransactionID where
+    captureDescr = const $ "Transaction ID, as decimal integer"
 
 {- |
     @r@ represents the result of a 'DB' operation which was supposed

@@ -65,6 +65,8 @@ instance ToField YoudoID where
     toField (YoudoID n) = toField n
 instance Parsable YoudoID where
     parseParam x = YoudoID <$> parseParam x
+instance HasCaptureDescr YoudoID where
+    captureDescr = const $ "Youdo ID, as decimal integer"
 
 data YoudoData = YoudoData { assignerid :: UserID
                            , assigneeid :: UserID
@@ -137,12 +139,16 @@ instance BasedParsable UserID where
     basedParseParam txt uri =
         fmap UserID $ basedIDFromText txt resourcebase
         where resourcebase = resourceBaseURL (Nothing :: Maybe UserID) uri
+instance HasJSONDescr UserID where
+    jsonDescr = const $ "string containing URL referring to user"
 instance FromField UserID where
     fromField fld = (fmap.fmap) UserID $ fromField fld
 instance ToField UserID where
     toField (UserID n) = toField n
 instance Parsable UserID where
     parseParam x = UserID <$> parseParam x
+instance HasCaptureDescr UserID where
+    captureDescr = const $ "User ID, as decimal integer"
 
 data UserData = UserData { name :: String }
     deriving (Show, Eq)
@@ -202,6 +208,8 @@ instance FromJSON DueDate where
     parseJSON x = typeMismatch "String or Null" x
 instance BasedFromJSON DueDate where
     basedParseJSON = flip $ const parseJSON
+instance HasJSONDescr DueDate where
+    jsonDescr = const $ "string in format yyyy-mm-ddThh:mm:ss.sssZ, or null"
 instance FromField DueDate where
     fromField fld = (fmap.fmap) DueDate $ fromField fld
 instance ToField DueDate where
