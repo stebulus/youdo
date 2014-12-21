@@ -32,6 +32,7 @@ library
                        , YouDo.TimeParser
                        , YouDo.Types
                        , YouDo.Web
+                       , YouDo.Web.ActionM
                        , YouDo.WebApp
   ghc-options:         -Wall
   build-depends:       base ==4.6.*
