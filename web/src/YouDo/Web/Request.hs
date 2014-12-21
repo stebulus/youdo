@@ -11,19 +11,24 @@ Copyright   : (c) Steven Taschuk, 2014
 License     : GPL-3
 -}
 module YouDo.Web.Request (
-    BasedFromJSON(..),
-    BasedParsable(..),
-    fromRequestBody,
-    RequestParser,
-    ParamValue(..),
-    requestData,
-    EvaluationError(..),
-    optional,
-    HasCaptureDescr(..),
-    HasJSONDescr(..),
+    -- * Extracting values from the request body
     FromRequestBody(..),
     FromRequestBodyContext(..),
-    FromRequestContext(..))
+    optional,
+    -- * Parsing individual values in the request body
+    ParamValue(..),
+    basedParseEither,
+    BasedFromJSON(..),
+    HasJSONDescr(..),
+    BasedParsable(..),
+    -- * The @RequestParser@ applicative
+    RequestParser,
+    fromRequestBody,
+    requestData,
+    EvaluationError(..),
+    -- * Extracting values from the request
+    FromRequestContext(..),
+    HasCaptureDescr(..))
 where
 
 import Codec.MIME.Type (mimeType, MIMEType(Application))
@@ -44,24 +49,70 @@ import YouDo.Const
 import YouDo.Holes
 import YouDo.Web.ActionM
 
-class HasCaptureDescr a where
-    captureDescr :: Maybe a -> LT.Text
-    addCaptureDescr :: Const LT.Text a -> Const LT.Text a
-    addCaptureDescr c = addConst c $ captureDescr x
-        where x = Nothing :: Maybe a
+{- |
+    A way to construct values of type @a@ from the body of an HTTP
+    request, in context @f@.
 
-class HasJSONDescr a where
-    jsonDescr :: Maybe a -> LT.Text
-    addJSONDescr :: Const LT.Text a -> Const LT.Text a
-    addJSONDescr c = addConst c $ jsonDescr x
-        where x = Nothing :: Maybe a
+    Typically the 'template' method should be implemented as an
+    applicative expression; see 'YouDo.Types' for examples.
+-}
+class FromRequestBody f a where
+    template :: f a
 
-instance HasJSONDescr String where
-    jsonDescr = const $ "string"
-instance HasJSONDescr Int where
-    jsonDescr = const $ "integer"
-instance HasJSONDescr Bool where
-    jsonDescr = const $ "boolean"
+{- |
+    The functor @f@ represents a context within which we can make
+    some use of a way to construct values of type @a@ from the body
+    of an HTTP request.  See 'FromRequestBody'.
+-}
+class FromRequestBodyContext f where
+    {- |
+        In 'template' implementations, represents reading the value
+        for the given key and parsing it as a value of type @a@.
+
+        There is no provision for reporting errors in this interface,
+        because what "error" means depends on the functor $f$.
+        (For example, a functor that actually produces a value of
+        type @a@ needs to be able to report the error that there is
+        no value for the given key, whereas a functor that produces
+        documentation describing the template doesn't.)
+    -}
+    parse :: (BasedParsable a, BasedFromJSON a, HasJSONDescr a)
+          => LT.Text      -- ^The key whose value should be parsed.
+          -> f a
+
+    {- |
+        In 'template' implementations, represents that if the
+        given @f a@ has no value because the key given to 'parse'
+        was not present in the request, then the given value should
+        be substituted.
+    -}
+    defaultTo :: (Show a) => f a -> a -> f a
+
+-- | If the argument failed because it depends on a missing key,
+-- replace it with 'Nothing'; otherwise, 'Just' the value in the
+-- first argument.
+optional :: (Functor f, FromRequestBodyContext f, Show a)
+         => f a -> f (Maybe a)
+optional fa = (Just <$> fa) `defaultTo` Nothing
+
+-- | The values obtainable from an HTTP request.
+data ParamValue = ScottyParam LT.Text
+                | JSONField Value
+    deriving (Eq, Show)
+
+-- | Parse a 'ParamValue' into the appropriate type.
+basedParseEither :: (BasedParsable a, BasedFromJSON a)
+            => k -> ParamValue -> URI -> Either (EvaluationError k ParamValue) a
+basedParseEither k x@(ScottyParam txt) uri =
+    case basedParseParam txt uri of
+        Left e -> Left $ ParseError k x e
+        Right a -> Right a
+basedParseEither k x@(JSONField jsonval) uri =
+    case runJSONParser (basedParseJSON jsonval uri) of
+        Left e -> Left $ ParseError k x $ LT.pack e
+        Right a -> Right a
+    where runJSONParser :: Parser a -> Either String a
+          runJSONParser p = parseEither (const p) ()
 
 -- | A value that can be deserialized from JSON, respecting a base URI.
 class BasedFromJSON a where
@@ -77,6 +128,19 @@ instance BasedFromJSON Bool where
 ignoreBaseInJSON :: (FromJSON a) => Value -> URI -> Parser a
 ignoreBaseInJSON v _ = parseJSON v
 
+class HasJSONDescr a where
+    jsonDescr :: Maybe a -> LT.Text
+    addJSONDescr :: Const LT.Text a -> Const LT.Text a
+    addJSONDescr c = addConst c $ jsonDescr x
+        where x = Nothing :: Maybe a
+
+instance HasJSONDescr String where
+    jsonDescr = const $ "string"
+instance HasJSONDescr Int where
+    jsonDescr = const $ "integer"
+instance HasJSONDescr Bool where
+    jsonDescr = const $ "boolean"
+
 -- | A value that can be deserialized from a Scotty param, respecting a base URI.
 class BasedParsable a where
     basedParseParam :: LT.Text -> URI -> Either LT.Text a
@@ -90,6 +154,38 @@ instance BasedParsable Bool where
 -- | Implementation of 'basedParseParam' for types that don't care about the URI.
 ignoreBaseInParam :: (Parsable a) => LT.Text -> URI -> Either LT.Text a
 ignoreBaseInParam t _ = parseParam t
+
+-- | Type synonym for our usual evaluation applicative.
+type RequestParser = ReaderT URI
+    (EvaluatorE LT.Text ParamValue [EvaluationError LT.Text ParamValue])
+instance Holes LT.Text ParamValue RequestParser where
+    hole = ReaderT . const . hole
+instance Errs [EvaluationError LT.Text ParamValue] RequestParser where
+    throwLeft = mapReaderT throwLeft
+    catch fa handle = ReaderT $ \uri ->
+        (runReaderT fa uri) `catch` (\e -> runReaderT (handle e) uri)
+
+instance FromRequestBodyContext RequestParser where
+    parse k =
+        let basedParse = flip $ basedParseEither k
+            enlist (Left e) = Left [e]
+            enlist (Right a) = Right a
+        in throwLeft $ enlist <$>
+            (ReaderT $ fmap . basedParse <*> runReaderT (hole k))
+    defaultTo fa d = fa `catch` \es ->
+        case es of
+            [MissingKey _] -> pure d
+            _ -> throw $ pure es
+
+instance FromRequestContext (ReaderT URI ActionStatusM) RequestParser where
+    capture k = lift $ lift500 $ param k
+    body = do
+        uri <- ask
+        lift $ fromRequestBody template uri
+
+-- | How to report missing keys in a 'RequestParser'.
+instance MissingKeyError LT.Text [EvaluationError LT.Text ParamValue] where
+    missingKeyError k = [MissingKey k]
 
 {- |
     Use the given 'RequestParser' to interpret the data in the HTTP
@@ -141,43 +237,43 @@ requestData = do
     return $ paramdata ++ bodydata
 
 {- |
-    A way to construct values of type @a@ from the body of an HTTP
-    request, in context @f@.
-
-    Typically the 'template' method should be implemented as an
-    applicative expression; see 'YouDo.Types' for examples.
+    An error encountered when evaluating a 'RequestParsable' object
+    by filling in values for its 'hole's and calling 'evaluateE'.
+    (This occurs in 'body', for example, where the values come from
+    the HTTP request body.)
 -}
-class FromRequestBody f a where
-    template :: f a
+data EvaluationError k v
+    = MissingKey k             -- ^A hole named @k@ was not filled.
+    | UnusedKey k              -- ^A value for a hole named @k@ was given,
+                               -- but there is no such hole.
+    | DuplicateValue k v       -- ^Value @v@ was given for a hole named @k@,
+                               -- after another value was already given.
+    | ParseError k v LT.Text   -- ^An error was detected by 'parse'.
+    | CheckError LT.Text       -- ^An error was detected by 'check'.
+    deriving (Show, Eq)
 
-{- |
-    The functor @f@ represents a context within which we can make
-    some use of a way to construct values of type @a@ from the body
-    of an HTTP request.  See 'FromRequestBody'.
--}
-class FromRequestBodyContext f where
-    {- |
-        In 'template' implementations, represents reading the value
-        for the given key and parsing it as a value of type @a@.
+-- | English description of an 'EvaluationError'.
+showEvaluationError :: (Show k) => EvaluationError k v -> LT.Text
+showEvaluationError (MissingKey k) = LT.concat [ "missing mandatory parameter "
+                                               , LT.pack (show k)
+                                               ]
+showEvaluationError (UnusedKey k) = LT.concat [ "unknown parameter "
+                                              , LT.pack (show k)
+                                              ]
+showEvaluationError (DuplicateValue k _) = LT.concat [ "duplicate value for parameter "
+                                                     , LT.pack (show k)
+                                                     ]
+showEvaluationError (ParseError k _ msg) = LT.concat [ "cannot parse parameter "
+                                                     , LT.pack (show k)
+                                                     , ": "
+                                                     , msg
+                                                     ]
+showEvaluationError (CheckError e) = LT.pack (show e)
 
-        There is no provision for reporting errors in this interface,
-        because what "error" means depends on the functor $f$.
-        (For example, a functor that actually produces a value of
-        type @a@ needs to be able to report the error that there is
-        no value for the given key, whereas a functor that produces
-        documentation describing the template doesn't.)
-    -}
-    parse :: (BasedParsable a, BasedFromJSON a, HasJSONDescr a)
-          => LT.Text      -- ^The key whose value should be parsed.
-          -> f a
-
-    {- |
-        In 'template' implementations, represents that if the
-        given @f a@ has no value because the key given to 'parse'
-        was not present in the request, then the given value should
-        be substituted.
-    -}
-    defaultTo :: (Show a) => f a -> a -> f a
+-- | English description of a list of 'EvaluationError's.
+showEvaluationErrors :: (Show k) => [EvaluationError k v] -> LT.Text
+showEvaluationErrors es = LT.concat [ LT.concat [ showEvaluationError e, "\r\n" ]
+                                    | e<-es ]
 
 class (FromRequestBodyContext g) => FromRequestContext f g | f->g where
     {-  Obsolete docs.
@@ -228,99 +324,8 @@ class (FromRequestBodyContext g) => FromRequestContext f g | f->g where
     -}
     body :: (FromRequestBody g a) => f a
 
-{- |
-    An error encountered when evaluating a 'RequestParsable' object
-    by filling in values for its 'hole's and calling 'evaluateE'.
-    (This occurs in 'body', for example, where the values come from
-    the HTTP request body.)
--}
-data EvaluationError k v
-    = MissingKey k             -- ^A hole named @k@ was not filled.
-    | UnusedKey k              -- ^A value for a hole named @k@ was given,
-                               -- but there is no such hole.
-    | DuplicateValue k v       -- ^Value @v@ was given for a hole named @k@,
-                               -- after another value was already given.
-    | ParseError k v LT.Text   -- ^An error was detected by 'parse'.
-    | CheckError LT.Text       -- ^An error was detected by 'check'.
-    deriving (Show, Eq)
-
--- | If the argument failed because it depends on a missing key,
--- replace it with 'Nothing'; otherwise, 'Just' the value in the
--- first argument.
-optional :: (Functor f, FromRequestBodyContext f, Show a)
-         => f a -> f (Maybe a)
-optional fa = (Just <$> fa) `defaultTo` Nothing
-
--- | English description of an 'EvaluationError'.
-showEvaluationError :: (Show k) => EvaluationError k v -> LT.Text
-showEvaluationError (MissingKey k) = LT.concat [ "missing mandatory parameter "
-                                               , LT.pack (show k)
-                                               ]
-showEvaluationError (UnusedKey k) = LT.concat [ "unknown parameter "
-                                              , LT.pack (show k)
-                                              ]
-showEvaluationError (DuplicateValue k _) = LT.concat [ "duplicate value for parameter "
-                                                     , LT.pack (show k)
-                                                     ]
-showEvaluationError (ParseError k _ msg) = LT.concat [ "cannot parse parameter "
-                                                     , LT.pack (show k)
-                                                     , ": "
-                                                     , msg
-                                                     ]
-showEvaluationError (CheckError e) = LT.pack (show e)
-
--- | English description of a list of 'EvaluationError's.
-showEvaluationErrors :: (Show k) => [EvaluationError k v] -> LT.Text
-showEvaluationErrors es = LT.concat [ LT.concat [ showEvaluationError e, "\r\n" ]
-                                    | e<-es ]
-
--- | Type synonym for our usual evaluation applicative.
-type RequestParser = ReaderT URI
-    (EvaluatorE LT.Text ParamValue [EvaluationError LT.Text ParamValue])
-instance Holes LT.Text ParamValue RequestParser where
-    hole = ReaderT . const . hole
-instance Errs [EvaluationError LT.Text ParamValue] RequestParser where
-    throwLeft = mapReaderT throwLeft
-    catch fa handle = ReaderT $ \uri ->
-        (runReaderT fa uri) `catch` (\e -> runReaderT (handle e) uri)
-
-instance FromRequestBodyContext RequestParser where
-    parse k =
-        let basedParse = flip $ basedParseEither k
-            enlist (Left e) = Left [e]
-            enlist (Right a) = Right a
-        in throwLeft $ enlist <$>
-            (ReaderT $ fmap . basedParse <*> runReaderT (hole k))
-    defaultTo fa d = fa `catch` \es ->
-        case es of
-            [MissingKey _] -> pure d
-            _ -> throw $ pure es
-
-instance FromRequestContext (ReaderT URI ActionStatusM) RequestParser where
-    capture k = lift $ lift500 $ param k
-    body = do
-        uri <- ask
-        lift $ fromRequestBody template uri
-
--- | How to report missing keys in a 'RequestParser'.
-instance MissingKeyError LT.Text [EvaluationError LT.Text ParamValue] where
-    missingKeyError k = [MissingKey k]
-
--- | Parse a 'ParamValue' into the appropriate type.
-basedParseEither :: (BasedParsable a, BasedFromJSON a)
-            => k -> ParamValue -> URI -> Either (EvaluationError k ParamValue) a
-basedParseEither k x@(ScottyParam txt) uri =
-    case basedParseParam txt uri of
-        Left e -> Left $ ParseError k x e
-        Right a -> Right a
-basedParseEither k x@(JSONField jsonval) uri =
-    case runJSONParser (basedParseJSON jsonval uri) of
-        Left e -> Left $ ParseError k x $ LT.pack e
-        Right a -> Right a
-    where runJSONParser :: Parser a -> Either String a
-          runJSONParser p = parseEither (const p) ()
-
--- | The values obtainable from an HTTP request.
-data ParamValue = ScottyParam LT.Text
-                | JSONField Value
-    deriving (Eq, Show)
+class HasCaptureDescr a where
+    captureDescr :: Maybe a -> LT.Text
+    addCaptureDescr :: Const LT.Text a -> Const LT.Text a
+    addCaptureDescr c = addConst c $ captureDescr x
+        where x = Nothing :: Maybe a
