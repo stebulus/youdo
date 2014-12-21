@@ -29,7 +29,7 @@ library
                        , YouDo.Holes
                        , YouDo.Monad.Null
                        , YouDo.Test
-                       , YouDo.TimeParser
+                       , YouDo.Time.Parse
                        , YouDo.Types
                        , YouDo.Web.ActionM
                        , YouDo.Web.Docs

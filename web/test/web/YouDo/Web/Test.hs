@@ -37,7 +37,7 @@ import Web.Scotty (scottyApp, parseParam)
 import YouDo.DB.Memory
 import YouDo.Holes
 import YouDo.Test (plainTest)
-import YouDo.TimeParser (parseUTCTime)
+import YouDo.Time.Parse (parseUTCTime)
 import YouDo.Types (DueDate, UserID(..))
 import YouDo.Web.Request (ParamValue(..), parse, EvaluationError(..),
     BasedFromJSON(..), BasedParsable(..), RequestParser)

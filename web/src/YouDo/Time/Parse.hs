@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
-module YouDo.TimeParser where
+module YouDo.Time.Parse where
 import Control.Applicative ((<$>), (<*))
 import Data.Attoparsec.Text.Lazy (digit, decimal, (<?>), endOfInput, satisfy,
     Parser, parse, Result(..))

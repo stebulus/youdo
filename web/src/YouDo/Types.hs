@@ -24,7 +24,7 @@ import Network.URI (parseURI, relativeFrom, URI)
 import Web.Scotty (Parsable(..))
 
 import YouDo.DB
-import YouDo.TimeParser (parseUTCTime)
+import YouDo.Time.Parse (parseUTCTime)
 import YouDo.Web.Request
 import YouDo.Web.Response
 
