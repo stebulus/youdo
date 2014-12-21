@@ -1,6 +1,6 @@
 {-# LANGUAGE MultiParamTypeClasses, FunctionalDependencies,
     FlexibleInstances, FlexibleContexts, OverloadedStrings,
-    ScopedTypeVariables #-}
+    ScopedTypeVariables, RankNTypes #-}
 {-|
 Module      : YouDo.DB
 Description : Database types for YouDo
@@ -9,7 +9,7 @@ License     : GPL-3
 -}
 module YouDo.DB (
     -- *Database and web interface
-    DB(..), Updater(..), webdb, NamedResource(..),
+    DB(..), mapDB, LiftedDB(..), Updater(..), webdb, NamedResource(..),
     idjson, veridjson, LockDB(..),
     -- *Versioning of database objects
     Versioned(..), VersionedID(..), TransactionID(..),
@@ -31,14 +31,14 @@ import Data.Aeson (FromJSON(..), (.=), Value(..))
 import qualified Data.HashMap.Strict as M
 import Data.List (foldl', intercalate)
 import Data.Maybe (fromJust)
-import Data.String (fromString)
+import Data.Monoid ((<>))
 import qualified Data.Text as ST
 import qualified Data.Text.Lazy as LT
 import Database.PostgreSQL.Simple.FromField (FromField(..))
 import Network.HTTP.Types (ok200, created201, notFound404,
     conflict409, internalServerError500, StdMethod(..))
 import Network.URI
-import Web.Scotty (Parsable(..), ScottyM, status, setHeader, text)
+import Web.Scotty (Parsable(..), status, setHeader, text)
 
 import YouDo.Web
 
@@ -50,7 +50,7 @@ import YouDo.Web
     example), but it's not required.
 -}
 class (Monad m, NamedResource k)
-      => DB m k v u d | d->v, d->k, d->u, d->m where
+      => DB m k v u d | d->k v u where
 
     -- | Get the object with the specified key.
     get :: k -> d -> m (GetResult (Versioned k v))
@@ -81,11 +81,19 @@ class (Monad m, NamedResource k)
     update :: (Versioned k u) -> d
         -> m (UpdateResult (Versioned k v) (Versioned k v))
 
-    -- | The name of this resource.
-    -- Obtained from the 'NamedResource' instance for 'k'.
-    dbResourceName :: d -> String
-    dbResourceName = const $ resourceName x
-        where x = Nothing :: Maybe k    -- ScopedTypeVariables used!
+-- | Change results of a 'DB' from one monad to another.
+mapDB :: (DB m k v u d) => (forall a. m a -> n a) -> d -> LiftedDB m n k v u d
+mapDB = LiftedDB
+
+data LiftedDB m n k v u d = LiftedDB (forall a. m a -> n a) d
+
+instance (Monad n, DB m k v u d) => DB n k v u (LiftedDB m n k v u d) where
+    get k (LiftedDB f d) = f $ get k d
+    getVersion verk (LiftedDB f d) = f $ getVersion verk d
+    getVersions k (LiftedDB f d) = f $ getVersions k d
+    getAll (LiftedDB f d) = f $ getAll d
+    create v (LiftedDB f d) = f $ create v d
+    update verku (LiftedDB f d) = f $ update verku d
 
 {- |
     A @u@ can be used to change an @a@.
@@ -118,33 +126,41 @@ class Updater u a where
     shouldn't be.)  The request body, when needed, is interpreted via
     'body'.
 -}
-webdb :: ( NamedResource k, DB IO k v u d
+webdb :: forall k v u d f g m.
+         ( DB m k v u d
          , Parsable k
-         , BasedToJSON v
-         , RequestParsable v
-         , RequestParsable u
+         , HasCaptureDescr k
+         , FromRequestBody g v
+         , FromRequestBody g u
+         , FromRequestContext (ReaderT URI f) g
+         , WebResult m (GetResult (Versioned k v))
+         , WebResult m (GetResult [Versioned k v])
+         , WebResult m (CreateResult (Versioned k v))
+         , WebResult m (UpdateResult (Versioned k v) (Versioned k v))
+         , Applicative f
          )
-      => d              -- ^The database.
-      -> URI            -- ^The base URI.
-      -> ScottyM ()
-webdb db base = do
-    let rtype = dbResourceName db
-        dodb m = flip report base =<< liftIO =<< (runReaderT m base <*> pure db)
-        route s = fromString $ uriPath $
-            (fromJust $ parseURIReference $ rtype ++ s) `relativeTo` base
-    resource (route "")
-             [ (GET, dodb $ pure getAll)
-             , (POST, dodb $ create <$> body)
-             ]
-    resource (route "/:id/")
-             [ (GET, dodb $ get <$> capture "id") ]
-    resource (route "/:id/versions")
-             [ (GET, dodb $ getVersions <$> capture "id") ]
-    resource (route "/:id/:txnid") $
-             let verid = VersionedID <$> capture "id" <*> capture "txnid"
-             in [ (GET, dodb $ getVersion <$> verid)
-                , (POST, dodb $ update <$> (Versioned <$> verid <*> body))
-                ]
+      => API (f (d -> m ()))
+webdb =
+    u (resourceName (Nothing :: Maybe k)) // (
+        resource
+            [ (GET, dodb $ pure getAll)
+            , (POST, dodb $ create <$> body)
+            ]
+        <>
+        u":id" // resource
+            [ (GET, dodb $ get <$> capture "id") ]
+        <>
+        u":id/versions" .// resource
+            [ (GET, dodb $ getVersions <$> capture "id") ]
+        <>
+        u":id/:txnid" .// resource (
+            let verid = VersionedID <$> capture "id" <*> capture "txnid"
+            in [ (GET, dodb $ getVersion <$> verid)
+               , (POST, dodb $ update <$> (Versioned <$> verid <*> body))
+               ]
+        )
+    )
+    where dodb rdrt uri = (fmap.fmap) (>>= report uri) (runReaderT rdrt uri)
 
 {- |
     Class for types that have a name.  Minimum implementation:
@@ -163,22 +179,22 @@ webdb db base = do
 class (Show a) => NamedResource a where
     resourceName :: Maybe a -> String
     resourceBaseURL :: Maybe a -> URI -> URI
-    resourceBaseURL x base = namedResourceURL [ resourceName x
-                                              , ""
-                                              ] base
+    resourceBaseURL x uri = namedResourceURL [ resourceName x
+                                             , ""
+                                             ] uri
     resourceURL :: a -> URI -> URI
-    resourceURL x base = namedResourceURL [ resourceName (Just x)
-                                          , show x
-                                          , ""
-                                          ] base
+    resourceURL x uri = namedResourceURL [ resourceName (Just x)
+                                         , show x
+                                         , ""
+                                         ] uri
     resourceVersionURL :: VersionedID a -> URI -> URI
-    resourceVersionURL x base = namedResourceURL [ resourceName (Just (thingid x))
-                                                 , show (thingid x)
-                                                 , show (txnid x)
-                                                 ] base
+    resourceVersionURL x uri = namedResourceURL [ resourceName (Just (thingid x))
+                                                , show (thingid x)
+                                                , show (txnid x)
+                                                ] uri
 
 namedResourceURL :: [String] -> URI -> URI
-namedResourceURL xs base = reluri `relativeTo` base
+namedResourceURL xs uri = reluri `relativeTo` uri
     where reluri = fromJust $ parseURIReference $ intercalate "/" (".":xs)
 
 jsonurl :: URI -> Value
@@ -186,14 +202,13 @@ jsonurl = String . ST.pack . show
 
 -- | The URL for a 'NamedResource' object, as a JSON 'Value'.
 idjson :: (Show k, NamedResource k) => k -> URI -> Value
-idjson k base = jsonurl $ resourceURL k base
+idjson k uri = jsonurl $ resourceURL k uri
 
 -- | The URL for a specific version of a 'NamedResource' object, as a JSON 'Value'.
 veridjson :: (Show k, NamedResource k) => VersionedID k -> URI -> Value
-veridjson k base = jsonurl $ resourceVersionURL k base
+veridjson k uri = jsonurl $ resourceVersionURL k uri
 
 -- | A 'DB' wrapper that locks on a given 'MVar'.
--- The 'dbResourceName' operation is not locked.
 data (MonadIO m, DB m k v u d) => LockDB m k v u d = LockDB (MVar ()) d
 
 instance (MonadIO m, DB m k v u d) => DB m k v u (LockDB m k v u d) where
@@ -203,7 +218,6 @@ instance (MonadIO m, DB m k v u d) => DB m k v u (LockDB m k v u d) where
     getAll = hoistLockDB getAll
     create v = hoistLockDB (create v)
     update veru = hoistLockDB (update veru)
-    dbResourceName (LockDB _ db) = dbResourceName db
 
 hoistLockDB :: (MonadIO m, DB m k v u d)
             => (d  -> m a) -> LockDB m k v u d -> m a
@@ -225,15 +239,18 @@ data Versioned a b = Versioned
     , thing :: b
     } deriving (Show, Eq)
 
-instance (RequestParsable (VersionedID a), RequestParsable b)
-         => RequestParsable (Versioned a b) where
+instance ( FromRequestBody f (VersionedID a)
+         , FromRequestBody f b
+         , Applicative f
+         )
+         => FromRequestBody f (Versioned a b) where
     template = Versioned <$> template <*> template
 
 -- | Augment JSON representations of 'Versioned' objects
 -- with @"url"@ and @"thisVersion"@ fields.
 instance (Show k, NamedResource k, BasedToJSON v)
          => BasedToJSON (Versioned k v) where
-    basedToJSON v base = Object augmentedmap
+    basedToJSON v uri = Object augmentedmap
         where augmentedmap = foldl' (flip (uncurry M.insert)) origmap
                     [ "url" .= show objurl
                     , "thisVersion" .= show verurl
@@ -241,9 +258,9 @@ instance (Show k, NamedResource k, BasedToJSON v)
               origmap = case origval of
                     Object m -> m
                     _ -> error "data did not encode as JSON object"
-              origval = basedToJSON (thing v) base
-              objurl = resourceURL (thingid (version v)) base
-              verurl = resourceVersionURL (version v) base
+              origval = basedToJSON (thing v) uri
+              objurl = resourceURL (thingid (version v)) uri
+              verurl = resourceVersionURL (version v) uri
 
 -- | Transaction identifier.
 newtype TransactionID = TransactionID Int deriving (Eq)
@@ -255,6 +272,8 @@ instance Parsable TransactionID where
     parseParam x = TransactionID <$> parseParam x
 instance FromJSON TransactionID where
     parseJSON x = TransactionID <$> parseJSON x
+instance HasCaptureDescr TransactionID where
+    captureDescr = const $ "Transaction ID, as decimal integer"
 
 {- |
     @r@ represents the result of a 'DB' operation which was supposed
@@ -292,15 +311,15 @@ instance Result (GetResult a) a where
     failure msg = Right $ Left msg
     success x = Right $ Right x
 
-instance (BasedToJSON a) => WebResult (GetResult a) where
-    report (Right (Right a)) base =
+instance (BasedToJSON a) => WebResult ActionStatusM (GetResult a) where
+    report uri (Right (Right a)) =
         lift500 $ do
             status ok200  -- http://tools.ietf.org/html/rfc2616#section-10.2.1
-            basedjson a base
-    report (Left NotFound) _ =
+            basedjson a uri
+    report _ (Left NotFound) =
         lift500 $
             status notFound404  -- http://tools.ietf.org/html/rfc2616#section-10.4.5
-    report (Right (Left msg)) _ =
+    report _ (Right (Left msg)) =
         lift500 $ do
             status internalServerError500  -- http://tools.ietf.org/html/rfc2616#section-10.5.1
             text msg
@@ -328,17 +347,17 @@ newerVersion :: b -> UpdateResult b a
 newerVersion x = Left $ NewerVersion x
 
 instance (BasedToJSON b, NamedResource k, Show k, BasedToJSON v)
-         => WebResult (UpdateResult b (Versioned k v)) where
-    report (Right (Right (Right a))) base =
+         => WebResult ActionStatusM (UpdateResult b (Versioned k v)) where
+    report uri (Right (Right (Right a))) =
         lift500 $ do
             status created201  -- http://tools.ietf.org/html/rfc2616#section-10.2.2
-            setHeader "Location" $ LT.pack $ show $ resourceVersionURL (version a) base
-            basedjson a base
-    report (Left (NewerVersion b)) base =
+            setHeader "Location" $ LT.pack $ show $ resourceVersionURL (version a) uri
+            basedjson a uri
+    report uri (Left (NewerVersion b)) =
         lift500 $ do
             status conflict409  -- http://tools.ietf.org/html/rfc2616#section-10.4.10
-            basedjson b base
-    report (Right gr) base = report gr base
+            basedjson b uri
+    report uri (Right gr) = report uri gr
 
 {- |
     Result of a 'DB' create operation.  The data supplied describes
@@ -355,15 +374,15 @@ invalidObject :: [LT.Text] -> CreateResult a
 invalidObject errs = Left $ InvalidObject errs
 
 instance (NamedResource k, Show k, BasedToJSON v)
-         => WebResult (CreateResult (Versioned k v)) where
-    report (Right (Right (Right a))) base =
+         => WebResult ActionStatusM (CreateResult (Versioned k v)) where
+    report uri (Right (Right (Right a))) =
         lift500 $ do
            status created201  -- http://tools.ietf.org/html/rfc2616#section-10.2.2
-           setHeader "Location" $ LT.pack $ show $ resourceURL (thingid (version a)) base
-           basedjson a base
-    report (Left (InvalidObject msgs)) _ =
+           setHeader "Location" $ LT.pack $ show $ resourceURL (thingid (version a)) uri
+           basedjson a uri
+    report _ (Left (InvalidObject msgs)) =
         badRequest $ LT.concat [ LT.concat [msg, "\r\n"] | msg<-msgs ]
-    report (Right gr) base = report gr base
+    report uri (Right gr) = report uri gr
 
 {- |
     Make a result of the contents of a singleton list.

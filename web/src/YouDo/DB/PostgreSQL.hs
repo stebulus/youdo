@@ -11,8 +11,9 @@ import YouDo.Types
 
 -- | Access a Youdo database over the given connection.
 youdoDB :: Connection
-        -> IO (YoudoDatabase (LockDB IO YoudoID YoudoData YoudoUpdate PostgresYoudoDB)
-                             (LockDB IO UserID UserData UserUpdate PostgresUserDB))
+        -> IO (YoudoDatabase IO
+                (LockDB IO YoudoID YoudoData YoudoUpdate PostgresYoudoDB)
+                (LockDB IO UserID UserData UserUpdate PostgresUserDB))
 youdoDB conn = do
     mv <- newMVar ()
     return $ YoudoDatabase (LockDB mv (PostgresYoudoDB conn))

@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings, FlexibleInstances, FlexibleContexts,
-    MultiParamTypeClasses #-}
+    MultiParamTypeClasses, RankNTypes #-}
 module YouDo.Types where
 
 import Control.Applicative ((<$>), (<*>), Applicative(..))
@@ -18,9 +18,22 @@ import YouDo.DB
 import YouDo.TimeParser (parseUTCTime)
 import YouDo.Web
 
-data ( DB IO YoudoID YoudoData YoudoUpdate yd
-     , DB IO UserID UserData UserUpdate ud
-     ) => YoudoDatabase yd ud = YoudoDatabase { youdos :: yd, users :: ud }
+data ( DB m YoudoID YoudoData YoudoUpdate yd
+     , DB m UserID UserData UserUpdate ud
+     ) => YoudoDatabase m yd ud = YoudoDatabase { youdos :: yd, users :: ud }
+
+mapYoudoDB :: ( DB m YoudoID YoudoData YoudoUpdate yd
+              , DB m UserID UserData UserUpdate ud
+              , Monad n
+              )
+           => (forall a. m a -> n a)
+           -> YoudoDatabase m yd ud
+           -> YoudoDatabase n
+                    (LiftedDB m n YoudoID YoudoData YoudoUpdate yd)
+                    (LiftedDB m n UserID UserData UserUpdate ud)
+mapYoudoDB f db = YoudoDatabase { youdos = mapDB f (youdos db)
+                                , users = mapDB f (users db)
+                                }
 
 {-
     Youdos
@@ -39,19 +52,21 @@ instance Show YoudoID where
 instance BasedToJSON YoudoID where
     basedToJSON = idjson
 instance BasedFromJSON YoudoID where
-    basedParseJSON val base =
+    basedParseJSON val uri =
         fmap YoudoID $ basedIDFromJSON val resourcebase
-        where resourcebase = resourceBaseURL (Nothing :: Maybe YoudoID) base
+        where resourcebase = resourceBaseURL (Nothing :: Maybe YoudoID) uri
 instance BasedParsable YoudoID where
-    basedParseParam txt base =
+    basedParseParam txt uri =
         fmap YoudoID $ basedIDFromText txt resourcebase
-        where resourcebase = resourceBaseURL (Nothing :: Maybe YoudoID) base
+        where resourcebase = resourceBaseURL (Nothing :: Maybe YoudoID) uri
 instance FromField YoudoID where
     fromField fld = (fmap.fmap) YoudoID $ fromField fld
 instance ToField YoudoID where
     toField (YoudoID n) = toField n
 instance Parsable YoudoID where
     parseParam x = YoudoID <$> parseParam x
+instance HasCaptureDescr YoudoID where
+    captureDescr = const $ "Youdo ID, as decimal integer"
 
 data YoudoData = YoudoData { assignerid :: UserID
                            , assigneeid :: UserID
@@ -59,14 +74,15 @@ data YoudoData = YoudoData { assignerid :: UserID
                            , duedate :: DueDate
                            , completed :: Bool
                            } deriving (Show)
-instance RequestParsable YoudoData where
+instance (Applicative f, FromRequestBodyContext f)
+         => FromRequestBody f YoudoData where
     template = YoudoData <$> parse "assigner"
                          <*> parse "assignee"
                          <*> parse "description" `defaultTo` ""
                          <*> parse "duedate" `defaultTo` DueDate Nothing
                          <*> parse "completed" `defaultTo` False
 instance BasedToJSON YoudoData where
-    basedToJSON yd base =
+    basedToJSON yd uri =
         object
             [ "assigner" .= assigner
             , "assignee" .= assignee
@@ -74,8 +90,8 @@ instance BasedToJSON YoudoData where
             , "duedate" .= duedate yd
             , "completed" .= completed yd
             ]
-        where assigner = basedToJSON (assignerid yd) base
-              assignee = basedToJSON (assigneeid yd) base
+        where assigner = basedToJSON (assignerid yd) uri
+              assignee = basedToJSON (assigneeid yd) uri
 
 data YoudoUpdate = YoudoUpdate { newAssignerid :: Maybe UserID
                                , newAssigneeid :: Maybe UserID
@@ -83,7 +99,8 @@ data YoudoUpdate = YoudoUpdate { newAssignerid :: Maybe UserID
                                , newDuedate :: Maybe DueDate
                                , newCompleted :: Maybe Bool
                                } deriving (Show)
-instance RequestParsable YoudoUpdate where
+instance (Applicative f, FromRequestBodyContext f)
+         => FromRequestBody f YoudoUpdate where
     template = YoudoUpdate <$> optional (parse "assigner")
                            <*> optional (parse "assignee")
                            <*> optional (parse "description")
@@ -115,50 +132,56 @@ instance Show UserID where
 instance BasedToJSON UserID where
     basedToJSON = idjson
 instance BasedFromJSON UserID where
-    basedParseJSON val base = do
+    basedParseJSON val uri = do
         fmap UserID $ basedIDFromJSON val resourcebase
-        where resourcebase = resourceBaseURL (Nothing :: Maybe UserID) base
+        where resourcebase = resourceBaseURL (Nothing :: Maybe UserID) uri
 instance BasedParsable UserID where
-    basedParseParam txt base =
+    basedParseParam txt uri =
         fmap UserID $ basedIDFromText txt resourcebase
-        where resourcebase = resourceBaseURL (Nothing :: Maybe UserID) base
+        where resourcebase = resourceBaseURL (Nothing :: Maybe UserID) uri
+instance HasJSONDescr UserID where
+    jsonDescr = const $ "string containing URL referring to user"
 instance FromField UserID where
     fromField fld = (fmap.fmap) UserID $ fromField fld
 instance ToField UserID where
     toField (UserID n) = toField n
 instance Parsable UserID where
     parseParam x = UserID <$> parseParam x
+instance HasCaptureDescr UserID where
+    captureDescr = const $ "User ID, as decimal integer"
 
 data UserData = UserData { name :: String }
     deriving (Show, Eq)
-instance RequestParsable UserData where
+instance (Applicative f, FromRequestBodyContext f)
+         => FromRequestBody f UserData where
     template = UserData <$> parse "name"
 instance BasedToJSON UserData where
     basedToJSON yduser _ = object [ "name" .= name yduser ]
 
 data UserUpdate = UserUpdate { newName :: Maybe String } deriving (Show, Eq)
-instance RequestParsable UserUpdate where
+instance (Functor f, FromRequestBodyContext f)
+         => FromRequestBody f UserUpdate where
     template = UserUpdate <$> optional (parse "name")
 instance Updater UserUpdate UserData where
-    doUpdate upd u = case newName upd of
-        Nothing -> u
-        Just n -> u { name = n }
+    doUpdate upd x = case newName upd of
+        Nothing -> x
+        Just n -> x { name = n }
 
 {-
     IDs in general
 -}
 
 basedIDFromJSON :: Value -> URI -> Parser Int
-basedIDFromJSON (String txt) base =
-    case basedIDFromText (LT.fromStrict txt) base of
+basedIDFromJSON (String txt) uri =
+    case basedIDFromText (LT.fromStrict txt) uri of
         Left msg -> fail $ LT.unpack msg
         Right n -> return n
 basedIDFromJSON val _ = typeMismatch "ID URL" val
 
 basedIDFromText :: LT.Text -> URI -> Either LT.Text Int
-basedIDFromText txt base = do
-    uri <- maybe (Left "invalid URL") Right $ parseURI (LT.unpack txt)
-    case reads $ show $ uri `relativeFrom` base of
+basedIDFromText txt uri = do
+    iduri <- maybe (Left "invalid URL") Right $ parseURI (LT.unpack txt)
+    case reads $ show $ iduri `relativeFrom` uri of
         (n,""):_ -> Right n
         (n,"/"):_ -> Right n
         _ -> Left "invalid ID"
@@ -185,6 +208,8 @@ instance FromJSON DueDate where
     parseJSON x = typeMismatch "String or Null" x
 instance BasedFromJSON DueDate where
     basedParseJSON = flip $ const parseJSON
+instance HasJSONDescr DueDate where
+    jsonDescr = const $ "string in format yyyy-mm-ddThh:mm:ss.sssZ, or null"
 instance FromField DueDate where
     fromField fld = (fmap.fmap) DueDate $ fromField fld
 instance ToField DueDate where

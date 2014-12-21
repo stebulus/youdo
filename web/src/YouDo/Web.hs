@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings, RankNTypes, FlexibleContexts,
-    FlexibleInstances, MultiParamTypeClasses, FunctionalDependencies #-}
+    FlexibleInstances, MultiParamTypeClasses, FunctionalDependencies,
+    ScopedTypeVariables #-}
 {-|
 Module      : YouDo.Web
 Description : A tiny web framework on top of Scotty.
@@ -8,14 +9,17 @@ License     : GPL-3
 -}
 module YouDo.Web (
     -- * Resources as bundles of operations
-    resource,
-    -- * Base URIs
+    resource, API(..), setBase, toAssocList, toScotty,
+    -- * API documentation
+    docs,
+    -- * Base and relative URIs
     BasedToJSON(..), BasedFromJSON(..), BasedParsable(..), basedjson,
+    Based(..), RelativeToURI(..), (//), u,
     -- * Interpreting requests
-    capture,
-    body, fromRequestBody, RequestParser, parse, ParamValue(..), requestData,
-    EvaluationError(..), defaultTo, optional,
-    RequestParsable(..),
+    fromRequestBody, RequestParser, ParamValue(..), requestData,
+    EvaluationError(..), optional,
+    HasCaptureDescr(..), HasJSONDescr(..),
+    FromRequestBody(..), FromRequestBodyContext(..), FromRequestContext(..),
     -- * Reporting results
     WebResult(..),
     -- * Error handling and HTTP status
@@ -25,90 +29,271 @@ module YouDo.Web (
 
 import Codec.MIME.Type (mimeType, MIMEType(Application))
 import Codec.MIME.Parse (parseMIMEType)
-import Control.Applicative ((<$>), Applicative(..))
+import Control.Applicative ((<$>), Applicative(..), Const(..))
+import Control.Monad (forM_)
 import Control.Monad.Error (mapErrorT, throwError)
 import Control.Monad.Reader (ReaderT(..), ask, mapReaderT)
+import Control.Monad.Writer (tell, runWriter)
 import Control.Monad.Trans (MonadTrans(..))
 import Data.Aeson (ToJSON(..), Value(..))
 import qualified Data.Aeson as A
 import qualified Data.Aeson.Types as A
 import qualified Data.HashMap.Strict as M
 import Data.List (intercalate)
+import Data.Maybe (fromMaybe)
+import Data.Monoid (Monoid(..), (<>))
+import Data.String (IsString(..))
 import qualified Data.Text.Lazy as LT
 import Network.HTTP.Types (badRequest400, methodNotAllowed405,
     unsupportedMediaType415, internalServerError500, Status, StdMethod(..))
-import Network.URI (URI(..))
+import Network.URI (URI(..), relativeTo, nullURI)
 import Web.Scotty (ScottyM, matchAny, header, addroute, param, params,
-    ActionM, Parsable(..), status, setHeader, RoutePattern)
+    ActionM, Parsable(..), status, setHeader)
 import qualified Web.Scotty as Scotty
 import Web.Scotty.Internal.Types (ActionT(..), ActionError(..),
     ScottyError(..))
 
 import YouDo.Holes
+import YouDo.Monad.Null
 
--- | A web resource, with a complete list of its supported methods.
--- Defining a resource this way causes a 405 (Method Not Allowed)
--- response when a request uses a method which is not in the
--- given list.  (Scotty's default is 404 (Not Found), which is less
--- appropriate.)
-resource :: RoutePattern            -- ^Route to this resource.
-            -> [(StdMethod, ActionStatusM ())]
-                                    -- ^Allowed methods and their actions.
-            -> ScottyM ()
-resource route acts =
-    let allowedMethods = intercalate "," $ map (show . fst) acts
-    in do
-        sequence_ [ addroute method route $ statusErrors act
-                  | (method, act) <- acts ]
-        matchAny route $ do
-            status methodNotAllowed405  -- http://tools.ietf.org/html/rfc2616#section-10.4.6
-            setHeader "Allow" $ LT.pack allowedMethods
+-- | A wrapper that manages the URI of an object and its base URI.  (Used by 'API'.)
+data Based a = Based { base :: Maybe URI
+                     , relToBase :: URI
+                     , debased :: a
+                     }
+instance RelativeToURI (Based a) where
+    uri .// x@Based { base = Nothing } = x { relToBase = uri .// (relToBase x) }
+    uri .// x@Based { base = Just y } = x { base = Just (uri .// y) }
+instance Functor Based where
+    fmap f based = based { debased = f $ debased based }
 
 {- |
-    Get the value of a Scotty capture.
+    A web API.
 
-    Due to limitations of Scotty, this could in theory retrieve the
-    value of a field in the form data or a query parameter, but only
-    if there's no capture with the given name.  In practice this is
-    not a problem because @capture@ is normally used right next to
-    the route pattern that declares the relevant captures, so there's
-    little room for error.  (See 'YouDo.DB.webdb', for example.)
+    Create endpoints by calling 'resource' and adjust their location
+    with '(//)'.  For example,
 
-    The returned action is wrapped in a 'MonadTrans' for compatibility
-    with other combinators used in request-parsing applicative
-    expressions, such as 'body', which produce values of type 'ReaderT
-    URI ActionStatusM b' to depend on the base URI.  (This one does
-    not actually depend on the base URI.)
+    @
+        'u'"foo" // 'u'"bar" //
+            'resource' [ (GET, getSomething)
+                       , (POST, doSomething)
+                       ]
+    @
 
-    If the capture is not found, @capture@ raises the status HTTP 500
-    (Internal Server Error), because you shouldn't ask for captures
-    that you don't know are there.  If the capture cannot be parsed
-    as type @a@ then 'Scotty.next' is called (as with 'param'); if
-    no other route pattern matches the request (the usual situation)
-    then this will result in an HTTP 404 (Not Found), which makes
-    sense because presumably an URL that doesn't parse according to
-    the server's expectations doesn't denote any existing resource.
+    produces a resource which supports HTTP GET and POST and has a
+    nominal location of @"foo/bar"@.
+
+    'API's may be combined; for example:
+
+    @
+        'u'"foo" // (
+            'u'"bar" //
+                'resource' [ (GET, getSomething)
+                           , (POST, doSomething)
+                           ]
+            <>
+            'u'"snee" // 'u' "qux" //
+                'resource' [ (GET, getSomethingElse) ]
+        )
+    @
+
+    produces an API with endpoints at @"foo/bar"@ and at
+    @"foo/snee/qux"@.
+
+    The functions passed to 'resource' (@getSomething@ and such
+    above) receive a base URI as an argument.  By default, this is
+    'nullURI'; it can be set to another value by calling 'setBase'
+    at the appropriate point in a chain of '(//)'.  For example, with
+
+    @
+        'u'"foo" // setBase (
+            'u'"bar" //
+                'resource' [ (GET, getSomething)
+                           , (POST, doSomething)
+                           ]
+            <>
+            'u'"snee" // 'u' "qux" //
+                'resource' [ (GET, getSomethingElse) ]
+        )
+    @
+
+    the functions for both resources would receive the URI @"foo/"@
+    as their base URI.  (There's a slash at the end because '(//)'
+    was used instead of '(.//)'.)
+
+    If 'setBase' is called more than once above a resource, the
+    lowermost counts.  Thus you can set a high-level default base
+    URI for most resources and override it for specific subtrees.
+
+    The functions passed to 'resource' return type 'a'; ultimately this
+    should be 'ActionStatusM ()' so that the 'API' can be passed to
+    'toScotty', but other types may be useful at earlier stages of
+    the computation.  (See 'Youdo.WebApp.api0', for example.)
 -}
-capture :: (Parsable a, MonadTrans t)
-        => LT.Text                -- ^The name of the capture.
-        -> t ActionStatusM a      -- ^The action to get its value.
-capture k = lift $ lift500 $ param k
+newtype API a = API [Based [(StdMethod, URI -> a)]]
+instance RelativeToURI (API a) where
+    uri .// (API xs) = API $ map (uri .//) xs
+instance Monoid (API a) where
+    mempty = API mempty
+    (API xs) `mappend` (API ys) = API (xs `mappend` ys)
+instance Functor API where
+    fmap f (API xs) = API $ (fmap.fmap.fmap.fmap.fmap) f xs
+
+-- | Set the base URI to the current point.  See 'API'.
+setBase :: API a -> API a
+setBase (API xs) = API $ map f xs
+    where f x = x { base = Just $ maybe nullURI id (base x) }
+
+-- | Convert an 'API' to a nested associative list.
+toAssocList :: API a -> [(URI, [(StdMethod, a)])]
+toAssocList (API xs) = map f xs
+    where f based =
+            let baseuri = fromMaybe nullURI $ base based
+                uri = baseuri .// relToBase based
+            in (uri, [ (method, actf baseuri) | (method, actf)<-debased based ])
+
+-- | Convert an 'API' to a Scotty application.
+toScotty :: API (ActionStatusM ()) -> ScottyM ()
+toScotty api = mapM_ f $ toAssocList api
+    where f (uri, acts) =
+            let route = fromString $ uriPath uri
+                allowedMethods = intercalate "," $ map (show . fst) acts
+            in do
+                sequence_ [ addroute method route
+                            $ statusErrors
+                            $ act
+                          | (method, act)<-acts ]
+                matchAny route $ do
+                    status methodNotAllowed405
+                        -- http://tools.ietf.org/html/rfc2616#section-10.4.6
+                    setHeader "Allow" $ LT.pack allowedMethods
+
+-- | Convert an 'API' to documentation.
+docs :: API (APIDoc (NullMonad b)) -> API (ActionStatusM ())
+docs api = resource [(GET, const $ lift500 $ Scotty.text txt)]
+    where txt = snd $ runWriter $ do
+                    forM_ (toAssocList api) $ \(uri, acts) -> do
+                        tell $ LT.replicate 40 "-"
+                        tell "\r\n\r\n"
+                        forM_ acts $ \(method, doc) -> do
+                            tell $ LT.pack $ show method
+                            tell " "
+                            tell $ LT.pack $ uriPath uri
+                            tell "\r\n"
+                            tell $ getConst doc
+                            tell "\r\n"
+
+-- | The 'Applicative' that does the analysis work of 'docs'.
+type APIDoc = Const LT.Text
+
+instance FromRequestContext (ReaderT URI APIDoc) APIDoc where
+    capture k = ReaderT $ const
+        $ flip addConst ")\r\n"
+        $ addCaptureDescr
+        $ Const $ LT.concat [ "in url      : ", k, " (" ]
+    body = ReaderT $ const $ template
+instance FromRequestBodyContext APIDoc where
+    parse k = flip addConst ")\r\n"
+        $ addJSONDescr
+        $ Const $ LT.concat [ "in json body: ", k, " (" ]
+    defaultTo doc x = doc <* Const (LT.concat [
+        "     default: ", LT.pack $ show x, "\r\n"
+        ])
+
+class HasCaptureDescr a where
+    captureDescr :: Maybe a -> LT.Text
+    addCaptureDescr :: Const LT.Text a -> Const LT.Text a
+    addCaptureDescr c = addConst c $ captureDescr x
+        where x = Nothing :: Maybe a
+
+class HasJSONDescr a where
+    jsonDescr :: Maybe a -> LT.Text
+    addJSONDescr :: Const LT.Text a -> Const LT.Text a
+    addJSONDescr c = addConst c $ jsonDescr x
+        where x = Nothing :: Maybe a
+
+instance HasJSONDescr String where
+    jsonDescr = const $ "string"
+instance HasJSONDescr Int where
+    jsonDescr = const $ "integer"
+instance HasJSONDescr Bool where
+    jsonDescr = const $ "boolean"
+
+addConst :: (Monoid a) => Const a b -> a -> Const a b
+addConst c a = Const $ getConst c <> a
+
+{- |
+    A web resource, with a complete list of its supported methods.
+    Defining a resource this way causes a 405 (Method Not Allowed)
+    response when a request uses a method which is not in the
+    given list.  (Scotty's default is 404 (Not Found), which is less
+    appropriate.)
+
+    The URI argument to the enclosed functions is the base URI,
+    whatever that means in the context of the application.
+    (Note especially that it's not necessarily the URI of this
+    resource itself; see 'API'.)
+-}
+resource :: [(StdMethod, URI -> a)]  -- ^Allowed methods and their actions.
+            -> API a
+resource acts = API [Based { base = Nothing
+                           , relToBase = nullURI
+                           , debased = acts
+                           }]
 
 -- | Like 'Scotty.json', but for based representations.
 basedjson :: BasedToJSON a => a -> URI -> ActionM ()
 basedjson x uri = Scotty.json $ basedToJSON x uri
 
+-- | Something that can be evaluated relative to a URI.
+-- (Compare '(.//)' to '(//)'.)
+class RelativeToURI a where
+    (.//) :: URI -> a -> a
+instance RelativeToURI URI where
+    a .// b = b `relativeTo` a
+infixl 7 .//
+
+{- |
+    This version of '(.//)' ensures that there is a slash
+    at the end of the path part of the URI before evaluating 'b'
+    relative to it. Thus, for example,
+
+    @
+        u "foo" // u "bar" == u "foo/bar"
+    @
+
+    which is probably what the writer intended.
+-}
+(//) :: (RelativeToURI b) => URI -> b -> b
+a // b = a' .// b
+    where a' = if maybeLast apath == Just '/'
+               then a
+               else a { uriPath = apath ++ "/" }
+          apath = uriPath a
+          maybeLast [] = Nothing
+          maybeLast xs = Just $ last xs
+infixl 7 //
+
+-- | Create a 'URI' with the given string as path component.
+-- (It's probably best to use this only for string literals
+-- whose validity you can see yourself.)
+u :: String -> URI
+u s = nullURI { uriPath = s }
+
 -- | A value that can be reported to a web client.
-class WebResult r where
-    report :: r                     -- ^The value to report.
-           -> URI                   -- ^The base URI.
-           -> ActionStatusM ()      -- ^An action that reports that value.
+class WebResult m r where
+    report :: URI                   -- ^The base URI.
+           -> r                     -- ^The value to report.
+           -> m ()                  -- ^An action that reports that value.
+
+instance WebResult NullMonad r where
+    report _ _ = NullMonad
 
 -- | A value that can be serialized as JSON, respecting a base URI.
 class BasedToJSON a where
     basedToJSON :: a -> URI -> Value
 instance BasedToJSON a => BasedToJSON [a] where
-    basedToJSON xs base = toJSON $ map (flip basedToJSON base) xs
+    basedToJSON xs uri = toJSON $ map (flip basedToJSON uri) xs
 
 -- | A value that can be deserialized from JSON, respecting a base URI.
 class BasedFromJSON a where
@@ -201,39 +386,16 @@ lift500 :: ActionM a -> ActionStatusM a
 lift500 = failWith internalServerError500
 
 {- |
-    A value of type @a@ is obtained from the HTTP request using the
-    'template' method of its 'RequestParsable' instance; usually you
-    will have defined an instance like
-
-    @
-        instance 'RequestParsable' MyType where
-            template = MyType \<$\> parse \"id\" \<*\> parse \"name\"
-    @
-
-    The 'URI' to be supplied to the 'ReaderT' wrapper is the base URI
-    of the app (which might affect the interpretation of URLs in the
-    body of the request, for example).
-
-    If an error occurs parsing the request, a 400 (Bad Request)
-    response is thrown.
--}
-body :: (RequestParsable a) => ReaderT URI ActionStatusM a
-body = do
-    base <- ask
-    lift $ fromRequestBody template base
-
-{- |
     Use the given 'RequestParser' to interpret the data in the HTTP
-    request.  See the discussion in 'body' for the usual method
-    of defining a 'RequestParser'.
+    request.
 
     If an error occurs parsing the request, a 400 (Bad Request)
     response is thrown.
 -}
 fromRequestBody :: RequestParser a -> URI -> ActionStatusM a
-fromRequestBody expr base = do
+fromRequestBody expr uri = do
     kvs <- requestData
-    case evaluateE (runReaderT expr base) kvs of
+    case evaluateE (runReaderT expr uri) kvs of
         Left errs -> badRequest $ showEvaluationErrors errs
         Right a -> return a
 
@@ -273,20 +435,92 @@ requestData = do
     return $ paramdata ++ bodydata
 
 {- |
-    An object that can be constructed by a 'RequestParser'.
-    Typically the 'template' method should be implemented as an
-    applicative expression; see the example under 'body'.
+    A way to construct values of type @a@ from the body of an HTTP
+    request, in context @f@.
 
-    The type signatures here are more general than 'RequestParser',
-    to faciliate future use with other functors, e.g., to generate
-    HTML forms and documentation from the same applicative expression.
+    Typically the 'template' method should be implemented as an
+    applicative expression; see 'YouDo.Types' for examples.
 -}
-class RequestParsable a where
-    template :: ( Applicative f
-                , Holes LT.Text ParamValue (ReaderT URI f)
-                , Errs [EvaluationError LT.Text ParamValue] (ReaderT URI f)
-                )
-             => ReaderT URI f a
+class FromRequestBody f a where
+    template :: f a
+
+{- |
+    The functor @f@ represents a context within which we can make
+    some use of a way to construct values of type @a@ from the body
+    of an HTTP request.  See 'FromRequestBody'.
+-}
+class FromRequestBodyContext f where
+    {- |
+        In 'template' implementations, represents reading the value
+        for the given key and parsing it as a value of type @a@.
+
+        There is no provision for reporting errors in this interface,
+        because what "error" means depends on the functor $f$.
+        (For example, a functor that actually produces a value of
+        type @a@ needs to be able to report the error that there is
+        no value for the given key, whereas a functor that produces
+        documentation describing the template doesn't.)
+    -}
+    parse :: (BasedParsable a, BasedFromJSON a, HasJSONDescr a)
+          => LT.Text      -- ^The key whose value should be parsed.
+          -> f a
+
+    {- |
+        In 'template' implementations, represents that if the
+        given @f a@ has no value because the key given to 'parse'
+        was not present in the request, then the given value should
+        be substituted.
+    -}
+    defaultTo :: (Show a) => f a -> a -> f a
+
+class (FromRequestBodyContext g) => FromRequestContext f g | f->g where
+    {-  Obsolete docs.
+
+        Get the value of a Scotty capture.
+
+        Due to limitations of Scotty, this could in theory retrieve the
+        value of a field in the form data or a query parameter, but only
+        if there's no capture with the given name.  In practice this is
+        not a problem because @capture@ is normally used right next to
+        the route pattern that declares the relevant captures, so there's
+        little room for error.  (See 'YouDo.DB.webdb', for example.)
+
+        The returned action is wrapped in a 'MonadTrans' for compatibility
+        with other combinators used in request-parsing applicative
+        expressions, such as 'body', which produce values of type 'ReaderT
+        URI ActionStatusM b' to depend on the base URI.  (This one does
+        not actually depend on the base URI.)
+
+        If the capture is not found, @capture@ raises the status HTTP 500
+        (Internal Server Error), because you shouldn't ask for captures
+        that you don't know are there.  If the capture cannot be parsed
+        as type @a@ then 'Scotty.next' is called (as with 'param'); if
+        no other route pattern matches the request (the usual situation)
+        then this will result in an HTTP 404 (Not Found), which makes
+        sense because presumably an URL that doesn't parse according to
+        the server's expectations doesn't denote any existing resource.
+    -}
+    capture :: (Parsable a, HasCaptureDescr a) => LT.Text -> f a
+
+    {-  Obsolete docs.
+
+        A value of type @a@ is obtained from the HTTP request using the
+        'template' method of its 'RequestParsable' instance; usually you
+        will have defined an instance like
+
+        @
+            instance 'RequestParsable' MyType where
+                template = MyType \<$\> parse \"id\" \<*\> parse \"name\"
+        @
+
+        The 'URI' to be supplied to the 'ReaderT' wrapper is the base URI
+        of the app (which might affect the interpretation of URLs in the
+        body of the request, for example).
+
+        If an error occurs parsing the request, a 400 (Bad Request)
+        response is thrown.
+    -}
+    body :: (FromRequestBody g a) => f a
 
 {- |
     An error encountered when evaluating a 'RequestParsable' object
@@ -304,21 +538,10 @@ data EvaluationError k v
     | CheckError LT.Text       -- ^An error was detected by 'check'.
     deriving (Show, Eq)
 
--- | If the first argument fails to evaluate due to a single
--- 'MissingKey' error, replace it with the second argument.
--- Other error situations are left as is.
--- (Combinator for use in 'template' implementations.)
-defaultTo :: (Applicative f, Errs [EvaluationError k v] f)
-          => f a -> a -> f a
-defaultTo fa d = fa `catch` \es ->
-    case es of
-        [MissingKey _] -> pure d
-        _ -> throw $ pure es
-
--- | If the argument fails to evaluate due to a single 'MissingKey'
--- error, replace it with 'Nothing'; otherwise, 'Just' the first
--- argument.
-optional :: (Applicative f, Errs [EvaluationError k v] f)
+-- | If the argument failed because it depends on a missing key,
+-- replace it with 'Nothing'; otherwise, 'Just' the value in the
+-- first argument.
+optional :: (Functor f, FromRequestBodyContext f, Show a)
          => f a -> f (Maybe a)
 optional fa = (Just <$> fa) `defaultTo` Nothing
 
@@ -355,34 +578,37 @@ instance Errs [EvaluationError LT.Text ParamValue] RequestParser where
     catch fa handle = ReaderT $ \uri ->
         (runReaderT fa uri) `catch` (\e -> runReaderT (handle e) uri)
 
+instance FromRequestBodyContext RequestParser where
+    parse k =
+        let basedParse = flip $ basedParseEither k
+            enlist (Left e) = Left [e]
+            enlist (Right a) = Right a
+        in throwLeft $ enlist <$>
+            (ReaderT $ fmap . basedParse <*> runReaderT (hole k))
+    defaultTo fa d = fa `catch` \es ->
+        case es of
+            [MissingKey _] -> pure d
+            _ -> throw $ pure es
+
+instance FromRequestContext (ReaderT URI ActionStatusM) RequestParser where
+    capture k = lift $ lift500 $ param k
+    body = do
+        uri <- ask
+        lift $ fromRequestBody template uri
+
 -- | How to report missing keys in a 'RequestParser'.
 instance MissingKeyError LT.Text [EvaluationError LT.Text ParamValue] where
     missingKeyError k = [MissingKey k]
 
--- | A named hole which parses a 'ParamValue' into the appropriate type.
--- (Combinator for use in 'template' implementations.)
-parse :: ( Functor f
-         , BasedParsable a, BasedFromJSON a
-         , Holes k ParamValue (ReaderT URI f)
-         , Errs [EvaluationError k ParamValue] (ReaderT URI f)
-         )
-      => k -> ReaderT URI f a
-parse k =
-    let basedParse = flip $ basedParseEither k
-        enlist (Left e) = Left [e]
-        enlist (Right a) = Right a
-    in throwLeft $ enlist <$>
-        (ReaderT $ fmap . basedParse <*> runReaderT (hole k))
-
 -- | Parse a 'ParamValue' into the appropriate type.
 basedParseEither :: (BasedParsable a, BasedFromJSON a)
             => k -> ParamValue -> URI -> Either (EvaluationError k ParamValue) a
-basedParseEither k x@(ScottyParam txt) base =
-    case basedParseParam txt base of
+basedParseEither k x@(ScottyParam txt) uri =
+    case basedParseParam txt uri of
         Left e -> Left $ ParseError k x e
         Right a -> Right a
-basedParseEither k x@(JSONField jsonval) base =
-    case runJSONParser (basedParseJSON jsonval base) of
+basedParseEither k x@(JSONField jsonval) uri =
+    case runJSONParser (basedParseJSON jsonval uri) of
         Left e -> Left $ ParseError k x $ LT.pack e
         Right a -> Right a
     where runJSONParser :: A.Parser a -> Either String a
