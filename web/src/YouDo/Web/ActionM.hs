@@ -57,17 +57,21 @@ bindError act f = do
         Left (Redirect msg) -> throwError (Redirect msg)
         Left Next -> throwError Next
 
+-- | A version of 'ActionM' that includes HTTP 'Status' information in errors.
 type ActionStatusM = ActionT ErrorWithStatus IO
 
+-- | A 'ScottyError' type that includes HTTP 'Status' information.
 data ErrorWithStatus = ErrorWithStatus Status LT.Text
 instance ScottyError ErrorWithStatus where
     stringError msg = ErrorWithStatus internalServerError500 (LT.pack msg)
     showError (ErrorWithStatus _ msg) = msg
 
+-- | Raise the indicated error.
 raiseStatus :: Status -> LT.Text -> ActionStatusM a
 raiseStatus stat msg = throwError $ ActionError $ ErrorWithStatus stat msg
 
--- | <http://tools.ietf.org/html/rfc2616#section-10.4.1>
+-- | Equivalent to 'raiseStatus' 'badRequest400'
+-- (See <http://tools.ietf.org/html/rfc2616#section-10.4.1>.)
 badRequest :: LT.Text -> ActionStatusM a
 badRequest = raiseStatus badRequest400
 
