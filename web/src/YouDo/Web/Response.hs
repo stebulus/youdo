@@ -45,7 +45,7 @@ class BasedToJSON a where
 instance BasedToJSON a => BasedToJSON [a] where
     basedToJSON xs uri = toJSON $ map (flip basedToJSON uri) xs
 
--- | Like 'Scotty.json', but for based representations.
+-- | Like Scotty's 'json', but for based representations.
 basedjson :: BasedToJSON a => a -> URI -> ActionM ()
 basedjson x uri = json $ basedToJSON x uri
 
