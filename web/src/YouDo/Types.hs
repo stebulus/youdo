@@ -6,7 +6,7 @@
 {-# LANGUAGE ScopedTypeVariables  #-}
 module YouDo.Types where
 
-import Control.Applicative ((<$>), (<*>), Applicative(..))
+import Control.Applicative ((<$>), (<*>), Applicative(..), Const(..))
 import Control.Concurrent.MVar (MVar, withMVar)
 import Control.Monad (join)
 import Control.Monad.IO.Class (MonadIO(..))
@@ -133,7 +133,7 @@ instance FromRow Youdo where
 
 newtype YoudoID = YoudoID Int deriving (Eq)
 instance NamedResource YoudoID where
-    resourceName = const "youdos"
+    resourceName = Const "youdos"
 instance Show YoudoID where
     show (YoudoID n) = show n
 instance BasedToJSON YoudoID where
@@ -141,11 +141,11 @@ instance BasedToJSON YoudoID where
 instance BasedFromJSON YoudoID where
     basedParseJSON val uri =
         fmap YoudoID $ basedIDFromJSON val resourcebase
-        where resourcebase = resourceBaseURL (Nothing :: Maybe YoudoID) uri
+        where resourcebase = resourceBaseURL (Const uri :: Const URI YoudoID)
 instance BasedParsable YoudoID where
     basedParseParam txt uri =
         fmap YoudoID $ basedIDFromText txt resourcebase
-        where resourcebase = resourceBaseURL (Nothing :: Maybe YoudoID) uri
+        where resourcebase = resourceBaseURL (Const uri :: Const URI YoudoID)
 instance FromField YoudoID where
     fromField fld = (fmap.fmap) YoudoID $ fromField fld
 instance ToField YoudoID where
@@ -213,7 +213,7 @@ instance FromRow User where
 
 newtype UserID = UserID Int deriving (Eq)
 instance NamedResource UserID where
-    resourceName = const "users"
+    resourceName = Const "users"
 instance Show UserID where
     show (UserID n) = show n
 instance BasedToJSON UserID where
@@ -221,11 +221,11 @@ instance BasedToJSON UserID where
 instance BasedFromJSON UserID where
     basedParseJSON val uri = do
         fmap UserID $ basedIDFromJSON val resourcebase
-        where resourcebase = resourceBaseURL (Nothing :: Maybe UserID) uri
+        where resourcebase = resourceBaseURL (Const uri :: Const URI UserID)
 instance BasedParsable UserID where
     basedParseParam txt uri =
         fmap UserID $ basedIDFromText txt resourcebase
-        where resourcebase = resourceBaseURL (Nothing :: Maybe UserID) uri
+        where resourcebase = resourceBaseURL (Const uri :: Const URI UserID)
 instance HasJSONDescr UserID where
     jsonDescr = const $ "string containing URL referring to user"
 instance FromField UserID where

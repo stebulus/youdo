@@ -13,7 +13,9 @@ License     : GPL-3
 -}
 module YouDo.DB (
     -- *Database and web interface
-    DB(..), mapDB, LiftedDB(..), Updater(..), webdb, NamedResource(..),
+    DB(..), mapDB, LiftedDB(..), Updater(..), webdb,
+    NamedResource(..),
+    resourceBaseURL,
     idjson, veridjson, LockDB(..),
     -- *Versioning of database objects
     Versioned(..), VersionedID(..), TransactionID(..),
@@ -26,7 +28,7 @@ module YouDo.DB (
     one, some
 ) where
 
-import Control.Applicative (Applicative(..), (<$>), (<*>))
+import Control.Applicative (Applicative(..), (<$>), (<*>), Const(..))
 import Control.Concurrent.MVar
 import Control.Monad (join)
 import Control.Monad.IO.Class (MonadIO(..))
@@ -153,7 +155,7 @@ webdb :: forall k v u d f g m.
          )
       => API (f (d -> m ()))
 webdb =
-    u (resourceName (Nothing :: Maybe k)) // (
+    u (getConst (resourceName :: Const String k)) // (
         resource
             [ (GET, dodb $ pure getAll)
             , (POST, dodb $ create <$> body)
@@ -175,10 +177,7 @@ webdb =
     where dodb rdrt uri = (fmap.fmap) (>>= report uri) (runReaderT rdrt uri)
 
 {- |
-    Class for types that have a name.  Minimum implementation:
-    'resourceName'.  Typically the implementation will ignore the
-    argument, which is included only for type-checking.  (So, it may
-    be @Nothing@.)
+    Class for types that have a name.
 
     This name is used in the web interface to construct URLs for the
     resources that represent operations on objects of type @a@.  It's
@@ -188,22 +187,30 @@ webdb =
     (For example, 'Youdo' contains some 'UserID's which should be
     sent to the client as URLs containing the name for user objects.)
 -}
-class (Show a) => NamedResource a where
-    resourceName :: Maybe a -> String
-    resourceBaseURL :: Maybe a -> URI -> URI
-    resourceBaseURL x uri = namedResourceURL [ resourceName x
-                                             , ""
-                                             ] uri
-    resourceURL :: a -> URI -> URI
-    resourceURL x uri = namedResourceURL [ resourceName (Just x)
-                                         , show x
-                                         , ""
-                                         ] uri
-    resourceVersionURL :: VersionedID a -> URI -> URI
-    resourceVersionURL x uri = namedResourceURL [ resourceName (Just (thingid x))
-                                                , show (thingid x)
-                                                , show (txnid x)
-                                                ] uri
+class NamedResource a where
+    resourceName :: Const String a
+
+resourceBaseURL :: forall a. (NamedResource a) => Const URI a -> URI
+resourceBaseURL uri = namedResourceURL
+    [ getConst (resourceName :: Const String a)
+    , ""
+    ] $ getConst uri
+
+resourceURL :: forall a. (Show a, NamedResource a)
+            => a -> URI -> URI
+resourceURL x uri = namedResourceURL
+    [ getConst (resourceName :: Const String a)
+    , show x
+    , ""
+    ] uri
+
+resourceVersionURL :: forall a. (Show a, NamedResource a)
+                   => VersionedID a -> URI -> URI
+resourceVersionURL x uri = namedResourceURL
+    [ getConst (resourceName :: Const String a)
+    , show (thingid x)
+    , show (txnid x)
+    ] uri
 
 namedResourceURL :: [String] -> URI -> URI
 namedResourceURL xs uri = reluri `relativeTo` uri
@@ -272,7 +279,7 @@ instance (Show k, NamedResource k, BasedToJSON v)
 -- | Transaction identifier.
 newtype TransactionID = TransactionID Int deriving (Eq)
 instance NamedResource TransactionID where
-    resourceName = const "transactions"
+    resourceName = Const "transactions"
 instance Show TransactionID where
     show (TransactionID n) = show n
 instance BasedToJSON TransactionID where

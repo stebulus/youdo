@@ -116,7 +116,7 @@ webtxndb :: ( DB m YoudoID YoudoData YoudoUpdate y
             )
          => API (f (YoudoDatabase m y u t -> m ()))
 webtxndb =
-    u (resourceName (Nothing :: Maybe TransactionID)) // u":txnid" //
+    u (getConst (resourceName :: Const String TransactionID)) // u":txnid" //
         resource [ (GET, dodb $ getTxnDeluxe <$> capture "txnid") ]
     where dodb rdrt uri = (fmap.fmap) (>>= report uri) (runReaderT rdrt uri)
 
