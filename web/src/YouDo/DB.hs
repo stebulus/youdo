@@ -1,6 +1,10 @@
-{-# LANGUAGE MultiParamTypeClasses, FunctionalDependencies,
-    FlexibleInstances, FlexibleContexts, OverloadedStrings,
-    ScopedTypeVariables, RankNTypes #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-|
 Module      : YouDo.DB
 Description : Database types for YouDo
@@ -40,7 +44,11 @@ import Network.HTTP.Types (ok200, created201, notFound404,
 import Network.URI
 import Web.Scotty (Parsable(..), status, setHeader, text)
 
-import YouDo.Web
+import YouDo.Web.ActionM
+import YouDo.Web.Relative
+import YouDo.Web.Request
+import YouDo.Web.Response
+import YouDo.Web.Service
 
 {- |
     @d@ contains versioned key-value pairs of type @(k,v)@, which

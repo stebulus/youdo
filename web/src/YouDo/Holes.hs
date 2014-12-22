@@ -1,5 +1,7 @@
-{-# LANGUAGE MultiParamTypeClasses, FunctionalDependencies,
-    FlexibleInstances, FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 module YouDo.Holes where
 
 import Control.Applicative

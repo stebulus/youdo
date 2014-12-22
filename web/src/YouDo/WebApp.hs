@@ -1,5 +1,8 @@
-{-# LANGUAGE OverloadedStrings, RankNTypes, FlexibleContexts,
-    FlexibleInstances, MultiParamTypeClasses #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RankNTypes #-}
 {-|
 Module      : YouDo.WebApp
 Description : Web application for YouDo
@@ -32,8 +35,12 @@ import YouDo.DB
 import YouDo.DB.Memory
 import YouDo.DB.PostgreSQL
 import YouDo.Monad.Null
-import YouDo.Web
 import YouDo.Types
+import YouDo.Web.Docs
+import YouDo.Web.Relative
+import YouDo.Web.Request
+import YouDo.Web.Response
+import YouDo.Web.Service
 
 -- | The Scotty application.
 -- Consists of 'webdb' interfaces for the given Youdo and User DB instances.

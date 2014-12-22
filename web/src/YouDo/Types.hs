@@ -1,5 +1,9 @@
-{-# LANGUAGE OverloadedStrings, FlexibleInstances, FlexibleContexts,
-    MultiParamTypeClasses, RankNTypes, ScopedTypeVariables  #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
 module YouDo.Types where
 
 import Control.Applicative ((<$>), (<*>), Applicative(..))
@@ -20,8 +24,9 @@ import Network.URI (parseURI, relativeFrom, URI)
 import Web.Scotty (Parsable(..))
 
 import YouDo.DB
-import YouDo.TimeParser (parseUTCTime)
-import YouDo.Web
+import YouDo.Time.Parse
+import YouDo.Web.Request
+import YouDo.Web.Response
 
 data ( DB m YoudoID YoudoData YoudoUpdate yd
      , DB m UserID UserData UserUpdate ud

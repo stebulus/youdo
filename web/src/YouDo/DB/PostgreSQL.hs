@@ -1,4 +1,5 @@
-{-# LANGUAGE OverloadedStrings, MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 module YouDo.DB.PostgreSQL where
 
 import Control.Applicative ((<$>))

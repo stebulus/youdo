@@ -29,9 +29,14 @@ library
                        , YouDo.Holes
                        , YouDo.Monad.Null
                        , YouDo.Test
-                       , YouDo.TimeParser
+                       , YouDo.Time.Parse
                        , YouDo.Types
-                       , YouDo.Web
+                       , YouDo.Web.ActionM
+                       , YouDo.Web.Docs
+                       , YouDo.Web.Relative
+                       , YouDo.Web.Request
+                       , YouDo.Web.Response
+                       , YouDo.Web.Service
                        , YouDo.WebApp
   ghc-options:         -Wall
   build-depends:       base ==4.6.*
@@ -59,6 +64,15 @@ library
                        , old-locale ==1.0.*
                        , unordered-containers ==0.2.*
 
+Test-Suite test-holes
+  type:                detailed-0.9
+  test-module:         YouDo.Holes.Test
+  hs-source-dirs:      test/holes
+  ghc-options:         -Wall
+  build-depends:       base ==4.6.*
+                       , youdo ==0.1.*
+                       , Cabal ==1.16.*
+
 Test-Suite test-web
   type:                detailed-0.9
   test-module:         YouDo.Web.Test
@@ -72,6 +86,7 @@ Test-Suite test-web
                        , blaze-builder ==0.3.*
                        , aeson ==0.7.*
                        , wai ==3.0.*
+                       , attoparsec ==0.11.*
 
                        , http-types ==0.8.*
                        , network ==2.4.*
@@ -86,13 +101,3 @@ Test-Suite test-web
                        , time ==1.4.*
                        , unordered-containers ==0.2.*
                        , vector ==0.10.*
-                       , attoparsec ==0.11.*
-
-Test-Suite test-holes
-  type:                detailed-0.9
-  test-module:         YouDo.Holes.Test
-  hs-source-dirs:      test/holes
-  ghc-options:         -Wall
-  build-depends:       base ==4.6.*
-                       , youdo ==0.1.*
-                       , Cabal ==1.16.*
