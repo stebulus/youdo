@@ -73,6 +73,22 @@ Test-Suite test-holes
                        , youdo ==0.1.*
                        , Cabal ==1.16.*
 
+Test-Suite test-time
+  type:                detailed-0.9
+  test-module:         YouDo.Time.Parse.Test
+  hs-source-dirs:      test/time
+  ghc-options:         -Wall
+  build-depends:       base ==4.6.*
+                       , youdo ==0.1.*
+                       , Cabal ==1.16.*
+
+                       , QuickCheck ==2.7.*
+                       , cabal-test-quickcheck ==0.1.*
+
+                       , text ==0.11.*
+                       , time ==1.4.*
+                       , old-locale ==1.0.*
+
 Test-Suite test-web
   type:                detailed-0.9
   test-module:         YouDo.Web.Test
