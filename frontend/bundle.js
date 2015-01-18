@@ -4,6 +4,8 @@
 var document = require('global/document');
 var hg = require('mercury');
 var h = require('mercury').h;
+var cuid = require('cuid');
+// var hogan = require('hogan.js');
 
 /**
  * Regex to capture the date
@@ -98,7 +100,40 @@ var youDoReducerStyler = function(acc, value, index) {
  * YouDo state
  */
 function YouDo() {
+
+  var id = cuid();
+
+  $(document).ready(function() {
+
+    $('#' + id).typeahead({
+      hint: true,
+      highlight: true,
+      minLength: 1
+    },{
+      name: 'states',
+      displayKey: 'value',
+      templates: {
+        suggestion: function(e) {
+          return '<p>' + e.suggestion + '</p>';
+        }
+      },
+      source: function(query, cb) {
+
+        // console.log(query);
+
+        cb(query
+            .split('')
+            .reduceRight(youDoReducer, initYouDoReducerState())
+            .mentions
+            .map(function(i) { return {suggestion:i, value: query}; })
+          );
+      }
+    });
+
+  });
+
   return hg.state({
+    id: hg.value(id),
     text: hg.value(''),
     who: hg.value(''),
     when: hg.value(''),
@@ -114,8 +149,9 @@ function YouDo() {
 /**
  * Helper function to create an input element
  */
-function inputBox(value, sink, finish) {
+function inputBox(id, value, sink, finish) {
   return h('form', {role: "form"}, h('div.form-group', h('input.form-control', {
+    id: id,
     value: value,
     name: 'text',
     type: 'text',
@@ -177,8 +213,9 @@ function save(state, data) {
  */
 YouDo.render = function render(state) {
 
+
   return h('div', [
-      inputBox(state.text, state.handles.change, state.handles.finishEdit),
+      inputBox(state.id, state.text, state.handles.change, state.handles.finishEdit),
       h('p.content',
         state
           .text
@@ -194,7 +231,119 @@ YouDo.render = function render(state) {
  */
 hg.app(document.getElementById('youdo-app'), YouDo(), YouDo.render);
 
-},{"global/document":2,"mercury":3}],2:[function(require,module,exports){
+},{"cuid":2,"global/document":3,"mercury":4}],2:[function(require,module,exports){
+/**
+ * cuid.js
+ * Collision-resistant UID generator for browsers and node.
+ * Sequential for fast db lookups and recency sorting.
+ * Safe for element IDs and server-side lookups.
+ *
+ * Extracted from CLCTR
+ * 
+ * Copyright (c) Eric Elliott 2012
+ * MIT License
+ */
+
+/*global window, navigator, document, require, process, module */
+(function (app) {
+  'use strict';
+  var namespace = 'cuid',
+    c = 0,
+    blockSize = 4,
+    base = 36,
+    discreteValues = Math.pow(base, blockSize),
+
+    pad = function pad(num, size) {
+      var s = "000000000" + num;
+      return s.substr(s.length-size);
+    },
+
+    randomBlock = function randomBlock() {
+      return pad((Math.random() *
+            discreteValues << 0)
+            .toString(base), blockSize);
+    },
+
+    safeCounter = function () {
+      c = (c < discreteValues) ? c : 0;
+      c++; // this is not subliminal
+      return c - 1;
+    },
+
+    api = function cuid() {
+      // Starting with a lowercase letter makes
+      // it HTML element ID friendly.
+      var letter = 'c', // hard-coded allows for sequential access
+
+        // timestamp
+        // warning: this exposes the exact date and time
+        // that the uid was created.
+        timestamp = (new Date().getTime()).toString(base),
+
+        // Prevent same-machine collisions.
+        counter,
+
+        // A few chars to generate distinct ids for different
+        // clients (so different computers are far less
+        // likely to generate the same id)
+        fingerprint = api.fingerprint(),
+
+        // Grab some more chars from Math.random()
+        random = randomBlock() + randomBlock();
+
+        counter = pad(safeCounter().toString(base), blockSize);
+
+      return  (letter + timestamp + counter + fingerprint + random);
+    };
+
+  api.slug = function slug() {
+    var date = new Date().getTime().toString(36),
+      counter,
+      print = api.fingerprint().slice(0,1) +
+        api.fingerprint().slice(-1),
+      random = randomBlock().slice(-2);
+
+      counter = safeCounter().toString(36).slice(-4);
+
+    return date.slice(-2) + 
+      counter + print + random;
+  };
+
+  api.globalCount = function globalCount() {
+    // We want to cache the results of this
+    var cache = (function calc() {
+        var i,
+          count = 0;
+
+        for (i in window) {
+          count++;
+        }
+
+        return count;
+      }());
+
+    api.globalCount = function () { return cache; };
+    return cache;
+  };
+
+  api.fingerprint = function browserPrint() {
+    return pad((navigator.mimeTypes.length +
+      navigator.userAgent.length).toString(36) +
+      api.globalCount().toString(36), 4);
+  };
+
+  // don't change anything from here down.
+  if (app.register) {
+    app.register(namespace, api);
+  } else if (typeof module !== 'undefined') {
+    module.exports = api;
+  } else {
+    app[namespace] = api;
+  }
+
+}(this.applitude || this));
+
+},{}],3:[function(require,module,exports){
 (function (global){
 var topLevel = typeof global !== 'undefined' ? global :
     typeof window !== 'undefined' ? window : {}
@@ -213,7 +362,7 @@ if (typeof document !== 'undefined') {
 }
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"min-document":124}],3:[function(require,module,exports){
+},{"min-document":124}],4:[function(require,module,exports){
 'use strict';
 
 var SingleEvent = require('geval/single');
@@ -314,7 +463,7 @@ function app(elem, observ, render, opts) {
     return observ(loop.update);
 }
 
-},{"dom-delegator":6,"geval/multiple":20,"geval/single":21,"main-loop":22,"observ":61,"observ-array":50,"observ-struct":56,"observ-varhash":58,"observ/computed":60,"observ/watch":62,"value-event/base-event":63,"value-event/change":64,"value-event/click":65,"value-event/event":66,"value-event/key":67,"value-event/submit":73,"value-event/value":74,"vdom-thunk":76,"vdom/create-element":80,"vdom/patch":86,"virtual-hyperscript":91,"virtual-hyperscript/svg":109,"vtree/diff":110,"xtend":121}],4:[function(require,module,exports){
+},{"dom-delegator":7,"geval/multiple":21,"geval/single":22,"main-loop":23,"observ":62,"observ-array":51,"observ-struct":57,"observ-varhash":59,"observ/computed":61,"observ/watch":63,"value-event/base-event":64,"value-event/change":65,"value-event/click":66,"value-event/event":67,"value-event/key":68,"value-event/submit":74,"value-event/value":75,"vdom-thunk":77,"vdom/create-element":81,"vdom/patch":87,"virtual-hyperscript":92,"virtual-hyperscript/svg":110,"vtree/diff":111,"xtend":122}],5:[function(require,module,exports){
 var DataSet = require("data-set")
 
 module.exports = addEvent
@@ -334,7 +483,7 @@ function addEvent(target, type, handler) {
     }
 }
 
-},{"data-set":9}],5:[function(require,module,exports){
+},{"data-set":10}],6:[function(require,module,exports){
 var globalDocument = require("global/document")
 var DataSet = require("data-set")
 var createStore = require("weakmap-shim/create-store")
@@ -523,7 +672,7 @@ function Handle() {
     this.type = "dom-delegator-handle"
 }
 
-},{"./add-event.js":4,"./proxy-event.js":17,"./remove-event.js":18,"data-set":9,"global/document":12,"weakmap-shim/create-store":15}],6:[function(require,module,exports){
+},{"./add-event.js":5,"./proxy-event.js":18,"./remove-event.js":19,"data-set":10,"global/document":13,"weakmap-shim/create-store":16}],7:[function(require,module,exports){
 var Individual = require("individual")
 var cuid = require("cuid")
 var globalDocument = require("global/document")
@@ -585,119 +734,9 @@ function Delegator(opts) {
 Delegator.allocateHandle = DOMDelegator.allocateHandle;
 Delegator.transformHandle = DOMDelegator.transformHandle;
 
-},{"./dom-delegator.js":5,"cuid":7,"global/document":12,"individual":13}],7:[function(require,module,exports){
-/**
- * cuid.js
- * Collision-resistant UID generator for browsers and node.
- * Sequential for fast db lookups and recency sorting.
- * Safe for element IDs and server-side lookups.
- *
- * Extracted from CLCTR
- * 
- * Copyright (c) Eric Elliott 2012
- * MIT License
- */
-
-/*global window, navigator, document, require, process, module */
-(function (app) {
-  'use strict';
-  var namespace = 'cuid',
-    c = 0,
-    blockSize = 4,
-    base = 36,
-    discreteValues = Math.pow(base, blockSize),
-
-    pad = function pad(num, size) {
-      var s = "000000000" + num;
-      return s.substr(s.length-size);
-    },
-
-    randomBlock = function randomBlock() {
-      return pad((Math.random() *
-            discreteValues << 0)
-            .toString(base), blockSize);
-    },
-
-    safeCounter = function () {
-      c = (c < discreteValues) ? c : 0;
-      c++; // this is not subliminal
-      return c - 1;
-    },
-
-    api = function cuid() {
-      // Starting with a lowercase letter makes
-      // it HTML element ID friendly.
-      var letter = 'c', // hard-coded allows for sequential access
-
-        // timestamp
-        // warning: this exposes the exact date and time
-        // that the uid was created.
-        timestamp = (new Date().getTime()).toString(base),
-
-        // Prevent same-machine collisions.
-        counter,
-
-        // A few chars to generate distinct ids for different
-        // clients (so different computers are far less
-        // likely to generate the same id)
-        fingerprint = api.fingerprint(),
-
-        // Grab some more chars from Math.random()
-        random = randomBlock() + randomBlock();
-
-        counter = pad(safeCounter().toString(base), blockSize);
-
-      return  (letter + timestamp + counter + fingerprint + random);
-    };
-
-  api.slug = function slug() {
-    var date = new Date().getTime().toString(36),
-      counter,
-      print = api.fingerprint().slice(0,1) +
-        api.fingerprint().slice(-1),
-      random = randomBlock().slice(-2);
-
-      counter = safeCounter().toString(36).slice(-4);
-
-    return date.slice(-2) + 
-      counter + print + random;
-  };
-
-  api.globalCount = function globalCount() {
-    // We want to cache the results of this
-    var cache = (function calc() {
-        var i,
-          count = 0;
-
-        for (i in window) {
-          count++;
-        }
-
-        return count;
-      }());
-
-    api.globalCount = function () { return cache; };
-    return cache;
-  };
-
-  api.fingerprint = function browserPrint() {
-    return pad((navigator.mimeTypes.length +
-      navigator.userAgent.length).toString(36) +
-      api.globalCount().toString(36), 4);
-  };
-
-  // don't change anything from here down.
-  if (app.register) {
-    app.register(namespace, api);
-  } else if (typeof module !== 'undefined') {
-    module.exports = api;
-  } else {
-    app[namespace] = api;
-  }
-
-}(this.applitude || this));
-
-},{}],8:[function(require,module,exports){
+},{"./dom-delegator.js":6,"cuid":8,"global/document":13,"individual":14}],8:[function(require,module,exports){
+module.exports=require(2)
+},{"/home/aaron/dev/youdo/frontend/node_modules/cuid/dist/browser-cuid.js":2}],9:[function(require,module,exports){
 module.exports = createHash
 
 function createHash(elem) {
@@ -721,7 +760,7 @@ function createHash(elem) {
     return hash
 }
 
-},{}],9:[function(require,module,exports){
+},{}],10:[function(require,module,exports){
 var createStore = require("weakmap-shim/create-store")
 var Individual = require("individual")
 
@@ -741,7 +780,7 @@ function DataSet(elem) {
     return store.hash
 }
 
-},{"./create-hash.js":8,"individual":13,"weakmap-shim/create-store":10}],10:[function(require,module,exports){
+},{"./create-hash.js":9,"individual":14,"weakmap-shim/create-store":11}],11:[function(require,module,exports){
 var hiddenStore = require('./hidden-store.js');
 
 module.exports = createStore;
@@ -760,7 +799,7 @@ function createStore() {
     };
 }
 
-},{"./hidden-store.js":11}],11:[function(require,module,exports){
+},{"./hidden-store.js":12}],12:[function(require,module,exports){
 module.exports = hiddenStore;
 
 function hiddenStore(obj, key) {
@@ -778,9 +817,9 @@ function hiddenStore(obj, key) {
     return store;
 }
 
-},{}],12:[function(require,module,exports){
-module.exports=require(2)
-},{"/home/aaron/dev/youdo/frontend/node_modules/global/document.js":2,"min-document":124}],13:[function(require,module,exports){
+},{}],13:[function(require,module,exports){
+module.exports=require(3)
+},{"/home/aaron/dev/youdo/frontend/node_modules/global/document.js":3,"min-document":124}],14:[function(require,module,exports){
 (function (global){
 var root = typeof window !== 'undefined' ?
     window : typeof global !== 'undefined' ?
@@ -802,7 +841,7 @@ function Individual(key, value) {
 }
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],14:[function(require,module,exports){
+},{}],15:[function(require,module,exports){
 if (typeof Object.create === 'function') {
   // implementation from standard node.js 'util' module
   module.exports = function inherits(ctor, superCtor) {
@@ -827,7 +866,7 @@ if (typeof Object.create === 'function') {
   }
 }
 
-},{}],15:[function(require,module,exports){
+},{}],16:[function(require,module,exports){
 var hiddenStore = require('./hidden-store.js');
 
 module.exports = createStore;
@@ -848,9 +887,9 @@ function createStore() {
     };
 }
 
-},{"./hidden-store.js":16}],16:[function(require,module,exports){
-module.exports=require(11)
-},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/dom-delegator/node_modules/data-set/node_modules/weakmap-shim/hidden-store.js":11}],17:[function(require,module,exports){
+},{"./hidden-store.js":17}],17:[function(require,module,exports){
+module.exports=require(12)
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/dom-delegator/node_modules/data-set/node_modules/weakmap-shim/hidden-store.js":12}],18:[function(require,module,exports){
 var inherits = require("inherits")
 
 var ALL_PROPS = [
@@ -930,7 +969,7 @@ function KeyEvent(ev) {
 
 inherits(KeyEvent, ProxyEvent)
 
-},{"inherits":14}],18:[function(require,module,exports){
+},{"inherits":15}],19:[function(require,module,exports){
 var DataSet = require("data-set")
 
 module.exports = removeEvent
@@ -951,7 +990,7 @@ function removeEvent(target, type, handler) {
     }
 }
 
-},{"data-set":9}],19:[function(require,module,exports){
+},{"data-set":10}],20:[function(require,module,exports){
 module.exports = Event
 
 function Event() {
@@ -979,7 +1018,7 @@ function Event() {
     }
 }
 
-},{}],20:[function(require,module,exports){
+},{}],21:[function(require,module,exports){
 var event = require("./single.js")
 
 module.exports = multiple
@@ -991,7 +1030,7 @@ function multiple(names) {
     }, {})
 }
 
-},{"./single.js":21}],21:[function(require,module,exports){
+},{"./single.js":22}],22:[function(require,module,exports){
 var Event = require('./event.js')
 
 module.exports = Single
@@ -1008,7 +1047,7 @@ function Single() {
     }
 }
 
-},{"./event.js":19}],22:[function(require,module,exports){
+},{"./event.js":20}],23:[function(require,module,exports){
 var raf = require("raf")
 var vtreeDiff = require("vtree/diff")
 var vdomCreate = require("vdom/create-element")
@@ -1088,7 +1127,7 @@ function main(initialState, view, opts) {
     }
 }
 
-},{"error/typed":25,"raf":26,"vdom/create-element":29,"vdom/patch":35,"vtree/diff":37}],23:[function(require,module,exports){
+},{"error/typed":26,"raf":27,"vdom/create-element":30,"vdom/patch":36,"vtree/diff":38}],24:[function(require,module,exports){
 module.exports = function(obj) {
     if (typeof obj === 'string') return camelCase(obj);
     return walk(obj);
@@ -1149,7 +1188,7 @@ function reduce (xs, f, acc) {
     return acc;
 }
 
-},{}],24:[function(require,module,exports){
+},{}],25:[function(require,module,exports){
 var nargs = /\{([0-9a-zA-Z]+)\}/g
 var slice = Array.prototype.slice
 
@@ -1185,7 +1224,7 @@ function template(string) {
     })
 }
 
-},{}],25:[function(require,module,exports){
+},{}],26:[function(require,module,exports){
 var camelize = require("camelize")
 var template = require("string-template")
 var extend = require("xtend/mutable")
@@ -1235,7 +1274,7 @@ function TypedError(args) {
 }
 
 
-},{"camelize":23,"string-template":24,"xtend/mutable":122}],26:[function(require,module,exports){
+},{"camelize":24,"string-template":25,"xtend/mutable":123}],27:[function(require,module,exports){
 var now = require('performance-now')
   , global = typeof window === 'undefined' ? {} : window
   , vendors = ['moz', 'webkit']
@@ -1317,7 +1356,7 @@ module.exports.cancel = function() {
   caf.apply(global, arguments)
 }
 
-},{"performance-now":27}],27:[function(require,module,exports){
+},{"performance-now":28}],28:[function(require,module,exports){
 (function (process){
 // Generated by CoffeeScript 1.6.3
 (function() {
@@ -1357,7 +1396,7 @@ module.exports.cancel = function() {
 */
 
 }).call(this,require('_process'))
-},{"_process":123}],28:[function(require,module,exports){
+},{"_process":125}],29:[function(require,module,exports){
 var isObject = require("is-object")
 var isHook = require("vtree/is-vhook")
 
@@ -1455,7 +1494,7 @@ function getPrototype(value) {
     }
 }
 
-},{"is-object":32,"vtree/is-vhook":40}],29:[function(require,module,exports){
+},{"is-object":33,"vtree/is-vhook":41}],30:[function(require,module,exports){
 var document = require("global/document")
 
 var applyProperties = require("./apply-properties")
@@ -1503,7 +1542,7 @@ function createElement(vnode, opts) {
     return node
 }
 
-},{"./apply-properties":28,"global/document":31,"vtree/handle-thunk":38,"vtree/is-vnode":41,"vtree/is-vtext":42,"vtree/is-widget":43}],30:[function(require,module,exports){
+},{"./apply-properties":29,"global/document":32,"vtree/handle-thunk":39,"vtree/is-vnode":42,"vtree/is-vtext":43,"vtree/is-widget":44}],31:[function(require,module,exports){
 // Maps a virtual DOM tree onto a real DOM tree in an efficient manner.
 // We don't want to read all of the DOM nodes in the tree so we use
 // the in-order tree indexing to eliminate recursion down certain branches.
@@ -1590,16 +1629,16 @@ function ascending(a, b) {
     return a > b ? 1 : -1
 }
 
-},{}],31:[function(require,module,exports){
-module.exports=require(2)
-},{"/home/aaron/dev/youdo/frontend/node_modules/global/document.js":2,"min-document":124}],32:[function(require,module,exports){
+},{}],32:[function(require,module,exports){
+module.exports=require(3)
+},{"/home/aaron/dev/youdo/frontend/node_modules/global/document.js":3,"min-document":124}],33:[function(require,module,exports){
 module.exports = isObject
 
 function isObject(x) {
     return typeof x === "object" && x !== null
 }
 
-},{}],33:[function(require,module,exports){
+},{}],34:[function(require,module,exports){
 var nativeIsArray = Array.isArray
 var toString = Object.prototype.toString
 
@@ -1609,7 +1648,7 @@ function isArray(obj) {
     return toString.call(obj) === "[object Array]"
 }
 
-},{}],34:[function(require,module,exports){
+},{}],35:[function(require,module,exports){
 var applyProperties = require("./apply-properties")
 
 var isWidget = require("vtree/is-widget")
@@ -1779,7 +1818,7 @@ function replaceRoot(oldRoot, newRoot) {
     return newRoot;
 }
 
-},{"./apply-properties":28,"./create-element":29,"./update-widget":36,"vtree/is-widget":43,"vtree/vpatch":47}],35:[function(require,module,exports){
+},{"./apply-properties":29,"./create-element":30,"./update-widget":37,"vtree/is-widget":44,"vtree/vpatch":48}],36:[function(require,module,exports){
 var document = require("global/document")
 var isArray = require("x-is-array")
 
@@ -1857,7 +1896,7 @@ function patchIndices(patches) {
     return indices
 }
 
-},{"./dom-index":30,"./patch-op":34,"global/document":31,"x-is-array":33}],36:[function(require,module,exports){
+},{"./dom-index":31,"./patch-op":35,"global/document":32,"x-is-array":34}],37:[function(require,module,exports){
 var isWidget = require("vtree/is-widget")
 
 module.exports = updateWidget
@@ -1874,7 +1913,7 @@ function updateWidget(a, b) {
     return false
 }
 
-},{"vtree/is-widget":43}],37:[function(require,module,exports){
+},{"vtree/is-widget":44}],38:[function(require,module,exports){
 var isArray = require("x-is-array")
 var isObject = require("is-object")
 
@@ -2190,7 +2229,7 @@ function appendPatch(apply, patch) {
     }
 }
 
-},{"./handle-thunk":38,"./is-thunk":39,"./is-vhook":40,"./is-vnode":41,"./is-vtext":42,"./is-widget":43,"./vpatch":47,"is-object":44,"x-is-array":45}],38:[function(require,module,exports){
+},{"./handle-thunk":39,"./is-thunk":40,"./is-vhook":41,"./is-vnode":42,"./is-vtext":43,"./is-widget":44,"./vpatch":48,"is-object":45,"x-is-array":46}],39:[function(require,module,exports){
 var isVNode = require("./is-vnode")
 var isVText = require("./is-vtext")
 var isWidget = require("./is-widget")
@@ -2232,14 +2271,14 @@ function renderThunk(thunk, previous) {
     return renderedThunk
 }
 
-},{"./is-thunk":39,"./is-vnode":41,"./is-vtext":42,"./is-widget":43}],39:[function(require,module,exports){
+},{"./is-thunk":40,"./is-vnode":42,"./is-vtext":43,"./is-widget":44}],40:[function(require,module,exports){
 module.exports = isThunk
 
 function isThunk(t) {
     return t && t.type === "Thunk"
 }
 
-},{}],40:[function(require,module,exports){
+},{}],41:[function(require,module,exports){
 module.exports = isHook
 
 function isHook(hook) {
@@ -2247,7 +2286,7 @@ function isHook(hook) {
         !hook.hasOwnProperty("hook")
 }
 
-},{}],41:[function(require,module,exports){
+},{}],42:[function(require,module,exports){
 var version = require("./version")
 
 module.exports = isVirtualNode
@@ -2256,7 +2295,7 @@ function isVirtualNode(x) {
     return x && x.type === "VirtualNode" && x.version === version
 }
 
-},{"./version":46}],42:[function(require,module,exports){
+},{"./version":47}],43:[function(require,module,exports){
 var version = require("./version")
 
 module.exports = isVirtualText
@@ -2265,21 +2304,21 @@ function isVirtualText(x) {
     return x && x.type === "VirtualText" && x.version === version
 }
 
-},{"./version":46}],43:[function(require,module,exports){
+},{"./version":47}],44:[function(require,module,exports){
 module.exports = isWidget
 
 function isWidget(w) {
     return w && w.type === "Widget"
 }
 
-},{}],44:[function(require,module,exports){
-module.exports=require(32)
-},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vdom/node_modules/is-object/index.js":32}],45:[function(require,module,exports){
+},{}],45:[function(require,module,exports){
 module.exports=require(33)
-},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vdom/node_modules/x-is-array/index.js":33}],46:[function(require,module,exports){
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vdom/node_modules/is-object/index.js":33}],46:[function(require,module,exports){
+module.exports=require(34)
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vdom/node_modules/x-is-array/index.js":34}],47:[function(require,module,exports){
 module.exports = "1"
 
-},{}],47:[function(require,module,exports){
+},{}],48:[function(require,module,exports){
 var version = require("./version")
 
 VirtualPatch.NONE = 0
@@ -2303,7 +2342,7 @@ function VirtualPatch(type, vNode, patch) {
 VirtualPatch.prototype.version = version
 VirtualPatch.prototype.type = "VirtualPatch"
 
-},{"./version":46}],48:[function(require,module,exports){
+},{"./version":47}],49:[function(require,module,exports){
 var setNonEnumerable = require("./lib/set-non-enumerable.js");
 
 module.exports = addListener
@@ -2333,7 +2372,7 @@ function addListener(observArray, observ) {
     })
 }
 
-},{"./lib/set-non-enumerable.js":51}],49:[function(require,module,exports){
+},{"./lib/set-non-enumerable.js":52}],50:[function(require,module,exports){
 var ObservArray = require("./index.js")
 
 var slice = Array.prototype.slice
@@ -2400,7 +2439,7 @@ function notImplemented() {
     throw new Error("Pull request welcome")
 }
 
-},{"./index.js":50}],50:[function(require,module,exports){
+},{"./index.js":51}],51:[function(require,module,exports){
 var Observ = require("observ")
 
 // circular dep between ArrayMethods & this file
@@ -2479,7 +2518,7 @@ function getLength() {
     return this._list.length
 }
 
-},{"./add-listener.js":48,"./array-methods.js":49,"./put.js":53,"./splice.js":54,"./transaction.js":55,"observ":61}],51:[function(require,module,exports){
+},{"./add-listener.js":49,"./array-methods.js":50,"./put.js":54,"./splice.js":55,"./transaction.js":56,"observ":62}],52:[function(require,module,exports){
 module.exports = setNonEnumerable;
 
 function setNonEnumerable(object, key, value) {
@@ -2491,7 +2530,7 @@ function setNonEnumerable(object, key, value) {
     });
 }
 
-},{}],52:[function(require,module,exports){
+},{}],53:[function(require,module,exports){
 function head (a) {
   return a[0]
 }
@@ -2794,7 +2833,7 @@ var exports = module.exports = function (deps, exports) {
 }
 exports(null, exports)
 
-},{}],53:[function(require,module,exports){
+},{}],54:[function(require,module,exports){
 var addListener = require("./add-listener.js")
 var setNonEnumerable = require("./lib/set-non-enumerable.js");
 
@@ -2833,7 +2872,7 @@ function put(index, value) {
     obs.set(valueList)
     return value
 }
-},{"./add-listener.js":48,"./lib/set-non-enumerable.js":51}],54:[function(require,module,exports){
+},{"./add-listener.js":49,"./lib/set-non-enumerable.js":52}],55:[function(require,module,exports){
 var slice = Array.prototype.slice
 
 var addListener = require("./add-listener.js")
@@ -2885,7 +2924,7 @@ function splice(index, amount) {
     return removed
 }
 
-},{"./add-listener.js":48,"./lib/set-non-enumerable.js":51}],55:[function(require,module,exports){
+},{"./add-listener.js":49,"./lib/set-non-enumerable.js":52}],56:[function(require,module,exports){
 var addListener = require("./add-listener.js")
 var setNonEnumerable = require("./lib/set-non-enumerable.js")
 var adiff = require("adiff")
@@ -2943,7 +2982,7 @@ function unpack(value, index){
     }
     return typeof value === "function" ? value() : value
 }
-},{"./add-listener.js":48,"./lib/set-non-enumerable.js":51,"adiff":52}],56:[function(require,module,exports){
+},{"./add-listener.js":49,"./lib/set-non-enumerable.js":52,"adiff":53}],57:[function(require,module,exports){
 var Observ = require("observ")
 var extend = require("xtend")
 
@@ -3053,7 +3092,7 @@ function ObservStruct(struct) {
     return obs
 }
 
-},{"observ":61,"xtend":57}],57:[function(require,module,exports){
+},{"observ":62,"xtend":58}],58:[function(require,module,exports){
 module.exports = extend
 
 function extend() {
@@ -3072,7 +3111,7 @@ function extend() {
     return target
 }
 
-},{}],58:[function(require,module,exports){
+},{}],59:[function(require,module,exports){
 var Observ = require('observ')
 var extend = require('xtend')
 
@@ -3231,9 +3270,9 @@ function checkKey (key) {
   )
 }
 
-},{"observ":61,"xtend":59}],59:[function(require,module,exports){
-module.exports=require(57)
-},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/observ-struct/node_modules/xtend/index.js":57}],60:[function(require,module,exports){
+},{"observ":62,"xtend":60}],60:[function(require,module,exports){
+module.exports=require(58)
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/observ-struct/node_modules/xtend/index.js":58}],61:[function(require,module,exports){
 var Observable = require("./index.js")
 
 module.exports = computed
@@ -3254,7 +3293,7 @@ function computed(observables, lambda) {
     return result
 }
 
-},{"./index.js":61}],61:[function(require,module,exports){
+},{"./index.js":62}],62:[function(require,module,exports){
 module.exports = Observable
 
 function Observable(value) {
@@ -3283,7 +3322,7 @@ function Observable(value) {
     }
 }
 
-},{}],62:[function(require,module,exports){
+},{}],63:[function(require,module,exports){
 module.exports = watch
 
 function watch(observable, listener) {
@@ -3292,7 +3331,7 @@ function watch(observable, listener) {
     return remove
 }
 
-},{}],63:[function(require,module,exports){
+},{}],64:[function(require,module,exports){
 var Delegator = require('dom-delegator')
 
 module.exports = BaseEvent
@@ -3343,7 +3382,7 @@ function BaseEvent(lambda) {
     }
 }
 
-},{"dom-delegator":6}],64:[function(require,module,exports){
+},{"dom-delegator":7}],65:[function(require,module,exports){
 var extend = require('xtend')
 var getFormData = require('form-data-set/element')
 
@@ -3376,7 +3415,7 @@ function changeLambda(ev, broadcast) {
     broadcast(data)
 }
 
-},{"./base-event.js":63,"form-data-set/element":69,"xtend":72}],65:[function(require,module,exports){
+},{"./base-event.js":64,"form-data-set/element":70,"xtend":73}],66:[function(require,module,exports){
 var BaseEvent = require('./base-event.js');
 
 module.exports = BaseEvent(clickLambda);
@@ -3403,7 +3442,7 @@ function clickLambda(ev, broadcast) {
     broadcast(this.data);
 }
 
-},{"./base-event.js":63}],66:[function(require,module,exports){
+},{"./base-event.js":64}],67:[function(require,module,exports){
 var BaseEvent = require('./base-event.js');
 
 module.exports = BaseEvent(eventLambda);
@@ -3412,7 +3451,7 @@ function eventLambda(ev, broadcast) {
     broadcast(this.data);
 }
 
-},{"./base-event.js":63}],67:[function(require,module,exports){
+},{"./base-event.js":64}],68:[function(require,module,exports){
 var BaseEvent = require('./base-event.js');
 
 module.exports = BaseEvent(keyLambda);
@@ -3425,7 +3464,7 @@ function keyLambda(ev, broadcast) {
     }
 }
 
-},{"./base-event.js":63}],68:[function(require,module,exports){
+},{"./base-event.js":64}],69:[function(require,module,exports){
 var slice = Array.prototype.slice
 
 module.exports = iterativelyWalk
@@ -3451,7 +3490,7 @@ function iterativelyWalk(nodes, cb) {
     }
 }
 
-},{}],69:[function(require,module,exports){
+},{}],70:[function(require,module,exports){
 var walk = require('dom-walk')
 
 var FormData = require('./index.js')
@@ -3477,7 +3516,7 @@ function getFormData(rootElem) {
     return FormData(elements)
 }
 
-},{"./index.js":70,"dom-walk":68}],70:[function(require,module,exports){
+},{"./index.js":71,"dom-walk":69}],71:[function(require,module,exports){
 /*jshint maxcomplexity: 10*/
 
 module.exports = FormData
@@ -3554,7 +3593,7 @@ function filterNull(val) {
     return val !== null
 }
 
-},{}],71:[function(require,module,exports){
+},{}],72:[function(require,module,exports){
 module.exports = hasKeys
 
 function hasKeys(source) {
@@ -3563,7 +3602,7 @@ function hasKeys(source) {
         typeof source === "function")
 }
 
-},{}],72:[function(require,module,exports){
+},{}],73:[function(require,module,exports){
 var hasKeys = require("./has-keys")
 
 module.exports = extend
@@ -3588,7 +3627,7 @@ function extend() {
     return target
 }
 
-},{"./has-keys":71}],73:[function(require,module,exports){
+},{"./has-keys":72}],74:[function(require,module,exports){
 var extend = require('xtend')
 var getFormData = require('form-data-set/element')
 
@@ -3626,7 +3665,7 @@ function submitLambda(ev, broadcast) {
     broadcast(data);
 }
 
-},{"./base-event.js":63,"form-data-set/element":69,"xtend":72}],74:[function(require,module,exports){
+},{"./base-event.js":64,"form-data-set/element":70,"xtend":73}],75:[function(require,module,exports){
 var extend = require('xtend')
 var getFormData = require('form-data-set/element')
 
@@ -3641,7 +3680,7 @@ function valueLambda(ev, broadcast) {
     broadcast(data);
 }
 
-},{"./base-event.js":63,"form-data-set/element":69,"xtend":72}],75:[function(require,module,exports){
+},{"./base-event.js":64,"form-data-set/element":70,"xtend":73}],76:[function(require,module,exports){
 function Thunk(fn, args, key, eqArgs) {
     this.fn = fn;
     this.args = args;
@@ -3672,12 +3711,12 @@ function render(previous) {
     }
 }
 
-},{}],76:[function(require,module,exports){
+},{}],77:[function(require,module,exports){
 var Partial = require('./partial');
 
 module.exports = Partial();
 
-},{"./partial":77}],77:[function(require,module,exports){
+},{"./partial":78}],78:[function(require,module,exports){
 var shallowEq = require('./shallow-eq');
 var Thunk = require('./immutable-thunk');
 
@@ -3711,7 +3750,7 @@ function copyOver(list, offset) {
     return newList;
 }
 
-},{"./immutable-thunk":75,"./shallow-eq":78}],78:[function(require,module,exports){
+},{"./immutable-thunk":76,"./shallow-eq":79}],79:[function(require,module,exports){
 module.exports = shallowEq;
 
 function shallowEq(currentArgs, previousArgs) {
@@ -3734,25 +3773,25 @@ function shallowEq(currentArgs, previousArgs) {
     return true;
 }
 
-},{}],79:[function(require,module,exports){
-module.exports=require(28)
-},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vdom/apply-properties.js":28,"is-object":83,"vtree/is-vhook":113}],80:[function(require,module,exports){
+},{}],80:[function(require,module,exports){
 module.exports=require(29)
-},{"./apply-properties":79,"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vdom/create-element.js":29,"global/document":82,"vtree/handle-thunk":111,"vtree/is-vnode":114,"vtree/is-vtext":115,"vtree/is-widget":116}],81:[function(require,module,exports){
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vdom/apply-properties.js":29,"is-object":84,"vtree/is-vhook":114}],81:[function(require,module,exports){
 module.exports=require(30)
-},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vdom/dom-index.js":30}],82:[function(require,module,exports){
-module.exports=require(2)
-},{"/home/aaron/dev/youdo/frontend/node_modules/global/document.js":2,"min-document":124}],83:[function(require,module,exports){
-module.exports=require(32)
-},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vdom/node_modules/is-object/index.js":32}],84:[function(require,module,exports){
+},{"./apply-properties":80,"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vdom/create-element.js":30,"global/document":83,"vtree/handle-thunk":112,"vtree/is-vnode":115,"vtree/is-vtext":116,"vtree/is-widget":117}],82:[function(require,module,exports){
+module.exports=require(31)
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vdom/dom-index.js":31}],83:[function(require,module,exports){
+module.exports=require(3)
+},{"/home/aaron/dev/youdo/frontend/node_modules/global/document.js":3,"min-document":124}],84:[function(require,module,exports){
 module.exports=require(33)
-},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vdom/node_modules/x-is-array/index.js":33}],85:[function(require,module,exports){
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vdom/node_modules/is-object/index.js":33}],85:[function(require,module,exports){
 module.exports=require(34)
-},{"./apply-properties":79,"./create-element":80,"./update-widget":87,"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vdom/patch-op.js":34,"vtree/is-widget":116,"vtree/vpatch":120}],86:[function(require,module,exports){
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vdom/node_modules/x-is-array/index.js":34}],86:[function(require,module,exports){
 module.exports=require(35)
-},{"./dom-index":81,"./patch-op":85,"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vdom/patch.js":35,"global/document":82,"x-is-array":84}],87:[function(require,module,exports){
+},{"./apply-properties":80,"./create-element":81,"./update-widget":88,"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vdom/patch-op.js":35,"vtree/is-widget":117,"vtree/vpatch":121}],87:[function(require,module,exports){
 module.exports=require(36)
-},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vdom/update-widget.js":36,"vtree/is-widget":116}],88:[function(require,module,exports){
+},{"./dom-index":82,"./patch-op":86,"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vdom/patch.js":36,"global/document":83,"x-is-array":85}],88:[function(require,module,exports){
+module.exports=require(37)
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vdom/update-widget.js":37,"vtree/is-widget":117}],89:[function(require,module,exports){
 var DataSet = require("data-set")
 
 module.exports = DataSetHook;
@@ -3772,7 +3811,7 @@ DataSetHook.prototype.hook = function (node, propertyName) {
     ds[propName] = this.value;
 };
 
-},{"data-set":93}],89:[function(require,module,exports){
+},{"data-set":94}],90:[function(require,module,exports){
 var DataSet = require("data-set")
 
 module.exports = DataSetHook;
@@ -3799,7 +3838,7 @@ DataSetHook.prototype.unhook = function(node, propertyName) {
     ds[propName] = undefined;
 }
 
-},{"data-set":93}],90:[function(require,module,exports){
+},{"data-set":94}],91:[function(require,module,exports){
 module.exports = SoftSetHook;
 
 function SoftSetHook(value) {
@@ -3816,7 +3855,7 @@ SoftSetHook.prototype.hook = function (node, propertyName) {
     }
 };
 
-},{}],91:[function(require,module,exports){
+},{}],92:[function(require,module,exports){
 var TypedError = require("error/typed")
 
 var VNode = require("vtree/vnode.js")
@@ -3945,35 +3984,35 @@ function isChildren(x) {
     return typeof x === "string" || Array.isArray(x) || isChild(x)
 }
 
-},{"./hooks/data-set-hook.js":88,"./hooks/ev-hook.js":89,"./hooks/soft-set-hook.js":90,"./parse-tag.js":108,"error/typed":99,"vtree/is-thunk":100,"vtree/is-vhook":101,"vtree/is-vnode":102,"vtree/is-vtext":103,"vtree/is-widget":104,"vtree/vnode.js":106,"vtree/vtext.js":107}],92:[function(require,module,exports){
-module.exports=require(8)
-},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/dom-delegator/node_modules/data-set/create-hash.js":8}],93:[function(require,module,exports){
+},{"./hooks/data-set-hook.js":89,"./hooks/ev-hook.js":90,"./hooks/soft-set-hook.js":91,"./parse-tag.js":109,"error/typed":100,"vtree/is-thunk":101,"vtree/is-vhook":102,"vtree/is-vnode":103,"vtree/is-vtext":104,"vtree/is-widget":105,"vtree/vnode.js":107,"vtree/vtext.js":108}],93:[function(require,module,exports){
 module.exports=require(9)
-},{"./create-hash.js":92,"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/dom-delegator/node_modules/data-set/index.js":9,"individual":94,"weakmap-shim/create-store":95}],94:[function(require,module,exports){
-module.exports=require(13)
-},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/dom-delegator/node_modules/individual/index.js":13}],95:[function(require,module,exports){
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/dom-delegator/node_modules/data-set/create-hash.js":9}],94:[function(require,module,exports){
 module.exports=require(10)
-},{"./hidden-store.js":96,"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/dom-delegator/node_modules/data-set/node_modules/weakmap-shim/create-store.js":10}],96:[function(require,module,exports){
+},{"./create-hash.js":93,"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/dom-delegator/node_modules/data-set/index.js":10,"individual":95,"weakmap-shim/create-store":96}],95:[function(require,module,exports){
+module.exports=require(14)
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/dom-delegator/node_modules/individual/index.js":14}],96:[function(require,module,exports){
 module.exports=require(11)
-},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/dom-delegator/node_modules/data-set/node_modules/weakmap-shim/hidden-store.js":11}],97:[function(require,module,exports){
-module.exports=require(23)
-},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/error/node_modules/camelize/index.js":23}],98:[function(require,module,exports){
+},{"./hidden-store.js":97,"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/dom-delegator/node_modules/data-set/node_modules/weakmap-shim/create-store.js":11}],97:[function(require,module,exports){
+module.exports=require(12)
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/dom-delegator/node_modules/data-set/node_modules/weakmap-shim/hidden-store.js":12}],98:[function(require,module,exports){
 module.exports=require(24)
-},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/error/node_modules/string-template/index.js":24}],99:[function(require,module,exports){
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/error/node_modules/camelize/index.js":24}],99:[function(require,module,exports){
 module.exports=require(25)
-},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/error/typed.js":25,"camelize":97,"string-template":98,"xtend/mutable":122}],100:[function(require,module,exports){
-module.exports=require(39)
-},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vtree/is-thunk.js":39}],101:[function(require,module,exports){
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/error/node_modules/string-template/index.js":25}],100:[function(require,module,exports){
+module.exports=require(26)
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/error/typed.js":26,"camelize":98,"string-template":99,"xtend/mutable":123}],101:[function(require,module,exports){
 module.exports=require(40)
-},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vtree/is-vhook.js":40}],102:[function(require,module,exports){
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vtree/is-thunk.js":40}],102:[function(require,module,exports){
 module.exports=require(41)
-},{"./version":105,"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vtree/is-vnode.js":41}],103:[function(require,module,exports){
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vtree/is-vhook.js":41}],103:[function(require,module,exports){
 module.exports=require(42)
-},{"./version":105,"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vtree/is-vtext.js":42}],104:[function(require,module,exports){
+},{"./version":106,"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vtree/is-vnode.js":42}],104:[function(require,module,exports){
 module.exports=require(43)
-},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vtree/is-widget.js":43}],105:[function(require,module,exports){
-module.exports=require(46)
-},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vtree/version.js":46}],106:[function(require,module,exports){
+},{"./version":106,"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vtree/is-vtext.js":43}],105:[function(require,module,exports){
+module.exports=require(44)
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vtree/is-widget.js":44}],106:[function(require,module,exports){
+module.exports=require(47)
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vtree/version.js":47}],107:[function(require,module,exports){
 var version = require("./version")
 var isVNode = require("./is-vnode")
 var isWidget = require("./is-widget")
@@ -4017,7 +4056,7 @@ function VirtualNode(tagName, properties, children, key, namespace) {
 VirtualNode.prototype.version = version
 VirtualNode.prototype.type = "VirtualNode"
 
-},{"./is-vhook":101,"./is-vnode":102,"./is-widget":104,"./version":105}],107:[function(require,module,exports){
+},{"./is-vhook":102,"./is-vnode":103,"./is-widget":105,"./version":106}],108:[function(require,module,exports){
 var version = require("./version")
 
 module.exports = VirtualText
@@ -4029,7 +4068,7 @@ function VirtualText(text) {
 VirtualText.prototype.version = version
 VirtualText.prototype.type = "VirtualText"
 
-},{"./version":105}],108:[function(require,module,exports){
+},{"./version":106}],109:[function(require,module,exports){
 var classIdSplit = /([\.#]?[a-zA-Z0-9_:-]+)/
 var notClassId = /^\.|#/
 
@@ -4080,7 +4119,7 @@ function parseTag(tag, props) {
     return tagName ? tagName.toLowerCase() : "div"
 }
 
-},{}],109:[function(require,module,exports){
+},{}],110:[function(require,module,exports){
 var h = require("./index.js")
 
 var BLACKLISTED_KEYS = {
@@ -4134,31 +4173,31 @@ function isChildren(x) {
     return typeof x === "string" || Array.isArray(x)
 }
 
-},{"./index.js":91}],110:[function(require,module,exports){
-module.exports=require(37)
-},{"./handle-thunk":111,"./is-thunk":112,"./is-vhook":113,"./is-vnode":114,"./is-vtext":115,"./is-widget":116,"./vpatch":120,"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vtree/diff.js":37,"is-object":117,"x-is-array":118}],111:[function(require,module,exports){
+},{"./index.js":92}],111:[function(require,module,exports){
 module.exports=require(38)
-},{"./is-thunk":112,"./is-vnode":114,"./is-vtext":115,"./is-widget":116,"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vtree/handle-thunk.js":38}],112:[function(require,module,exports){
+},{"./handle-thunk":112,"./is-thunk":113,"./is-vhook":114,"./is-vnode":115,"./is-vtext":116,"./is-widget":117,"./vpatch":121,"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vtree/diff.js":38,"is-object":118,"x-is-array":119}],112:[function(require,module,exports){
 module.exports=require(39)
-},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vtree/is-thunk.js":39}],113:[function(require,module,exports){
+},{"./is-thunk":113,"./is-vnode":115,"./is-vtext":116,"./is-widget":117,"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vtree/handle-thunk.js":39}],113:[function(require,module,exports){
 module.exports=require(40)
-},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vtree/is-vhook.js":40}],114:[function(require,module,exports){
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vtree/is-thunk.js":40}],114:[function(require,module,exports){
 module.exports=require(41)
-},{"./version":119,"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vtree/is-vnode.js":41}],115:[function(require,module,exports){
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vtree/is-vhook.js":41}],115:[function(require,module,exports){
 module.exports=require(42)
-},{"./version":119,"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vtree/is-vtext.js":42}],116:[function(require,module,exports){
+},{"./version":120,"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vtree/is-vnode.js":42}],116:[function(require,module,exports){
 module.exports=require(43)
-},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vtree/is-widget.js":43}],117:[function(require,module,exports){
-module.exports=require(32)
-},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vdom/node_modules/is-object/index.js":32}],118:[function(require,module,exports){
+},{"./version":120,"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vtree/is-vtext.js":43}],117:[function(require,module,exports){
+module.exports=require(44)
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vtree/is-widget.js":44}],118:[function(require,module,exports){
 module.exports=require(33)
-},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vdom/node_modules/x-is-array/index.js":33}],119:[function(require,module,exports){
-module.exports=require(46)
-},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vtree/version.js":46}],120:[function(require,module,exports){
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vdom/node_modules/is-object/index.js":33}],119:[function(require,module,exports){
+module.exports=require(34)
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vdom/node_modules/x-is-array/index.js":34}],120:[function(require,module,exports){
 module.exports=require(47)
-},{"./version":119,"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vtree/vpatch.js":47}],121:[function(require,module,exports){
-module.exports=require(57)
-},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/observ-struct/node_modules/xtend/index.js":57}],122:[function(require,module,exports){
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vtree/version.js":47}],121:[function(require,module,exports){
+module.exports=require(48)
+},{"./version":120,"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/main-loop/node_modules/vtree/vpatch.js":48}],122:[function(require,module,exports){
+module.exports=require(58)
+},{"/home/aaron/dev/youdo/frontend/node_modules/mercury/node_modules/observ-struct/node_modules/xtend/index.js":58}],123:[function(require,module,exports){
 module.exports = extend
 
 function extend(target) {
@@ -4175,7 +4214,9 @@ function extend(target) {
     return target
 }
 
-},{}],123:[function(require,module,exports){
+},{}],124:[function(require,module,exports){
+
+},{}],125:[function(require,module,exports){
 // shim for using process in browser
 
 var process = module.exports = {};
@@ -4262,7 +4303,5 @@ process.cwd = function () { return '/' };
 process.chdir = function (dir) {
     throw new Error('process.chdir is not supported');
 };
-
-},{}],124:[function(require,module,exports){
 
 },{}]},{},[1]);
