@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+
+readonly PROGNAME=$(basename $0)
+readonly PROGDIR=$(readlink -m $(dirname $0))
+readonly ARGS="$@"
+
+usage() {
+
+  cat <<- EOF
+	usage: $PROGNAME options
+	
+	This script will start postgres in the background. The user will explicitly
+	specify the directory holding data to be used by postgres. This script will
+	also create a databse and user.
+
+	This script should only be used for testing as the permissions and database
+	are highly insecure.
+
+	OPTIONS:
+	  -d --database   name of database to be created
+	  -h --help       view this message
+	  -p --pgdir      location of data directory
+	  -s --schema     a .sql file that will create the database and tables
+	  -u --user       postgres user
+	EOF
+}
+
+cmdline() {
+  local arg=
+  for arg
+  do
+    local delim=""
+    case "$arg" in
+      # translate --gnu-long-options to -g (short optiosn)
+      --database)       args="${args}-d ";;
+      --help)           args="${args}-h ";;
+      --pgdir)          args="${args}-p ";;
+      --schema)         args="${args}-s ";;
+      --user)           args="${args}-u ";;
+      # pass through everything else
+      *) [[ "${arg:0:1}" == "-" ]] || delim="\""
+        args="${args}${delim}${arg}${delim} ";;
+    esac
+  done
+
+  eval set -- $args
+
+  while getopts "d:hp:s:u:" OPTION
+  do
+    case $OPTION in
+      d)
+        readonly YOUDO_DB=$OPTARG
+        ;;
+      h)
+        usage
+        exit 0
+        ;;
+      p)
+        readonly PG_DIR=$OPTARG
+        ;;
+      s)
+        readonly YOUDO_SCHEMA=$OPTARG
+        ;;
+      u)
+        readonly PG_USER=$OPTARG
+        ;;
+    esac
+  done
+
+  if [[ ! -f $PG_DIR || ! -f $PG_USER || ! -f $YOUDO_DB || ! -f $YOUDO_USER ]]; then
+    echo -e "ERROR: You must provide all arguments\n"
+    usage
+    exit -1
+  fi
+  return 0
+
+}
+
+# ping process and find state
+process_status() {
+  local pgdir="${1}"
+
+  pg_ctl status -D "${pgdir}" \
+    | head -n 1 \
+    | grep -oP "(?<=pg_ctl:\s)[\w-]+(?=\s.*)"
+}
+
+main() {
+  cmdline $ARGS
+
+  # create the postgres database stuff in directory pg
+  initdb "${PG_DIR}"
+
+  # start postgres in the background
+  postgres -D "${PG_DIR}" &
+
+  # loop until "singer-user" mode exists into "server" mode
+  local postgres_status="single-user"
+  while [[ $postgres_status == "single-user" ]]; do
+    sleep 1
+    postgres_status=$(process_status)
+  done
+
+  # create postgres user
+  createuser "${PG_USER}"
+
+  # create galene db
+  createdb "${YOUDO_DB}"
+
+  # load schema
+  psql -U "${PG_USER}" -d "${YOUDO_DB}" -a -f "${YOUDO_SCHEMA}"
+}
+
+main
