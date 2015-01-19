@@ -67,7 +67,12 @@ cmdline() {
     esac
   done
 
-  if [[ ! -f $PG_DIR || ! -f $PG_USER || ! -f $YOUDO_DB || ! -f $YOUDO_USER ]]; then
+  echo "PG_DIR: $PG_DIR"
+  echo "PG_USER: $PG_USER"
+  echo "YOUDO_DB: $YOUDO_DB"
+  echo "YOUDO_SCHEMA: $YOUDO_SCHEMA"
+
+  if [[ -z $PG_DIR || -z $PG_USER || -z $YOUDO_DB || -z $YOUDO_SCHEMA ]]; then
     echo -e "ERROR: You must provide all arguments\n"
     usage
     exit -1
@@ -88,6 +93,9 @@ process_status() {
 main() {
   cmdline $ARGS
 
+  # Create directory if it doesn't exist
+  mkdir -p "${PG_DIR}"
+
   # create the postgres database stuff in directory pg
   initdb "${PG_DIR}"
 
@@ -101,7 +109,7 @@ main() {
     postgres_status=$(process_status)
   done
 
-  # create postgres user
+  # create postgres user. Commented out for now.
   createuser "${PG_USER}"
 
   # create galene db
