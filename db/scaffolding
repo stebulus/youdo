@@ -109,14 +109,15 @@ main() {
     postgres_status=$(process_status)
   done
 
-  # create postgres user. Commented out for now.
-  createuser "${PG_USER}"
+  # create postgres user.
+  createuser -r "${PG_USER}"
 
-  # create galene db
+  # create db
   createdb "${YOUDO_DB}"
 
   # load schema
   psql -U "${PG_USER}" -d "${YOUDO_DB}" -a -f "${YOUDO_SCHEMA}"
-}
 
+  psql -U "${PG_USER}" -d "${YOUDO_DB}" -a -f <(echo "GRANT USAGE ON SCHEMA public TO ydserver;")
+}
 main
