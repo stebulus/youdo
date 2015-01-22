@@ -3,6 +3,8 @@
 var document = require('global/document');
 var hg = require('mercury');
 var h = require('mercury').h;
+var cuid = require('cuid');
+// var hogan = require('hogan.js');
 
 /**
  * Regex to capture the date
@@ -72,7 +74,7 @@ var youDoReducer = function(acc, value) {
  *       , buffer: [] // array of characters
  *       }
  */
-var youDoReducerStyler = function(acc, value) {
+var youDoReducerStyler = function(acc, value, index) {
 
   if(value == '@') {
     acc.styledText.unshift(h('span.red', '@' + acc.buffer.join("")));
@@ -83,6 +85,8 @@ var youDoReducerStyler = function(acc, value) {
   } else if (value == ' ') {
     acc.styledText.unshift(' ' + acc.buffer.join(""));
     acc.buffer = [];
+  } else if (index == 0) {
+    acc.styledText.unshift(value + acc.buffer.join(""));
   } else {
     acc.buffer.unshift(value);
   }
@@ -95,7 +99,42 @@ var youDoReducerStyler = function(acc, value) {
  * YouDo state
  */
 function YouDo() {
+
+  var id = cuid();
+
+  $(document).ready(function() {
+
+    /**
+     * Typeahead support
+     */
+    $('#' + id).typeahead({
+      hint: true,
+      highlight: true,
+      minLength: 1
+    },{
+      name: 'states',
+      displayKey: 'value',
+      templates: {
+        suggestion: function(e) {
+          return '<p>' + e.suggestion + '</p>';
+        }
+      },
+      // TODO: source actually queries database.
+      source: function(query, cb) {
+
+        cb(query
+            .split('')
+            .reduceRight(youDoReducer, initYouDoReducerState())
+            .mentions
+            .map(function(i) { return {suggestion:i, value: query}; })
+          );
+      }
+    });
+
+  });
+
   return hg.state({
+    id: hg.value(id),
     text: hg.value(''),
     who: hg.value(''),
     when: hg.value(''),
@@ -111,8 +150,9 @@ function YouDo() {
 /**
  * Helper function to create an input element
  */
-function inputBox(value, sink, finish) {
+function inputBox(id, value, sink, finish) {
   return h('form', {role: "form"}, h('div.form-group', h('input.form-control', {
+    id: id,
     value: value,
     name: 'text',
     type: 'text',
@@ -174,8 +214,9 @@ function save(state, data) {
  */
 YouDo.render = function render(state) {
 
+
   return h('div', [
-      inputBox(state.text, state.handles.change, state.handles.finishEdit),
+      inputBox(state.id, state.text, state.handles.change, state.handles.finishEdit),
       h('p.content',
         state
           .text
