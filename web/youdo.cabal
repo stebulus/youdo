@@ -84,7 +84,6 @@ Test-Suite test-time
                        , Cabal >=1.20
 
                        , QuickCheck ==2.7.*
-                       , cabal-test-quickcheck ==0.1.*
 
                        , text ==1.2.*
                        , time ==1.4.*
