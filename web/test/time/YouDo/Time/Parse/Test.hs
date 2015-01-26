@@ -20,6 +20,7 @@ import qualified Distribution.TestSuite as TS
 import YouDo.Time.Parse
 
 -- support for quick check without cabal-test-quickcheck
+-- stolen from: https://www.fpcomplete.com/user/griba/quickCheck-in-test-suite-type-detailed
 toTSResult :: Q.Result -> TS.Result
 toTSResult Q.Success {} = TS.Pass
 toTSResult Q.GaveUp {} = TS.Fail "GaveUp"
