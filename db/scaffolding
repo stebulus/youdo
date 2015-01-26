@@ -67,11 +67,6 @@ cmdline() {
     esac
   done
 
-  echo "PG_DIR: $PG_DIR"
-  echo "PG_USER: $PG_USER"
-  echo "YOUDO_DB: $YOUDO_DB"
-  echo "YOUDO_SCHEMA: $YOUDO_SCHEMA"
-
   if [[ -z $PG_DIR || -z $PG_USER || -z $YOUDO_DB || -z $YOUDO_SCHEMA ]]; then
     echo -e "ERROR: You must provide all arguments\n"
     usage
