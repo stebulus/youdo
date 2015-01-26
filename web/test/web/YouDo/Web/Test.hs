@@ -244,7 +244,7 @@ tests = return $
         (datestr, descr, errmsg)
             <- [ ( "2014-11-30T14_10:05.038Z", "misformatted date",
                  "parsing UTC time / parsing time / expected ':' / \
-                 \Failed reading: satisfyElem / next characters: _10:05.038" )
+                 \Failed reading: satisfy / next characters: _10:05.038" )
                , ( "snee", "completely misformatted date",
                  "parsing UTC time / parsing date / parsing year (YYYY) / \
                  \Failed reading: takeWhile1 / next characters: snee" )
@@ -262,8 +262,7 @@ tests = return $
                                   \&duedate=" ++ datestr ++ "&completed=false"))
                         <> header "Content-Type" "application/x-www-form-urlencoded"
                     stat ~= badRequest400
-                    bod ~= LB.pack ("cannot parse parameter \"duedate\": "
-                                    ++ errmsg ++ "\r\n")
+                    bod ~= LB.pack ("cannot parse parameter \"duedate\": " ++ errmsg ++ "\r\n")
              , serverTest ("new youdo, json data, " ++ descr) $ \req -> do
                     (stat, _, bod) <- liftIO $ req
                         $ post "http://example.com/0/youdos"
@@ -275,9 +274,8 @@ tests = return $
                                      \\"completed\":false}"))
                         <> header "Content-Type" "application/json"
                     stat ~= badRequest400
-                    bod ~= LB.pack ("cannot parse parameter \"duedate\": "
-                                    ++ errmsg ++ "\r\n")
-             , plainTest ("holex parsing, " ++ descr) $ do
+                    bod ~= LB.pack ("cannot parse parameter \"duedate\": " ++ errmsg ++ "\r\n")
+             , plainTest ("holex parsing, " ++ descr) $
                     evaluateNoURI (parse "duedate" :: RequestParser DueDate)
                               [("duedate", JSONField (String $ T.pack datestr))]
                         ~= Left [ParseError "duedate"

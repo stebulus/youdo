@@ -1,7 +1,6 @@
 { nixpkgs ? (import <nixpkgs> {})
 , haskell ? nixpkgs.haskellPackages
-, cabalTestQuickcheck ? haskell.callPackage (import ../../cabal-test-quickcheck/cabal-test-quickcheck.nix) { Cabal = haskell.Cabal_1_20_0_3; }
-, youdo ? haskell.callPackage (import ./youdo.nix) { cabalTestQuickcheck = cabalTestQuickcheck;
+, youdo ? haskell.callPackage (import ./youdo.nix) { Cabal = haskell.Cabal_1_20_0_3;
                                                      attoparsec = haskell.attoparsec_0_11_3_1;
                                                    }
 }:
@@ -13,7 +12,6 @@ in rec {
     name = "youdo-runtime-env";
 
     buildInputs = [
-      haskell.cabalInstall
       postgresql
       youdo
     ];
