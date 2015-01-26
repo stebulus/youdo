@@ -12,13 +12,13 @@ maintainer:          steven@amotlpaa.org
 -- copyright:           
 category:            Web
 build-type:          Simple
-cabal-version:       >=1.8
+cabal-version:       >=1.18
 
 executable ydserver
   main-is:             server.hs
   hs-source-dirs:      server
   ghc-options:         -Wall
-  build-depends:       base ==4.6.*
+  build-depends:       base ==4.7.*
                        , youdo ==0.1.*
 
 library
@@ -39,18 +39,19 @@ library
                        , YouDo.Web.Service
                        , YouDo.WebApp
   ghc-options:         -Wall
-  build-depends:       base ==4.6.*
-                       , Cabal ==1.16.*
+  build-depends:       base ==4.7.*
+                       , Cabal >=1.20
 
                        , scotty ==0.9.*
                        , warp ==3.0.*
-                       , aeson ==0.7.*
+                       , aeson ==0.8.*
                        , postgresql-simple ==0.4.*
-                       , attoparsec ==0.11.*
+                       , attoparsec ==0.12.*
                        , optparse-applicative ==0.11.*
 
                        , http-types ==0.8.*
-                       , network ==2.4.*
+                       , network ==2.6.*
+                       , network-uri ==2.6.*
                        , mime ==0.4.*
 
                        , either ==4.3.*
@@ -59,7 +60,7 @@ library
 
                        , bytestring ==0.10.*
                        , data-default ==0.5.*
-                       , text ==0.11.*
+                       , text ==1.2.*
                        , time ==1.4.*
                        , old-locale ==1.0.*
                        , unordered-containers ==0.2.*
@@ -69,23 +70,23 @@ Test-Suite test-holes
   test-module:         YouDo.Holes.Test
   hs-source-dirs:      test/holes
   ghc-options:         -Wall
-  build-depends:       base ==4.6.*
+  build-depends:       base ==4.7.*
                        , youdo ==0.1.*
-                       , Cabal ==1.16.*
+                       , Cabal >=1.20
 
 Test-Suite test-time
   type:                detailed-0.9
   test-module:         YouDo.Time.Parse.Test
   hs-source-dirs:      test/time
   ghc-options:         -Wall
-  build-depends:       base ==4.6.*
+  build-depends:       base ==4.7.*
                        , youdo ==0.1.*
-                       , Cabal ==1.16.*
+                       , Cabal >=1.20
 
                        , QuickCheck ==2.7.*
                        , cabal-test-quickcheck ==0.1.*
 
-                       , text ==0.11.*
+                       , text ==1.2.*
                        , time ==1.4.*
                        , old-locale ==1.0.*
 
@@ -94,26 +95,27 @@ Test-Suite test-web
   test-module:         YouDo.Web.Test
   hs-source-dirs:      test/web
   ghc-options:         -Wall
-  build-depends:       base ==4.6.*
+  build-depends:       base ==4.7.*
                        , youdo ==0.1.*
-                       , Cabal ==1.16.*
+                       , Cabal >=1.20
 
                        , scotty ==0.9.*
                        , blaze-builder ==0.3.*
-                       , aeson ==0.7.*
+                       , aeson ==0.8.*
                        , wai ==3.0.*
-                       , attoparsec ==0.11.*
+                       , attoparsec ==0.12.*
 
                        , http-types ==0.8.*
-                       , network ==2.4.*
+                       , network ==2.6.*
+                       , network-uri ==2.6.*
 
                        , either ==4.3.*
                        , transformers ==0.3.*
                        , mtl ==2.1.*
 
                        , bytestring ==0.10.*
-                       , case-insensitive ==1.1.*
-                       , text ==0.11.*
+                       , case-insensitive ==1.2.*
+                       , text ==1.2.*
                        , time ==1.4.*
                        , unordered-containers ==0.2.*
                        , vector ==0.10.*
