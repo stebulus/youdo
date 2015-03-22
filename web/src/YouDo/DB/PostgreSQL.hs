@@ -34,7 +34,7 @@ instance DB IO YoudoID YoudoData YoudoUpdate PostgresYoudoDB where
     getAll (PostgresYoudoDB conn) = success <$> query_ conn
         "select id, assignerid, assigneeid, description, duedate, completed \
         \from youdo"
-    create yd (PostgresYoudoDB conn) = do
+    create yd (PostgresYoudoDB conn) =
         withTransaction conn $ do
             _ <- execute conn
                     ("insert into transaction (yd_userid, yd_ipaddr, yd_useragent) \
@@ -44,7 +44,7 @@ instance DB IO YoudoID YoudoData YoudoUpdate PostgresYoudoDB where
                 "insert into youdo \
                 \(assignerid, assigneeid, description, duedate, completed) \
                 \values (?, ?, ?, ?, ?) \
-                \returning id, assignerid, assigneeid, description, duedate, completed"
+                \returning id, txnid, assignerid, assigneeid, description, duedate, completed"
                 (assignerid yd, assigneeid yd, description yd,
                 duedate yd, completed yd)
                 :: IO [Youdo]
@@ -55,6 +55,21 @@ instance DB IO UserID UserData UserUpdate PostgresUserDB where
         one <$> query conn
               "select id, name from yd_user where id = ?"
               (Only uid)
+    getAll (PostgresUserDB conn) = success <$> query_ conn "select name from yd_user"
+    create (UserData name) (PostgresUserDB conn) =
+        withTransaction conn $ do
+            _ <- execute conn
+                ("insert into transaction (yd_userid, yd_ipaddr, yd_useragent) \
+                    \values (?,?,?)"::Query)
+                (0::Int, "127.0.0.1"::String, "some agent"::String)
+            users <- query conn
+                "insert into yd_user \
+                \(name) \
+                \values (?) \
+                \returning id, txnid, name"
+                (Only name)
+                :: IO [User]
+            return $ one users
 
 newtype PostgresTxnDB = PostgresTxnDB Connection
 instance TxnDB IO PostgresTxnDB where
